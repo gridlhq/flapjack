@@ -25,7 +25,6 @@ curl -fsSL https://install.flapjack.foo | sh
 flapjack uninstall
 ```
 
-
 <details>
 <summary>Note:</summary>
 

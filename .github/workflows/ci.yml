@@ -294,6 +294,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          # No cache - package-lock.json doesn't exist
       - name: Install dependencies
         working-directory: sdks/javascript/packages/flapjack-search
         run: npm install

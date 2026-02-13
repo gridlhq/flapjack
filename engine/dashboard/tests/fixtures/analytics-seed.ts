@@ -75,15 +75,16 @@ const SEARCH_TERMS = [
 
 /**
  * Seeds analytics data for testing.
- * Creates index, adds documents, executes searches, flushes analytics.
+ * Uses the backend's built-in seed endpoint which generates realistic data
+ * including geography, devices, searches, clicks, and conversions.
  */
 export async function seedAnalytics(
   request: APIRequestContext,
   config: AnalyticsSeedConfig = DEFAULT_ANALYTICS_CONFIG,
 ): Promise<void> {
-  const { indexName, documentCount, searchCount } = config;
+  const { indexName, documentCount } = config;
 
-  // 1. Create index and add documents
+  // 1. Create index and add documents (needed for searches to work)
   const documents = PRODUCTS.slice(0, Math.min(documentCount, PRODUCTS.length));
   await request.post(`${API}/1/indexes/${indexName}/batch`, {
     headers: HEADERS,
@@ -95,34 +96,46 @@ export async function seedAnalytics(
   // Wait for indexing to complete
   await new Promise((resolve) => setTimeout(resolve, 2000));
 
-  // 2. Execute searches with analytics
-  const searches = generateSearches(searchCount, config);
-  
-  for (const search of searches) {
-    await request.post(`${API}/1/indexes/${indexName}/query`, {
-      headers: {
-        ...HEADERS,
-        'x-algolia-user-token': search.userToken,
-        'x-forwarded-for': search.ip,
-        'user-agent': search.userAgent,
-      },
-      data: {
-        query: search.query,
-        clickAnalytics: true,
-        analytics: true,
-        analyticsTags: search.tags,
-      },
-    });
-  }
-
-  // 3. Flush analytics
-  await request.post(`${API}/2/analytics/flush`, {
-    params: { index: indexName },
+  // 2. Seed analytics using backend's built-in generator
+  // This creates realistic analytics with geography, devices, searches, clicks
+  await request.post(`${API}/2/analytics/seed`, {
     headers: HEADERS,
+    data: {
+      index: indexName,
+      days: 7, // Generate 7 days of analytics data
+    },
   });
 
-  // Wait for flush to complete
-  await new Promise((resolve) => setTimeout(resolve, 1000));
+  // Wait for analytics data to be available
+  // Seed creates data for the past 7 days (NOT including today)
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+
+  // Verify data was created by checking the /2/overview endpoint
+  // Use yesterday as end date since seed doesn't create data for today
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+
+  try {
+    const response = await request.get(`${API}/2/overview`, {
+      headers: HEADERS,
+      params: {
+        index: indexName,
+        startDate: eightDaysAgo.toISOString().split('T')[0],
+        endDate: yesterday.toISOString().split('T')[0],
+      },
+    });
+
+    if (!response.ok()) {
+      console.warn(`Analytics seed verification failed: ${response.status()}`);
+    } else {
+      const data = await response.json();
+      if (!data.totalSearches || data.totalSearches === 0) {
+        console.warn('Analytics seed created no data');
+      }
+    }
+  } catch (error) {
+    console.warn('Analytics seed verification warning:', error);
+  }
 }
 
 /**

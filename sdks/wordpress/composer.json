@@ -1,0 +1,45 @@
+{
+    "name": "flapjackhq/flapjack-search-wordpress",
+    "description": "Flapjack Search plugin for WordPress — lightning-fast, typo-tolerant search powered by Flapjack.",
+    "type": "wordpress-plugin",
+    "license": "GPL-2.0-or-later",
+    "require": {
+        "php": ">=8.1",
+        "flapjackhq/flapjack-search-php": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.0",
+        "yoast/phpunit-polyfills": "^3.0",
+        "phpstan/phpstan": "^1.12"
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../flapjack-search-php"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "Flapjack\\WordPress\\": "includes/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Flapjack\\WordPress\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true
+        }
+    },
+    "scripts": {
+        "test": "phpunit",
+        "test:unit": "phpunit --testsuite unit",
+        "test:integration": "phpunit --testsuite integration",
+        "phpstan": "phpstan analyse",
+        "cs-fix": "php-cs-fixer fix"
+    }
+}

@@ -1,0 +1,45 @@
+{
+  "version": "v1",
+  "captured_at": "2026-01-21T03:41:25.627464+00:00",
+  "test_data": [
+    {
+      "objectID": "1",
+      "price": 50
+    },
+    {
+      "objectID": "2",
+      "price": 150
+    },
+    {
+      "objectID": "3",
+      "price": 250
+    }
+  ],
+  "query": "",
+  "filters": "price > 100",
+  "expected_hits": [
+    {
+      "_highlightResult": {
+        "price": {
+          "matchLevel": "none",
+          "matchedWords": [],
+          "value": "250"
+        }
+      },
+      "objectID": "3",
+      "price": 250
+    },
+    {
+      "_highlightResult": {
+        "price": {
+          "matchLevel": "none",
+          "matchedWords": [],
+          "value": "150"
+        }
+      },
+      "objectID": "2",
+      "price": 150
+    }
+  ],
+  "expected_nb_hits": 2
+}

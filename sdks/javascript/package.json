@@ -1,0 +1,46 @@
+{
+  "name": "flapjack-search-javascript",
+  "private": true,
+  "homepage": "https://github.com/flapjackhq/flapjack-search-javascript#readme",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "lerna run build --scope '@flapjack-search/requester-testing' --scope '@flapjack-search/logger-console' --scope 'flapjack-search' --include-dependencies",
+    "clean": "lerna run clean",
+    "release:publish": "lerna publish from-package --yes",
+    "release:publish:old": "tsc --project scripts/tsconfig.json && node scripts/dist/publish.js",
+    "test": "lerna run test $*",
+    "test:size": "bundlewatch",
+    "test:bundle": "lerna run test:bundle --verbose --include-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.9",
+    "bundlewatch": "0.4.1",
+    "execa": "9.6.1",
+    "lerna": "9.0.3",
+    "rollup": "4.57.1",
+    "typescript": "5.9.3"
+  },
+  "bundlewatch": {
+    "files": [
+      {
+        "path": "packages/flapjack-search/dist/flapjack-search.umd.js",
+        "maxSize": "15KB"
+      },
+      {
+        "path": "packages/flapjack-search/dist/lite/builds/browser.umd.js",
+        "maxSize": "4KB"
+      },
+      {
+        "path": "packages/client-search/dist/builds/browser.umd.js",
+        "maxSize": "8KB"
+      }
+    ]
+  },
+  "engines": {
+    "node": ">= 14.0.0",
+    "yarn": "^4.0.0"
+  }
+}

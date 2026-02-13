@@ -1,0 +1,21 @@
+# # .config/nextest.toml
+# [[profile.default.overrides]]
+# filter = 'test(/^tests::heavy::/)'
+# threads-required = 2 # This test takes 2 cores
+
+
+
+[profile.default]
+default-filter = "not (test(/_slow$/) or test(/_very_slow$/))"
+
+[profile.slow]
+default-filter = "test(/_slow$/) and not test(/_very_slow$/)"
+
+[profile.very_slow]
+default-filter = "test(/_very_slow$/)"
+
+[profile.smoke]
+default-filter = "binary(test_smoke)"
+
+[profile.ci]
+default-filter = "all()"

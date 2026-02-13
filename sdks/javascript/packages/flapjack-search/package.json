@@ -1,0 +1,72 @@
+{
+  "version": "0.1.0-beta.2",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/flapjackhq/flapjack-search-javascript.git"
+  },
+  "homepage": "https://github.com/flapjackhq/flapjack-search-javascript/tree/main/packages/flapjack-search#readme",
+  "type": "module",
+  "license": "MIT",
+  "author": "Flapjack",
+  "scripts": {
+    "build": "yarn clean && yarn tsup",
+    "clean": "rm -rf ./dist || true",
+    "test": "vitest --run --exclude '**/*.e2e.test.ts'",
+    "test:e2e": "vitest --run __tests__/flapjack-search.e2e.test.ts",
+    "test:bundle": "publint . && attw --pack ."
+  },
+  "name": "flapjack-search",
+  "description": "A fully-featured and blazing-fast JavaScript API client to interact with Flapjack Search API.",
+  "exports": {
+    ".": {
+      "node": {
+        "types": {
+          "import": "./dist/node.d.ts",
+          "module": "./dist/node.d.ts",
+          "require": "./dist/node.d.cts"
+        },
+        "import": "./dist/node.js",
+        "module": "./dist/node.js",
+        "require": "./dist/node.cjs"
+      },
+      "worker": {
+        "types": "./dist/worker.d.ts",
+        "default": "./dist/worker.js"
+      },
+      "default": {
+        "types": "./dist/browser.d.ts",
+        "module": "./dist/browser.js",
+        "import": "./dist/browser.js",
+        "default": "./dist/flapjack-search.umd.js"
+      }
+    },
+    "./dist/*": "./dist/*.js"
+  },
+  "jsdelivr": "./dist/flapjack-search.umd.js",
+  "unpkg": "./dist/flapjack-search.umd.js",
+  "react-native": "./dist/browser.js",
+  "files": [
+    "dist",
+    "index.js",
+    "index.d.ts"
+  ],
+  "dependencies": {
+    "@flapjack-search/client-search": "^0.1.0-beta.1",
+    "@flapjack-search/requester-browser-xhr": "^0.1.0-beta.1",
+    "@flapjack-search/requester-fetch": "^0.1.0-beta.1",
+    "@flapjack-search/requester-node-http": "^0.1.0-beta.1"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.2",
+    "@flapjack-search/requester-testing": "^0.1.0-beta.1",
+    "@types/node": "25.1.0",
+    "publint": "0.3.17",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3",
+    "vitest": "4.0.18"
+  },
+  "engines": {
+    "node": ">= 14.0.0"
+  },
+  "gitHead": "98e581957b937d416206343a6195d9dea3c8a022"
+}

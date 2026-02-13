@@ -1,0 +1,65 @@
+{
+  "version": "v1",
+  "captured_at": "2026-01-21T20:00:41.223516+00:00",
+  "test_data": [
+    {
+      "category": "A",
+      "objectID": "1",
+      "stock": 10
+    },
+    {
+      "category": "B",
+      "objectID": "2",
+      "stock": 0
+    },
+    {
+      "category": "C",
+      "objectID": "3",
+      "stock": 5
+    },
+    {
+      "category": "A",
+      "objectID": "4",
+      "stock": 0
+    }
+  ],
+  "query": "",
+  "filters": "(category:A OR category:C) AND stock > 0",
+  "expected_hits": [
+    {
+      "_highlightResult": {
+        "category": {
+          "matchLevel": "none",
+          "matchedWords": [],
+          "value": "C"
+        },
+        "stock": {
+          "matchLevel": "none",
+          "matchedWords": [],
+          "value": "5"
+        }
+      },
+      "category": "C",
+      "objectID": "3",
+      "stock": 5
+    },
+    {
+      "_highlightResult": {
+        "category": {
+          "matchLevel": "none",
+          "matchedWords": [],
+          "value": "A"
+        },
+        "stock": {
+          "matchLevel": "none",
+          "matchedWords": [],
+          "value": "10"
+        }
+      },
+      "category": "A",
+      "objectID": "1",
+      "stock": 10
+    }
+  ],
+  "expected_nb_hits": 2
+}

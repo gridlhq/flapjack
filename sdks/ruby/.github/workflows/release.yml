@@ -1,0 +1,29 @@
+name: Release
+
+# This file is registered in https://rubygems.org/gems/algolia/trusted_publishers to be able to publish new versions of the gem.
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release:
+    name: Publish
+    runs-on: ubuntu-22.04
+    if: "startsWith(github.event.head_commit.message, 'chore: release')"
+    permissions:
+      id-token: write
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 4.0.1
+          bundler-cache: true
+
+      - uses: rubygems/release-gem@1c162a739e8b4cb21a676e97b087e8268d8fc40b
+        with:
+          await-release: false

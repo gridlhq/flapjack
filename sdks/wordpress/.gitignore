@@ -1,0 +1,14 @@
+vendor/
+node_modules/
+.phpunit.result.cache
+.php-cs-fixer.cache
+phpstan.neon
+*.log
+.env
+.DS_Store
+build/
+dist/
+test-results/
+playwright-report/
+playwright/.cache/
+.wp-env/

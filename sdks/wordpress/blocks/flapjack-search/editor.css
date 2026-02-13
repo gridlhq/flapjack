@@ -1,0 +1,12 @@
+/**
+ * Flapjack Search Block — Editor Styles
+ */
+
+.wp-block-flapjack-search .flapjack-search-form {
+    pointer-events: none;
+    opacity: 0.85;
+}
+
+.wp-block-flapjack-search .flapjack-search-input {
+    background: #f6f7f7;
+}

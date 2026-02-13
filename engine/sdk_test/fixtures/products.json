@@ -1,0 +1,643 @@
+[
+  {
+    "objectID": "1",
+    "name": "Essence Mascara Lash Princess",
+    "brand": "Essence",
+    "price": 9.99,
+    "category": "beauty",
+    "description": "The Essence Mascara Lash Princess is a popular mascara known for its volumizing and lengthening effects. Achieve dramatic lashes with this long-lasting and cruelty-free formula.",
+    "rating": 2.56,
+    "stock": 99,
+    "tags": [
+      "beauty",
+      "mascara"
+    ]
+  },
+  {
+    "objectID": "2",
+    "name": "Eyeshadow Palette with Mirror",
+    "brand": "Glamour Beauty",
+    "price": 19.99,
+    "category": "beauty",
+    "description": "The Eyeshadow Palette with Mirror offers a versatile range of eyeshadow shades for creating stunning eye looks. With a built-in mirror, it's convenient for on-the-go makeup application.",
+    "rating": 2.86,
+    "stock": 34,
+    "tags": [
+      "beauty",
+      "eyeshadow"
+    ]
+  },
+  {
+    "objectID": "3",
+    "name": "Powder Canister",
+    "brand": "Velvet Touch",
+    "price": 14.99,
+    "category": "beauty",
+    "description": "The Powder Canister is a finely milled setting powder designed to set makeup and control shine. With a lightweight and translucent formula, it provides a smooth and matte finish.",
+    "rating": 4.64,
+    "stock": 89,
+    "tags": [
+      "beauty",
+      "face powder"
+    ]
+  },
+  {
+    "objectID": "4",
+    "name": "Red Lipstick",
+    "brand": "Chic Cosmetics",
+    "price": 12.99,
+    "category": "beauty",
+    "description": "The Red Lipstick is a classic and bold choice for adding a pop of color to your lips. With a creamy and pigmented formula, it provides a vibrant and long-lasting finish.",
+    "rating": 4.36,
+    "stock": 91,
+    "tags": [
+      "beauty",
+      "lipstick"
+    ]
+  },
+  {
+    "objectID": "5",
+    "name": "Red Nail Polish",
+    "brand": "Nail Couture",
+    "price": 8.99,
+    "category": "beauty",
+    "description": "The Red Nail Polish offers a rich and glossy red hue for vibrant and polished nails. With a quick-drying formula, it provides a salon-quality finish at home.",
+    "rating": 4.32,
+    "stock": 79,
+    "tags": [
+      "beauty",
+      "nail polish"
+    ]
+  },
+  {
+    "objectID": "6",
+    "name": "Calvin Klein CK One",
+    "brand": "Calvin Klein",
+    "price": 49.99,
+    "category": "fragrances",
+    "description": "CK One by Calvin Klein is a classic unisex fragrance, known for its fresh and clean scent. It's a versatile fragrance suitable for everyday wear.",
+    "rating": 4.37,
+    "stock": 29,
+    "tags": [
+      "fragrances",
+      "perfumes"
+    ]
+  },
+  {
+    "objectID": "7",
+    "name": "Chanel Coco Noir Eau De",
+    "brand": "Chanel",
+    "price": 129.99,
+    "category": "fragrances",
+    "description": "Coco Noir by Chanel is an elegant and mysterious fragrance, featuring notes of grapefruit, rose, and sandalwood. Perfect for evening occasions.",
+    "rating": 4.26,
+    "stock": 58,
+    "tags": [
+      "fragrances",
+      "perfumes"
+    ]
+  },
+  {
+    "objectID": "8",
+    "name": "Dior J'adore",
+    "brand": "Dior",
+    "price": 89.99,
+    "category": "fragrances",
+    "description": "J'adore by Dior is a luxurious and floral fragrance, known for its blend of ylang-ylang, rose, and jasmine. It embodies femininity and sophistication.",
+    "rating": 3.8,
+    "stock": 98,
+    "tags": [
+      "fragrances",
+      "perfumes"
+    ]
+  },
+  {
+    "objectID": "9",
+    "name": "Dolce Shine Eau de",
+    "brand": "Dolce & Gabbana",
+    "price": 69.99,
+    "category": "fragrances",
+    "description": "Dolce Shine by Dolce & Gabbana is a vibrant and fruity fragrance, featuring notes of mango, jasmine, and blonde woods. It's a joyful and youthful scent.",
+    "rating": 3.96,
+    "stock": 4,
+    "tags": [
+      "fragrances",
+      "perfumes"
+    ]
+  },
+  {
+    "objectID": "10",
+    "name": "Gucci Bloom Eau de",
+    "brand": "Gucci",
+    "price": 79.99,
+    "category": "fragrances",
+    "description": "Gucci Bloom by Gucci is a floral and captivating fragrance, with notes of tuberose, jasmine, and Rangoon creeper. It's a modern and romantic scent.",
+    "rating": 2.74,
+    "stock": 91,
+    "tags": [
+      "fragrances",
+      "perfumes"
+    ]
+  },
+  {
+    "objectID": "11",
+    "name": "Annibale Colombo Bed",
+    "brand": "Annibale Colombo",
+    "price": 1899.99,
+    "category": "furniture",
+    "description": "The Annibale Colombo Bed is a luxurious and elegant bed frame, crafted with high-quality materials for a comfortable and stylish bedroom.",
+    "rating": 4.77,
+    "stock": 88,
+    "tags": [
+      "furniture",
+      "beds"
+    ]
+  },
+  {
+    "objectID": "12",
+    "name": "Annibale Colombo Sofa",
+    "brand": "Annibale Colombo",
+    "price": 2499.99,
+    "category": "furniture",
+    "description": "The Annibale Colombo Sofa is a sophisticated and comfortable seating option, featuring exquisite design and premium upholstery for your living room.",
+    "rating": 3.92,
+    "stock": 60,
+    "tags": [
+      "furniture",
+      "sofas"
+    ]
+  },
+  {
+    "objectID": "13",
+    "name": "Bedside Table African Cherry",
+    "brand": "Furniture Co.",
+    "price": 299.99,
+    "category": "furniture",
+    "description": "The Bedside Table in African Cherry is a stylish and functional addition to your bedroom, providing convenient storage space and a touch of elegance.",
+    "rating": 2.87,
+    "stock": 64,
+    "tags": [
+      "furniture",
+      "bedside tables"
+    ]
+  },
+  {
+    "objectID": "14",
+    "name": "Knoll Saarinen Executive Conference Chair",
+    "brand": "Knoll",
+    "price": 499.99,
+    "category": "furniture",
+    "description": "The Knoll Saarinen Executive Conference Chair is a modern and ergonomic chair, perfect for your office or conference room with its timeless design.",
+    "rating": 4.88,
+    "stock": 26,
+    "tags": [
+      "furniture",
+      "office chairs"
+    ]
+  },
+  {
+    "objectID": "15",
+    "name": "Wooden Bathroom Sink With Mirror",
+    "brand": "Bath Trends",
+    "price": 799.99,
+    "category": "furniture",
+    "description": "The Wooden Bathroom Sink with Mirror is a unique and stylish addition to your bathroom, featuring a wooden sink countertop and a matching mirror.",
+    "rating": 3.59,
+    "stock": 7,
+    "tags": [
+      "furniture",
+      "bathroom"
+    ]
+  },
+  {
+    "objectID": "16",
+    "name": "Apple",
+    "price": 1.99,
+    "category": "groceries",
+    "description": "Fresh and crisp apples, perfect for snacking or incorporating into various recipes.",
+    "rating": 4.19,
+    "stock": 8,
+    "tags": [
+      "fruits"
+    ]
+  },
+  {
+    "objectID": "17",
+    "name": "Beef Steak",
+    "price": 12.99,
+    "category": "groceries",
+    "description": "High-quality beef steak, great for grilling or cooking to your preferred level of doneness.",
+    "rating": 4.47,
+    "stock": 86,
+    "tags": [
+      "meat"
+    ]
+  },
+  {
+    "objectID": "18",
+    "name": "Cat Food",
+    "price": 8.99,
+    "category": "groceries",
+    "description": "Nutritious cat food formulated to meet the dietary needs of your feline friend.",
+    "rating": 3.13,
+    "stock": 46,
+    "tags": [
+      "pet supplies",
+      "cat food"
+    ]
+  },
+  {
+    "objectID": "19",
+    "name": "Chicken Meat",
+    "price": 9.99,
+    "category": "groceries",
+    "description": "Fresh and tender chicken meat, suitable for various culinary preparations.",
+    "rating": 3.19,
+    "stock": 97,
+    "tags": [
+      "meat"
+    ]
+  },
+  {
+    "objectID": "20",
+    "name": "Cooking Oil",
+    "price": 4.99,
+    "category": "groceries",
+    "description": "Versatile cooking oil suitable for frying, sautéing, and various culinary applications.",
+    "rating": 4.8,
+    "stock": 10,
+    "tags": [
+      "cooking essentials"
+    ]
+  },
+  {
+    "objectID": "21",
+    "name": "Cucumber",
+    "price": 1.49,
+    "category": "groceries",
+    "description": "Crisp and hydrating cucumbers, ideal for salads, snacks, or as a refreshing side.",
+    "rating": 4.07,
+    "stock": 84,
+    "tags": [
+      "vegetables"
+    ]
+  },
+  {
+    "objectID": "22",
+    "name": "Dog Food",
+    "price": 10.99,
+    "category": "groceries",
+    "description": "Specially formulated dog food designed to provide essential nutrients for your canine companion.",
+    "rating": 4.55,
+    "stock": 71,
+    "tags": [
+      "pet supplies",
+      "dog food"
+    ]
+  },
+  {
+    "objectID": "23",
+    "name": "Eggs",
+    "price": 2.99,
+    "category": "groceries",
+    "description": "Fresh eggs, a versatile ingredient for baking, cooking, or breakfast.",
+    "rating": 2.53,
+    "stock": 9,
+    "tags": [
+      "dairy"
+    ]
+  },
+  {
+    "objectID": "24",
+    "name": "Fish Steak",
+    "price": 14.99,
+    "category": "groceries",
+    "description": "Quality fish steak, suitable for grilling, baking, or pan-searing.",
+    "rating": 3.78,
+    "stock": 74,
+    "tags": [
+      "seafood"
+    ]
+  },
+  {
+    "objectID": "25",
+    "name": "Green Bell Pepper",
+    "price": 1.29,
+    "category": "groceries",
+    "description": "Fresh and vibrant green bell pepper, perfect for adding color and flavor to your dishes.",
+    "rating": 3.25,
+    "stock": 33,
+    "tags": [
+      "vegetables"
+    ]
+  },
+  {
+    "objectID": "26",
+    "name": "Green Chili Pepper",
+    "price": 0.99,
+    "category": "groceries",
+    "description": "Spicy green chili pepper, ideal for adding heat to your favorite recipes.",
+    "rating": 3.66,
+    "stock": 3,
+    "tags": [
+      "vegetables"
+    ]
+  },
+  {
+    "objectID": "27",
+    "name": "Honey Jar",
+    "price": 6.99,
+    "category": "groceries",
+    "description": "Pure and natural honey in a convenient jar, perfect for sweetening beverages or drizzling over food.",
+    "rating": 3.97,
+    "stock": 34,
+    "tags": [
+      "condiments"
+    ]
+  },
+  {
+    "objectID": "28",
+    "name": "Ice Cream",
+    "price": 5.49,
+    "category": "groceries",
+    "description": "Creamy and delicious ice cream, available in various flavors for a delightful treat.",
+    "rating": 3.39,
+    "stock": 27,
+    "tags": [
+      "desserts"
+    ]
+  },
+  {
+    "objectID": "29",
+    "name": "Juice",
+    "price": 3.99,
+    "category": "groceries",
+    "description": "Refreshing fruit juice, packed with vitamins and great for staying hydrated.",
+    "rating": 3.94,
+    "stock": 50,
+    "tags": [
+      "beverages"
+    ]
+  },
+  {
+    "objectID": "30",
+    "name": "Kiwi",
+    "price": 2.49,
+    "category": "groceries",
+    "description": "Nutrient-rich kiwi, perfect for snacking or adding a tropical twist to your dishes.",
+    "rating": 4.93,
+    "stock": 99,
+    "tags": [
+      "fruits"
+    ]
+  },
+  {
+    "objectID": "31",
+    "name": "Lemon",
+    "price": 0.79,
+    "category": "groceries",
+    "description": "Zesty and tangy lemons, versatile for cooking, baking, or making refreshing beverages.",
+    "rating": 3.53,
+    "stock": 31,
+    "tags": [
+      "fruits"
+    ]
+  },
+  {
+    "objectID": "32",
+    "name": "Milk",
+    "price": 3.49,
+    "category": "groceries",
+    "description": "Fresh and nutritious milk, a staple for various recipes and daily consumption.",
+    "rating": 2.61,
+    "stock": 27,
+    "tags": [
+      "dairy"
+    ]
+  },
+  {
+    "objectID": "33",
+    "name": "Mulberry",
+    "price": 4.99,
+    "category": "groceries",
+    "description": "Sweet and juicy mulberries, perfect for snacking or adding to desserts and cereals.",
+    "rating": 4.95,
+    "stock": 99,
+    "tags": [
+      "fruits"
+    ]
+  },
+  {
+    "objectID": "34",
+    "name": "Nescafe Coffee",
+    "price": 7.99,
+    "category": "groceries",
+    "description": "Quality coffee from Nescafe, available in various blends for a rich and satisfying cup.",
+    "rating": 4.82,
+    "stock": 57,
+    "tags": [
+      "beverages",
+      "coffee"
+    ]
+  },
+  {
+    "objectID": "35",
+    "name": "Potatoes",
+    "price": 2.29,
+    "category": "groceries",
+    "description": "Versatile and starchy potatoes, great for roasting, mashing, or as a side dish.",
+    "rating": 4.81,
+    "stock": 13,
+    "tags": [
+      "vegetables"
+    ]
+  },
+  {
+    "objectID": "36",
+    "name": "Protein Powder",
+    "price": 19.99,
+    "category": "groceries",
+    "description": "Nutrient-packed protein powder, ideal for supplementing your diet with essential proteins.",
+    "rating": 4.18,
+    "stock": 80,
+    "tags": [
+      "health supplements"
+    ]
+  },
+  {
+    "objectID": "37",
+    "name": "Red Onions",
+    "price": 1.99,
+    "category": "groceries",
+    "description": "Flavorful and aromatic red onions, perfect for adding depth to your savory dishes.",
+    "rating": 4.2,
+    "stock": 82,
+    "tags": [
+      "vegetables"
+    ]
+  },
+  {
+    "objectID": "38",
+    "name": "Rice",
+    "price": 5.99,
+    "category": "groceries",
+    "description": "High-quality rice, a staple for various cuisines and a versatile base for many dishes.",
+    "rating": 3.18,
+    "stock": 59,
+    "tags": [
+      "grains"
+    ]
+  },
+  {
+    "objectID": "39",
+    "name": "Soft Drinks",
+    "price": 1.99,
+    "category": "groceries",
+    "description": "Assorted soft drinks in various flavors, perfect for refreshing beverages.",
+    "rating": 4.75,
+    "stock": 53,
+    "tags": [
+      "beverages"
+    ]
+  },
+  {
+    "objectID": "40",
+    "name": "Strawberry",
+    "price": 3.99,
+    "category": "groceries",
+    "description": "Sweet and succulent strawberries, great for snacking, desserts, or blending into smoothies.",
+    "rating": 3.08,
+    "stock": 46,
+    "tags": [
+      "fruits"
+    ]
+  },
+  {
+    "objectID": "41",
+    "name": "Tissue Paper Box",
+    "price": 2.49,
+    "category": "groceries",
+    "description": "Convenient tissue paper box for everyday use, providing soft and absorbent tissues.",
+    "rating": 2.69,
+    "stock": 86,
+    "tags": [
+      "household essentials"
+    ]
+  },
+  {
+    "objectID": "42",
+    "name": "Water",
+    "price": 0.99,
+    "category": "groceries",
+    "description": "Pure and refreshing bottled water, essential for staying hydrated throughout the day.",
+    "rating": 4.96,
+    "stock": 53,
+    "tags": [
+      "beverages"
+    ]
+  },
+  {
+    "objectID": "43",
+    "name": "Decoration Swing",
+    "price": 59.99,
+    "category": "home-decoration",
+    "description": "The Decoration Swing is a charming addition to your home decor. Crafted with intricate details, it adds a touch of elegance and whimsy to any room.",
+    "rating": 3.16,
+    "stock": 47,
+    "tags": [
+      "home decor",
+      "swing"
+    ]
+  },
+  {
+    "objectID": "44",
+    "name": "Family Tree Photo Frame",
+    "price": 29.99,
+    "category": "home-decoration",
+    "description": "The Family Tree Photo Frame is a sentimental and stylish way to display your cherished family memories. With multiple photo slots, it tells the story of your loved ones.",
+    "rating": 4.53,
+    "stock": 77,
+    "tags": [
+      "home decor",
+      "photo frame"
+    ]
+  },
+  {
+    "objectID": "45",
+    "name": "House Showpiece Plant",
+    "price": 39.99,
+    "category": "home-decoration",
+    "description": "The House Showpiece Plant is an artificial plant that brings a touch of nature to your home without the need for maintenance. It adds greenery and style to any space.",
+    "rating": 4.67,
+    "stock": 28,
+    "tags": [
+      "home decor",
+      "artificial plants"
+    ]
+  },
+  {
+    "objectID": "46",
+    "name": "Plant Pot",
+    "price": 14.99,
+    "category": "home-decoration",
+    "description": "The Plant Pot is a stylish container for your favorite plants. With a sleek design, it complements your indoor or outdoor garden, adding a modern touch to your plant display.",
+    "rating": 3.01,
+    "stock": 59,
+    "tags": [
+      "home decor",
+      "plant accessories"
+    ]
+  },
+  {
+    "objectID": "47",
+    "name": "Table Lamp",
+    "price": 49.99,
+    "category": "home-decoration",
+    "description": "The Table Lamp is a functional and decorative lighting solution for your living space. With a modern design, it provides both ambient and task lighting, enhancing the atmosphere.",
+    "rating": 3.55,
+    "stock": 9,
+    "tags": [
+      "home decor",
+      "lighting"
+    ]
+  },
+  {
+    "objectID": "48",
+    "name": "Bamboo Spatula",
+    "price": 7.99,
+    "category": "kitchen-accessories",
+    "description": "The Bamboo Spatula is a versatile kitchen tool made from eco-friendly bamboo. Ideal for flipping, stirring, and serving various dishes.",
+    "rating": 3.27,
+    "stock": 37,
+    "tags": [
+      "kitchen tools",
+      "utensils"
+    ]
+  },
+  {
+    "objectID": "49",
+    "name": "Black Aluminium Cup",
+    "price": 5.99,
+    "category": "kitchen-accessories",
+    "description": "The Black Aluminium Cup is a stylish and durable cup suitable for both hot and cold beverages. Its sleek black design adds a modern touch to your drinkware collection.",
+    "rating": 4.46,
+    "stock": 75,
+    "tags": [
+      "drinkware",
+      "cups"
+    ]
+  },
+  {
+    "objectID": "50",
+    "name": "Black Whisk",
+    "price": 9.99,
+    "category": "kitchen-accessories",
+    "description": "The Black Whisk is a kitchen essential for whisking and beating ingredients. Its ergonomic handle and sleek design make it a practical and stylish tool.",
+    "rating": 3.9,
+    "stock": 73,
+    "tags": [
+      "kitchen tools",
+      "utensils"
+    ]
+  }
+]

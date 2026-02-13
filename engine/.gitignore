@@ -1,0 +1,82 @@
+**/target/
+/.cargo
+/.cache
+**/node_modules/
+node_modules/
+
+
+/.vscode
+/.env
+/.secret
+/engine/_dev/dev-data
+/data
+/engine/_dev/tmp
+/engine/_dev/venv
+
+# Data directories
+/datasets/
+
+# Generated/temporary JSON (specific files, not blanket *.json)
+railway.json
+.claude/settings.local.json
+sdk_test/.cache/
+**/test-results/
+engine/_dev/benchmarks_2/results.json
+engine/_dev/demo-dualclient/dist/openapi.json
+engine/_dev/demo-dualclient/dist/stats.json
+engine/_dev/demo-dualclient/public/openapi.json
+
+# Build artifacts
+/dist
+/.wrangler
+
+# PHP / Composer
+**/vendor/
+composer.lock
+*.phpunit.result.cache
+
+# Build output (all subprojects)
+**/dist/
+
+# Lock files for dependencies (keep Cargo.lock for binaries, ignore others)
+**/package-lock.json
+
+# ML model caches
+**/.fastembed_cache/
+
+# Tantivy lock files
+*.tantivy-meta.lock
+*.tantivy-writer.lock
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Stable server binary for dashboard dev/testing
+bin/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Node
+node_modules/
+
+__pycache__/

@@ -1,0 +1,34 @@
+# Build artifacts
+target/
+*.so
+*.dylib
+
+# Development files
+.git/
+.gitignore
+.github/
+.vscode/
+.idea/
+
+# Documentation
+docs/
+docs2/
+deep_dives/
+examples/
+*.md
+
+# Test data
+data/
+data-a/
+data-b/
+tests/data/
+
+# Scripts
+s/
+scripts/
+util/
+
+# Demo and other artifacts
+demo-dualclient/
+*.log
+.DS_Store

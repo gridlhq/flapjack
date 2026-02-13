@@ -1,0 +1,32 @@
+[package]
+name = "flapjack-http"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+flapjack = { path = "..", features = ["analytics"] }
+flapjack-replication = { path = "../flapjack-replication" }
+flapjack-ssl = { path = "../flapjack-ssl" }
+
+axum = "0.7"
+dashmap = "6.0"
+tokio = { version = "1.35", features = ["macros", "rt-multi-thread", "sync", "time", "net"] }
+tower = { version = "0.4", features = ["util"] }
+tower-http = { version = "0.5", features = ["trace", "cors", "fs"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+chrono = { version = "0.4", features = ["serde"] }
+base64 = "0.22.1"
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+rand = "0.8"
+uuid = { version = "1.0", features = ["v4"] }
+nom = "7.1"
+url = "2.5.8"
+urlencoding = "2.1.3"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+utoipa = { version = "5.3", features = ["axum_extras", "chrono", "uuid"] }
+utoipa-swagger-ui = { version = "8.0", features = ["axum"] }

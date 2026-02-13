@@ -1,0 +1,295 @@
+package com.flapjackhq.internal;
+
+import com.flapjackhq.config.*;
+import com.flapjackhq.exceptions.FlapjackApiException;
+import com.flapjackhq.exceptions.FlapjackClientException;
+import com.flapjackhq.internal.interceptors.GzipRequestInterceptor;
+import com.flapjackhq.internal.interceptors.HeaderInterceptor;
+import com.flapjackhq.internal.interceptors.LogInterceptor;
+import com.flapjackhq.utils.UseReadTransporter;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JavaType;
+import java.io.IOException;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
+import javax.annotation.Nonnull;
+import okhttp3.*;
+import okhttp3.internal.http.HttpMethod;
+import okio.BufferedSink;
+
+/**
+ * HttpRequester is responsible for making HTTP requests using the OkHttp client. It provides a
+ * mechanism for request serialization and deserialization using a given {@link JsonSerializer}.
+ */
+public final class HttpRequester implements Requester {
+
+  private static final MediaType JSON_MEDIA_TYPE = MediaType.parse("application/json");
+  private final OkHttpClient httpClient;
+  private final JsonSerializer serializer;
+  private final AtomicBoolean isClosed = new AtomicBoolean(false);
+
+  /** Private constructor initialized using the builder pattern. */
+  private HttpRequester(Builder builder, ClientConfig config) {
+    OkHttpClient.Builder clientBuilder = new OkHttpClient.Builder()
+      .connectTimeout(config.getConnectTimeout() == Duration.ZERO ? builder.connectTimeout : config.getConnectTimeout())
+      .readTimeout(config.getReadTimeout() == Duration.ZERO ? builder.readTimeout : config.getReadTimeout())
+      .writeTimeout(config.getWriteTimeout() == Duration.ZERO ? builder.writeTimeout : config.getWriteTimeout())
+      .addInterceptor(new HeaderInterceptor(config.getDefaultHeaders()))
+      .addNetworkInterceptor(new LogInterceptor(config.getLogger(), config.getLogLevel()));
+    builder.interceptors.forEach(clientBuilder::addInterceptor);
+    builder.networkInterceptors.forEach(clientBuilder::addNetworkInterceptor);
+    if (config.getCompressionType() == CompressionType.GZIP) {
+      clientBuilder.addInterceptor(new GzipRequestInterceptor());
+    }
+    if (builder.clientConfig != null) {
+      builder.clientConfig.accept(clientBuilder);
+    }
+    this.httpClient = clientBuilder.build();
+    this.serializer = builder.serializer;
+  }
+
+  @Override
+  public <T> T execute(HttpRequest httpRequest, RequestOptions requestOptions, Class<?> returnType, Class<?> innerType) {
+    return execute(httpRequest, requestOptions, serializer.getJavaType(returnType, innerType));
+  }
+
+  @Override
+  public <T> T execute(HttpRequest httpRequest, RequestOptions requestOptions, TypeReference<?> returnType) {
+    return execute(httpRequest, requestOptions, serializer.getJavaType(returnType));
+  }
+
+  /** Core method to execute an HTTP request and handle the response. */
+  private <T> T execute(@Nonnull HttpRequest httpRequest, RequestOptions requestOptions, JavaType returnType) {
+    if (isClosed.get()) {
+      throw new IllegalStateException("HttpRequester is closed");
+    }
+
+    // Create the request components.
+    HttpUrl url = createHttpUrl(httpRequest, requestOptions);
+    Headers headers = createHeaders(httpRequest, requestOptions);
+    RequestBody requestBody = createRequestBody(httpRequest);
+
+    // Build the HTTP request.
+    Request.Builder requestBuilder = new Request.Builder().url(url).headers(headers).method(httpRequest.getMethod(), requestBody);
+    if (httpRequest.isRead()) {
+      requestBuilder.tag(new UseReadTransporter());
+    }
+
+    Request request = requestBuilder.build();
+
+    // Get or adjust the HTTP client according to request.
+    OkHttpClient client = getOkHttpClient(httpRequest, requestOptions);
+
+    // Execute the request.
+    Call call = client.newCall(request);
+    try (Response response = call.execute()) {
+      // Handle unsuccessful responses.
+      if (!response.isSuccessful()) {
+        throw new FlapjackApiException(response.message(), response.code());
+      }
+
+      // Return null if there's no content or the return type isn't provided.
+      if (returnType == null || response.body() == null || response.body().contentLength() == 0) {
+        return null; // No need to deserialize, either no content or no type provided
+      }
+
+      // Returns the raw response when using `*WithHTTPInfo` methods.
+      if (returnType.hasRawClass(Response.class)) {
+        return (T) response;
+      }
+
+      // Deserialize and return the response.
+      return serializer.deserialize(response.body().byteStream(), returnType);
+    } catch (IOException exception) {
+      throw new FlapjackClientException(exception);
+    }
+  }
+
+  /** Constructs the URL for the HTTP request. */
+  @Nonnull
+  private static HttpUrl createHttpUrl(@Nonnull HttpRequest request, RequestOptions requestOptions) {
+    HttpUrl.Builder urlBuilder = new HttpUrl.Builder()
+      .scheme("https")
+      .host("algolia.com") // will be overridden by the retry strategy
+      .encodedPath(request.getPath());
+    request.getQueryParameters().forEach(urlBuilder::addEncodedQueryParameter);
+    if (requestOptions != null) {
+      requestOptions.getQueryParameters().forEach(urlBuilder::addEncodedQueryParameter);
+    }
+    return urlBuilder.build();
+  }
+
+  /** Creates a request body for the HTTP request. */
+  private RequestBody createRequestBody(HttpRequest httpRequest) {
+    String method = httpRequest.getMethod();
+    Object body = httpRequest.getBody();
+    if (!HttpMethod.permitsRequestBody(method) || (method.equals("DELETE") && body == null)) {
+      return null;
+    }
+    if (body == null) {
+      body = HttpMethod.requiresRequestBody(method) ? Collections.emptyMap() : "";
+    }
+    return buildRequestBody(body);
+  }
+
+  /** Serializes the request body into JSON format. */
+  @Nonnull
+  private RequestBody buildRequestBody(Object requestBody) {
+    return new RequestBody() {
+      @Override
+      public MediaType contentType() {
+        return JSON_MEDIA_TYPE;
+      }
+
+      @Override
+      public void writeTo(@Nonnull BufferedSink bufferedSink) {
+        serializer.serialize(bufferedSink.outputStream(), requestBody);
+      }
+    };
+  }
+
+  /** Constructs the headers for the HTTP request. */
+  @Nonnull
+  private Headers createHeaders(@Nonnull HttpRequest request, RequestOptions requestOptions) {
+    Headers.Builder builder = new Headers.Builder();
+    request.getHeaders().forEach(builder::add);
+    if (requestOptions != null) {
+      requestOptions.getHeaders().forEach(builder::add);
+    }
+    return builder.build();
+  }
+
+  /** Returns a suitable OkHttpClient instance based on the provided request options. */
+  @Nonnull
+  private OkHttpClient getOkHttpClient(HttpRequest httpRequest, RequestOptions requestOptions) {
+    OkHttpClient.Builder builder = httpClient.newBuilder();
+    // Determine if this is a read operation: either explicitly marked as read, or using GET method
+    boolean isRead = httpRequest.isRead() || "GET".equalsIgnoreCase(httpRequest.getMethod());
+    boolean changed = false;
+
+    // If this is a write operation, set readTimeout to the default writeTimeout value
+    if (!isRead) {
+      builder.readTimeout(Duration.ofMillis(httpClient.writeTimeoutMillis()));
+      changed = true;
+    }
+
+    if (isRead && requestOptions != null) {
+      // For read operations, apply connectTimeout if provided
+      if (requestOptions.getConnectTimeout() != null) {
+        builder.connectTimeout(requestOptions.getConnectTimeout());
+        changed = true;
+      }
+      // For read operations, use the explicit readTimeout if provided
+      if (requestOptions.getReadTimeout() != null) {
+        builder.readTimeout(requestOptions.getReadTimeout());
+        changed = true;
+      }
+      // For read operations, set writeTimeout if provided
+      if (requestOptions.getWriteTimeout() != null) {
+        builder.writeTimeout(requestOptions.getWriteTimeout());
+        changed = true;
+      }
+    } else if (!isRead && requestOptions != null) {
+      // For write operations, apply connectTimeout if provided
+      if (requestOptions.getConnectTimeout() != null) {
+        builder.connectTimeout(requestOptions.getConnectTimeout());
+        changed = true;
+      }
+      // For write operations, use the explicit writeTimeout for both readTimeout and writeTimeout
+      // if provided
+      if (requestOptions.getWriteTimeout() != null) {
+        builder.readTimeout(requestOptions.getWriteTimeout());
+        builder.writeTimeout(requestOptions.getWriteTimeout());
+        changed = true;
+      }
+    }
+
+    // Return a new OkHttpClient instance if any timeout was changed, otherwise reuse the default
+    // client
+    return changed ? builder.build() : httpClient;
+  }
+
+  @Override
+  public void close() throws IOException {
+    if (isClosed.get()) return;
+    httpClient.dispatcher().executorService().shutdown();
+    httpClient.connectionPool().evictAll();
+    if (httpClient.cache() != null) {
+      httpClient.cache().close();
+    }
+    isClosed.set(true);
+  }
+
+  /**
+   * The Builder class for HttpRequester. It provides a mechanism for constructing an instance of
+   * HttpRequester with customized configurations.
+   */
+  public static class Builder {
+
+    private final List<Interceptor> interceptors = new ArrayList<>();
+    private final List<Interceptor> networkInterceptors = new ArrayList<>();
+    private Duration connectTimeout = Duration.ofSeconds(2);
+    private Duration writeTimeout = Duration.ofSeconds(30);
+    private Duration readTimeout = Duration.ofSeconds(5);
+    private Consumer<OkHttpClient.Builder> clientConfig;
+    private final JsonSerializer serializer;
+
+    public Builder(JsonSerializer serializer) {
+      this.serializer = serializer;
+    }
+
+    /**
+     * Adds an interceptor to the OkHttp client.
+     *
+     * @param interceptor The interceptor to be added.
+     */
+    public Builder addInterceptor(Interceptor interceptor) {
+      interceptors.add(interceptor);
+      return this;
+    }
+
+    /**
+     * Adds a network interceptor to the OkHttp client.
+     *
+     * @param interceptor The network interceptor to be added.
+     */
+    public Builder addNetworkInterceptor(Interceptor interceptor) {
+      networkInterceptors.add(interceptor);
+      return this;
+    }
+
+    /** Sets the configuration for the OkHttp client. */
+    public Builder setHttpClientConfig(Consumer<OkHttpClient.Builder> config) {
+      this.clientConfig = config;
+      return this;
+    }
+
+    public Builder setConnectTimeout(Duration connectTimeout) {
+      this.connectTimeout = connectTimeout;
+      return this;
+    }
+
+    public Builder setWriteTimeout(Duration writeTimeout) {
+      this.writeTimeout = writeTimeout;
+      return this;
+    }
+
+    public Builder setReadTimeout(Duration readTimeout) {
+      this.readTimeout = readTimeout;
+      return this;
+    }
+
+    /**
+     * Builds and returns a HttpRequester instance.
+     *
+     * @param config The client configuration for the HttpRequester.
+     */
+    public HttpRequester build(ClientConfig config) {
+      return new HttpRequester(this, config);
+    }
+  }
+}

@@ -1,0 +1,78 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+*'
+
+jobs:
+  check:
+    name: Run checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dart-lang/setup-dart@v1
+      - name: Install Tools
+        run: dart pub global activate melos
+      - name: Bootstrap Workspace
+        run: melos bootstrap
+      - name: Install dependencies
+        run: melos get
+      - name: Check versions
+        run: melos test
+
+  publish_core:
+    needs: check
+    permissions:
+      id-token: write
+    uses: dart-lang/setup-dart/.github/workflows/publish.yml@v1
+    with:
+      working-directory: packages/client_core
+
+  wait_for_core:
+    needs: publish_core
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for core package to be published
+        shell: bash
+        run: sleep 300
+
+  publish_clients:
+    needs:
+      - check
+      - wait_for_core
+    strategy:
+      matrix:
+        package:
+          - packages/client_search
+          - packages/client_insights
+          - packages/client_recommend
+          - packages/client_composition
+    permissions:
+      id-token: write
+    uses: dart-lang/setup-dart/.github/workflows/publish.yml@v1
+    with:
+      working-directory: ${{ matrix.package }}
+
+  wait_for_dependencies:
+    needs: 
+      - check
+      - publish_core
+      - publish_clients
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for dependency package to be published
+        shell: bash
+        run: sleep 300
+
+  publish_algoliasearch:
+    needs: 
+      - check
+      - publish_core
+      - publish_clients
+      - wait_for_dependencies
+    permissions:
+      id-token: write
+    uses: dart-lang/setup-dart/.github/workflows/publish.yml@v1
+    with:
+      working-directory: packages/algoliasearch

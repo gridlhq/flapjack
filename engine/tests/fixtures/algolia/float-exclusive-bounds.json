@@ -1,0 +1,34 @@
+{
+  "version": "v1",
+  "captured_at": "2026-01-21T16:25:02.871078+00:00",
+  "test_data": [
+    {
+      "objectID": "1",
+      "price": 100.5
+    },
+    {
+      "objectID": "2",
+      "price": 150.75
+    },
+    {
+      "objectID": "3",
+      "price": 99.99
+    }
+  ],
+  "query": "",
+  "filters": "price > 100.5",
+  "expected_hits": [
+    {
+      "_highlightResult": {
+        "price": {
+          "matchLevel": "none",
+          "matchedWords": [],
+          "value": "150.75"
+        }
+      },
+      "objectID": "2",
+      "price": 150.75
+    }
+  ],
+  "expected_nb_hits": 1
+}

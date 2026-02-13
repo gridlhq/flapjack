@@ -1,0 +1,110 @@
+package com.flapjackhq.config;
+
+import com.flapjackhq.utils.StringUtils;
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.Map;
+import javax.annotation.Nullable;
+
+/**
+ * Request options are used to pass extra parameters, headers, timeout to the request. Parameters
+ * set in the request option will override default parameter.
+ */
+public final class RequestOptions {
+
+  private final Map<String, String> headers = new HashMap<>();
+  private final Map<String, String> queryParameters = new HashMap<>();
+  private Duration readTimeout;
+  private Duration writeTimeout;
+  private Duration connectTimeout;
+
+  public RequestOptions addExtraHeader(String key, Object value) {
+    if (value == null) return this;
+    headers.put(key.toLowerCase(), String.valueOf(value));
+    return this;
+  }
+
+  public RequestOptions addExtraQueryParameters(String key, Object value) {
+    if (value == null) return this;
+    queryParameters.put(key, StringUtils.paramToString((value)));
+    return this;
+  }
+
+  public Map<String, String> getExtraHeaders() {
+    return headers;
+  }
+
+  public Map<String, String> getExtraQueryParameters() {
+    return queryParameters;
+  }
+
+  public Map<String, String> getHeaders() {
+    return headers;
+  }
+
+  public Map<String, String> getQueryParameters() {
+    return queryParameters;
+  }
+
+  public Duration getReadTimeout() {
+    return readTimeout;
+  }
+
+  public RequestOptions setReadTimeout(Duration readTimeout) {
+    this.readTimeout = readTimeout;
+    return this;
+  }
+
+  public Duration getWriteTimeout() {
+    return writeTimeout;
+  }
+
+  public RequestOptions setWriteTimeout(Duration writeTimeout) {
+    this.writeTimeout = writeTimeout;
+    return this;
+  }
+
+  public Duration getConnectTimeout() {
+    return connectTimeout;
+  }
+
+  public RequestOptions setConnectTimeout(Duration connectTimeout) {
+    this.connectTimeout = connectTimeout;
+    return this;
+  }
+
+  // `this` will be merged in `other`. Values in `other` will take precedence over `this`'s.
+  public RequestOptions mergeRight(@Nullable RequestOptions other) {
+    if (other == null) {
+      return this;
+    }
+
+    RequestOptions requestOptions = new RequestOptions();
+    requestOptions.headers.putAll(this.headers);
+    requestOptions.headers.putAll(other.headers);
+    requestOptions.queryParameters.putAll(this.queryParameters);
+    requestOptions.queryParameters.putAll(other.queryParameters);
+    requestOptions.readTimeout = other.readTimeout != null ? other.readTimeout : this.readTimeout;
+    requestOptions.writeTimeout = other.writeTimeout != null ? other.writeTimeout : this.writeTimeout;
+    requestOptions.connectTimeout = other.connectTimeout != null ? other.connectTimeout : this.connectTimeout;
+    return requestOptions;
+  }
+
+  @Override
+  public String toString() {
+    return (
+      "RequestOptions{" +
+      "headers=" +
+      headers +
+      ", queryParameters=" +
+      queryParameters +
+      ", readTimeout=" +
+      readTimeout +
+      ", writeTimeout=" +
+      writeTimeout +
+      ", connectTimeout=" +
+      connectTimeout +
+      '}'
+    );
+  }
+}

@@ -115,6 +115,7 @@ export const SearchBox = memo(function SearchBox({
               variant="ghost"
               size="sm"
               onClick={handleClearFilters}
+              aria-label="Clear filters"
             >
               <X className="h-3 w-3" />
             </Button>

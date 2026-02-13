@@ -20,7 +20,10 @@ tests/
     system.spec.ts
     migrate.spec.ts            Migrate page UI (form, validation, toggles)
   integration/                 Tests requiring external services (Algolia)
-    migrate.spec.ts            Full migration E2E (seeds Algolia → migrates → verifies)
+    migrate.spec.ts            Full migration E2E-UI (seeds Algolia → migrates → verifies)
+  e2e-ui/                      End-to-end UI tests
+    smoke/                     Critical path smoke tests (fast)
+    full/                      Comprehensive E2E-UI test suite (slower)
 ```
 
 **pages/** — Fast tests that only need a running Flapjack server + Vite dev server.
@@ -36,7 +39,7 @@ tests/
 ## Running Tests
 
 ```bash
-# All tests (page + integration)
+# All tests (page + integration + e2e-ui)
 npm test
 
 # Only page tests (fast, no Algolia credentials needed)
@@ -44,6 +47,11 @@ npm run test:pages
 
 # Only integration tests (requires Algolia credentials)
 npm run test:integration
+
+# E2E-UI tests
+npm run test:e2e-ui           # All E2E-UI tests
+npm run test:e2e-ui:smoke     # Just smoke tests (critical paths)
+npm run test:e2e-ui:full      # Full E2E-UI suite
 
 # Interactive UI mode (recommended for development)
 npm run test:ui
@@ -200,3 +208,7 @@ Then uncomment the browser configs in `playwright.config.ts`.
 
 ### Integration Tests
 - **Migrate** — full Algolia-to-Flapjack migration: seeds Algolia with 12 products + synonyms + rules, fills the migration form in the browser, verifies success card with correct counts, navigates to the index, confirms documents are searchable. Also tests error state with invalid credentials.
+
+### E2E-UI Tests
+- **Smoke** — Critical path tests that run on every PR (create index → add docs → search)
+- **Full** — Comprehensive end-to-end UI test suite (runs on main branch / nightly)

@@ -2,6 +2,7 @@
 package utils
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -105,12 +106,13 @@ func ParameterToString(obj any) string {
 	}
 
 	if objKind == reflect.Map {
-		data, err := json.Marshal(obj)
-		if err != nil {
+		var buf bytes.Buffer
+		enc := json.NewEncoder(&buf)
+		enc.SetEscapeHTML(false)
+		if err := enc.Encode(obj); err != nil {
 			return fmt.Sprintf("%v", obj)
 		}
-
-		return string(data)
+		return strings.TrimSuffix(buf.String(), "\n")
 	}
 
 	if t, ok := obj.(time.Time); ok {

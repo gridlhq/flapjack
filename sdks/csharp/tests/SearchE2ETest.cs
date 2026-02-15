@@ -39,23 +39,23 @@ public class SearchE2ETest : IAsyncLifetime
         // Seed test data using batch
         var records = new List<BatchRequest>
         {
-            new(Action.AddObject, new Dictionary<string, object>
+            new(Models.Search.Action.AddObject, new Dictionary<string, object>
             {
                 {"objectID", "1"}, {"name", "iPhone 15 Pro"}, {"brand", "Apple"}, {"price", 999}, {"category", "electronics"}
             }),
-            new(Action.AddObject, new Dictionary<string, object>
+            new(Models.Search.Action.AddObject, new Dictionary<string, object>
             {
                 {"objectID", "2"}, {"name", "Samsung Galaxy S24"}, {"brand", "Samsung"}, {"price", 899}, {"category", "electronics"}
             }),
-            new(Action.AddObject, new Dictionary<string, object>
+            new(Models.Search.Action.AddObject, new Dictionary<string, object>
             {
                 {"objectID", "3"}, {"name", "Google Pixel 8"}, {"brand", "Google"}, {"price", 699}, {"category", "electronics"}
             }),
-            new(Action.AddObject, new Dictionary<string, object>
+            new(Models.Search.Action.AddObject, new Dictionary<string, object>
             {
                 {"objectID", "4"}, {"name", "MacBook Air M3"}, {"brand", "Apple"}, {"price", 1099}, {"category", "computers"}
             }),
-            new(Action.AddObject, new Dictionary<string, object>
+            new(Models.Search.Action.AddObject, new Dictionary<string, object>
             {
                 {"objectID", "5"}, {"name", "iPad Pro"}, {"brand", "Apple"}, {"price", 799}, {"category", "tablets"}
             }),
@@ -191,7 +191,7 @@ public class SearchE2ETest : IAsyncLifetime
         // Save using batch for reliability
         await _client.BatchAsync(TestIndex, new BatchWriteParams(new List<BatchRequest>
         {
-            new(Action.AddObject, newObj)
+            new(Models.Search.Action.AddObject, newObj)
         }));
         await Task.Delay(1500);
 
@@ -287,7 +287,7 @@ public class SearchE2ETest : IAsyncLifetime
         var secondIndex = "test_csharp_e2e_multi";
         await _client.BatchAsync(secondIndex, new BatchWriteParams(new List<BatchRequest>
         {
-            new(Action.AddObject, new Dictionary<string, object>
+            new(Models.Search.Action.AddObject, new Dictionary<string, object>
             {
                 {"objectID", "m1"}, {"title", "Multi Index Test"}
             })

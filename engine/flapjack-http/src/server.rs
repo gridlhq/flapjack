@@ -22,9 +22,8 @@ use crate::handlers::{
     clear_synonyms, compact_index, create_index, delete_by_query, delete_index, delete_object,
     delete_rule, delete_synonym, get_object, get_objects, get_rule, get_synonym, get_task,
     get_task_for_index, health, list_algolia_indexes, list_indices, migrate_from_algolia,
-    operation_index,
-    partial_update_object, put_object, save_rule, save_rules, save_synonym, save_synonyms, search,
-    search_facet_values, search_rules, search_synonyms, AppState,
+    operation_index, partial_update_object, put_object, save_rule, save_rules, save_synonym,
+    save_synonyms, search, search_facet_values, search_rules, search_synonyms, AppState,
 };
 use crate::middleware::{allow_private_network, normalize_content_type};
 use crate::openapi::ApiDoc;
@@ -617,12 +616,7 @@ enum AuthStatus {
     Disabled,
 }
 
-fn print_startup_banner(
-    bind_addr: &str,
-    has_dashboard: bool,
-    auth: AuthStatus,
-    startup_ms: u128,
-) {
+fn print_startup_banner(bind_addr: &str, has_dashboard: bool, auth: AuthStatus, startup_ms: u128) {
     use colored::Colorize;
 
     let url = format!("http://{}", bind_addr);
@@ -653,10 +647,7 @@ fn print_startup_banner(
                 "🔑".bold(),
                 key.as_str().cyan().bold()
             );
-            println!(
-                "     {}",
-                "(auto-generated on first start)".dimmed()
-            );
+            println!("     {}", "(auto-generated on first start)".dimmed());
             println!();
             println!("  {}  Quick Start:", "📖".bold());
             println!(

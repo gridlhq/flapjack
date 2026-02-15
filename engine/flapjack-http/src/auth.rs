@@ -360,8 +360,8 @@ pub fn reset_admin_key(data_dir: &Path) -> Result<String, String> {
 
     let contents = std::fs::read_to_string(&file_path)
         .map_err(|e| format!("Failed to read keys.json: {}", e))?;
-    let mut data: KeyStoreData = serde_json::from_str(&contents)
-        .map_err(|e| format!("Failed to parse keys.json: {}", e))?;
+    let mut data: KeyStoreData =
+        serde_json::from_str(&contents).map_err(|e| format!("Failed to parse keys.json: {}", e))?;
 
     let new_key = generate_admin_key();
 
@@ -377,8 +377,7 @@ pub fn reset_admin_key(data_dir: &Path) -> Result<String, String> {
 
     let json = serde_json::to_string_pretty(&data)
         .map_err(|e| format!("Failed to serialize keys.json: {}", e))?;
-    std::fs::write(&file_path, json)
-        .map_err(|e| format!("Failed to write keys.json: {}", e))?;
+    std::fs::write(&file_path, json).map_err(|e| format!("Failed to write keys.json: {}", e))?;
 
     Ok(new_key)
 }

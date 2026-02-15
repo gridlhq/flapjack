@@ -43,6 +43,14 @@ func StructToMap(v any) (map[string]any, error) {
 		return make(map[string]any), nil
 	}
 
+	// Fast path: if already a map[string]any, deep copy without JSON round-trip
+	// to preserve original types (JSON round-trip would convert int to float64).
+	if m, ok := v.(map[string]any); ok {
+		result := make(map[string]any)
+		deepCopyMap(result, m)
+		return result, nil
+	}
+
 	data, err := json.Marshal(v)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal to JSON: %w", err)
@@ -60,6 +68,18 @@ func StructToMap(v any) (map[string]any, error) {
 	}
 
 	return result, nil
+}
+
+func deepCopyMap(dst, src map[string]any) {
+	for k, v := range src {
+		if srcMap, ok := v.(map[string]any); ok {
+			newMap := make(map[string]any)
+			deepCopyMap(newMap, srcMap)
+			dst[k] = newMap
+		} else {
+			dst[k] = v
+		}
+	}
 }
 
 // MergeBodyParams merges custom body parameters into a typed request body.

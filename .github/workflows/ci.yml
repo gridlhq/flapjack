@@ -131,6 +131,31 @@ jobs:
         run: sh engine/tests/test_install.sh
 
   # ============================================================================
+  # BUILD SERVER (shared by SDK e2e tests)
+  # ============================================================================
+
+  build-server:
+    name: Build server binary
+    needs: check-repo
+    if: needs.check-repo.outputs.is-public-repo == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engine
+      - name: Build server
+        working-directory: engine
+        run: cargo build --release --package flapjack-server
+      - name: Upload server binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: flapjack-server
+          path: engine/target/release/flapjack-server
+          retention-days: 1
+
+  # ============================================================================
   # DASHBOARD TESTS
   # ============================================================================
 
@@ -144,11 +169,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: engine/dashboard/package-lock.json
       - name: Install dependencies
         working-directory: engine/dashboard
-        run: npm ci
+        run: npm install
       - name: Run unit tests
         working-directory: engine/dashboard
         run: npm run test:unit:run
@@ -163,11 +186,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: engine/dashboard/package-lock.json
       - name: Install dependencies
         working-directory: engine/dashboard
-        run: npm ci
+        run: npm install
       - name: Type check & build
         working-directory: engine/dashboard
         run: npm run build
@@ -182,14 +203,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: engine/dashboard/package-lock.json
+      - name: Install dependencies
+        working-directory: engine/dashboard
+        run: npm install
       - name: Install Playwright browsers
         working-directory: engine/dashboard
         run: npx playwright install --with-deps chromium
-      - name: Install dependencies
-        working-directory: engine/dashboard
-        run: npm ci
       - name: Run page tests
         working-directory: engine/dashboard
         run: npm run test:pages
@@ -211,14 +230,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: engine/dashboard/package-lock.json
+      - name: Install dependencies
+        working-directory: engine/dashboard
+        run: npm install
       - name: Install Playwright browsers
         working-directory: engine/dashboard
         run: npx playwright install --with-deps chromium
-      - name: Install dependencies
-        working-directory: engine/dashboard
-        run: npm ci
       - name: Run integration tests
         working-directory: engine/dashboard
         run: npm run test:integration
@@ -239,7 +256,7 @@ jobs:
 
   sdk-php:
     name: PHP SDK tests
-    needs: check-repo
+    needs: [check-repo, build-server]
     if: needs.check-repo.outputs.is-public-repo == 'true'
     runs-on: ubuntu-latest
     strategy:
@@ -248,6 +265,17 @@ jobs:
         php: ['8.1', '8.2', '8.3']
     steps:
       - uses: actions/checkout@v4
+      - name: Download server binary
+        uses: actions/download-artifact@v4
+        with:
+          name: flapjack-server
+          path: /tmp/flapjack
+      - name: Start Flapjack server
+        run: |
+          chmod +x /tmp/flapjack/flapjack-server
+          /tmp/flapjack/flapjack-server --no-auth --data-dir /tmp/flapjack-data &
+          sleep 3
+          curl -sf http://localhost:7700/health || (echo "Server failed to start" && exit 1)
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
@@ -262,7 +290,7 @@ jobs:
 
   sdk-python:
     name: Python SDK tests
-    needs: check-repo
+    needs: [check-repo, build-server]
     if: needs.check-repo.outputs.is-public-repo == 'true'
     runs-on: ubuntu-latest
     strategy:
@@ -271,6 +299,17 @@ jobs:
         python: ['3.9', '3.10', '3.11', '3.12']
     steps:
       - uses: actions/checkout@v4
+      - name: Download server binary
+        uses: actions/download-artifact@v4
+        with:
+          name: flapjack-server
+          path: /tmp/flapjack
+      - name: Start Flapjack server
+        run: |
+          chmod +x /tmp/flapjack/flapjack-server
+          /tmp/flapjack/flapjack-server --no-auth --data-dir /tmp/flapjack-data &
+          sleep 3
+          curl -sf http://localhost:7700/health || (echo "Server failed to start" && exit 1)
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -294,13 +333,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          # No cache - package-lock.json doesn't exist
+      - name: Enable corepack (for yarn)
+        run: corepack enable
       - name: Install dependencies
-        working-directory: sdks/javascript/packages/flapjack-search
-        run: npm install
+        working-directory: sdks/javascript
+        run: yarn install
+      - name: Build packages
+        working-directory: sdks/javascript
+        run: yarn build
       - name: Run tests
         working-directory: sdks/javascript/packages/flapjack-search
-        run: npm test
+        run: yarn test
 
   sdk-go:
     name: Go SDK tests
@@ -317,13 +360,39 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go }}
-      - name: Run tests
+      - name: Run unit tests
         working-directory: sdks/go
-        run: go test ./...
+        run: go test ./flapjack/...
+
+  sdk-go-e2e:
+    name: Go SDK e2e tests
+    needs: [check-repo, build-server]
+    if: needs.check-repo.outputs.is-public-repo == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download server binary
+        uses: actions/download-artifact@v4
+        with:
+          name: flapjack-server
+          path: /tmp/flapjack
+      - name: Start Flapjack server
+        run: |
+          chmod +x /tmp/flapjack/flapjack-server
+          /tmp/flapjack/flapjack-server --no-auth --data-dir /tmp/flapjack-data &
+          sleep 3
+          curl -sf http://localhost:7700/health || (echo "Server failed to start" && exit 1)
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Run e2e tests
+        working-directory: sdks/go
+        run: go test ./tests/...
 
   sdk-ruby:
     name: Ruby SDK tests
-    needs: check-repo
+    needs: [check-repo, build-server]
     if: needs.check-repo.outputs.is-public-repo == 'true'
     runs-on: ubuntu-latest
     strategy:
@@ -332,23 +401,47 @@ jobs:
         ruby: ['3.1', '3.2', '3.3']
     steps:
       - uses: actions/checkout@v4
+      - name: Download server binary
+        uses: actions/download-artifact@v4
+        with:
+          name: flapjack-server
+          path: /tmp/flapjack
+      - name: Start Flapjack server
+        run: |
+          chmod +x /tmp/flapjack/flapjack-server
+          /tmp/flapjack/flapjack-server --no-auth --data-dir /tmp/flapjack-data &
+          sleep 3
+          curl -sf http://localhost:7700/health || (echo "Server failed to start" && exit 1)
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: ${{ matrix.ruby }}
-          bundler-cache: true
           working-directory: sdks/ruby
+      - name: Install dependencies
+        working-directory: sdks/ruby
+        run: bundle install
       - name: Run tests
         working-directory: sdks/ruby
         run: bundle exec rake test
 
   sdk-java:
     name: Java SDK tests
-    needs: check-repo
+    needs: [check-repo, build-server]
     if: needs.check-repo.outputs.is-public-repo == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Download server binary
+        uses: actions/download-artifact@v4
+        with:
+          name: flapjack-server
+          path: /tmp/flapjack
+      - name: Start Flapjack server
+        run: |
+          chmod +x /tmp/flapjack/flapjack-server
+          /tmp/flapjack/flapjack-server --no-auth --data-dir /tmp/flapjack-data &
+          sleep 3
+          curl -sf http://localhost:7700/health || (echo "Server failed to start" && exit 1)
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
@@ -360,11 +453,22 @@ jobs:
 
   sdk-csharp:
     name: C# SDK tests
-    needs: check-repo
+    needs: [check-repo, build-server]
     if: needs.check-repo.outputs.is-public-repo == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Download server binary
+        uses: actions/download-artifact@v4
+        with:
+          name: flapjack-server
+          path: /tmp/flapjack
+      - name: Start Flapjack server
+        run: |
+          chmod +x /tmp/flapjack/flapjack-server
+          /tmp/flapjack/flapjack-server --no-auth --data-dir /tmp/flapjack-data &
+          sleep 3
+          curl -sf http://localhost:7700/health || (echo "Server failed to start" && exit 1)
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -382,7 +486,7 @@ jobs:
 
   integration-laravel-scout:
     name: Laravel Scout tests
-    needs: check-repo
+    needs: [check-repo, build-server]
     if: needs.check-repo.outputs.is-public-repo == 'true'
     runs-on: ubuntu-latest
     strategy:
@@ -391,15 +495,40 @@ jobs:
         php: ['8.1', '8.2', '8.3']
     steps:
       - uses: actions/checkout@v4
+      - name: Check if tests exist
+        id: check-tests
+        run: |
+          if [ -d "integrations/laravel-scout/src" ] && [ -d "integrations/laravel-scout/tests" ]; then
+            echo "has-tests=true" >> $GITHUB_OUTPUT
+          else
+            echo "has-tests=false" >> $GITHUB_OUTPUT
+            echo "::warning::Laravel Scout src/ or tests/ directory not found, skipping tests"
+          fi
+      - name: Download server binary
+        if: steps.check-tests.outputs.has-tests == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: flapjack-server
+          path: /tmp/flapjack
+      - name: Start Flapjack server
+        if: steps.check-tests.outputs.has-tests == 'true'
+        run: |
+          chmod +x /tmp/flapjack/flapjack-server
+          /tmp/flapjack/flapjack-server --no-auth --data-dir /tmp/flapjack-data &
+          sleep 3
+          curl -sf http://localhost:7700/health || (echo "Server failed to start" && exit 1)
       - name: Setup PHP
+        if: steps.check-tests.outputs.has-tests == 'true'
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
           extensions: mbstring, curl, json
       - name: Install dependencies
+        if: steps.check-tests.outputs.has-tests == 'true'
         working-directory: integrations/laravel-scout
         run: composer install --no-interaction --prefer-dist
       - name: Run tests
+        if: steps.check-tests.outputs.has-tests == 'true'
         working-directory: integrations/laravel-scout
         run: vendor/bin/phpunit
 

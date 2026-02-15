@@ -78,7 +78,7 @@ export async function deleteFlapjackIndex(
     await fetch(`${baseUrl}/1/indexes/${indexName}`, {
       method: 'DELETE',
       headers: {
-        'x-algolia-api-key': 'abcdef0123456789',
+        'x-algolia-api-key': 'fj_devtestadminkey000000',
         'x-algolia-application-id': 'flapjack',
       },
     });

@@ -36,6 +36,7 @@ dotenv.config({ path: join(__dirname, '..', '.secret', '.env.secret') });
 const ALGOLIA_APP_ID = process.env.ALGOLIA_APP_ID;
 const ALGOLIA_ADMIN_KEY = process.env.ALGOLIA_ADMIN_KEY;
 const FLAPJACK_URL = process.env.FLAPJACK_URL || 'http://localhost:7700';
+const FLAPJACK_ADMIN_KEY = process.env.FLAPJACK_ADMIN_KEY || 'fj_test_admin_key_for_local_dev';
 const VERBOSE = process.argv.includes('--verbose');
 
 if (!ALGOLIA_APP_ID || !ALGOLIA_ADMIN_KEY) {
@@ -71,7 +72,7 @@ function flapjackRequester(baseUrl) {
 }
 
 const algolia = algoliasearch(ALGOLIA_APP_ID, ALGOLIA_ADMIN_KEY);
-const flapjack = algoliasearch('migration-test', 'test-key', {
+const flapjack = algoliasearch('flapjack', FLAPJACK_ADMIN_KEY, {
   requester: flapjackRequester(FLAPJACK_URL),
 });
 
@@ -487,8 +488,8 @@ async function phase3b_migrateOneClick() {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'x-algolia-api-key': 'test-key',
-      'x-algolia-application-id': 'migration-test',
+      'x-algolia-api-key': FLAPJACK_ADMIN_KEY,
+      'x-algolia-application-id': 'flapjack',
     },
     body: JSON.stringify({
       appId: ALGOLIA_APP_ID,
@@ -520,7 +521,7 @@ async function phase3b_migrateOneClick() {
 
   // Wait for indexing to settle
   log('Waiting for Flapjack one-click index to settle ...');
-  const flapjackOneClick = algoliasearch('migration-test', 'test-key', {
+  const flapjackOneClick = algoliasearch('flapjack', FLAPJACK_ADMIN_KEY, {
     requester: flapjackRequester(FLAPJACK_URL),
   });
   const start = Date.now();
@@ -613,8 +614,8 @@ async function phase3c_remigrationSafety() {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'x-algolia-api-key': 'test-key',
-      'x-algolia-application-id': 'migration-test',
+      'x-algolia-api-key': FLAPJACK_ADMIN_KEY,
+      'x-algolia-application-id': 'flapjack',
     },
     body: JSON.stringify({
       appId: ALGOLIA_APP_ID,
@@ -643,8 +644,8 @@ async function phase3c_remigrationSafety() {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'x-algolia-api-key': 'test-key',
-      'x-algolia-application-id': 'migration-test',
+      'x-algolia-api-key': FLAPJACK_ADMIN_KEY,
+      'x-algolia-application-id': 'flapjack',
     },
     body: JSON.stringify({
       appId: ALGOLIA_APP_ID,
@@ -686,7 +687,7 @@ async function phase5_cleanup() {
   try {
     const resp = await fetch(`${FLAPJACK_URL}/1/indexes/${INDEX_NAME}`, {
       method: 'DELETE',
-      headers: { 'x-algolia-api-key': 'test-key', 'x-algolia-application-id': 'migration-test' },
+      headers: { 'x-algolia-api-key': FLAPJACK_ADMIN_KEY, 'x-algolia-application-id': 'flapjack' },
     });
     log(`Deleted index on Flapjack (manual) ... ${resp.ok ? 'OK' : 'FAILED (' + resp.status + ')'}`);
   } catch (e) {
@@ -697,7 +698,7 @@ async function phase5_cleanup() {
   try {
     const resp = await fetch(`${FLAPJACK_URL}/1/indexes/${ONECLICK_INDEX}`, {
       method: 'DELETE',
-      headers: { 'x-algolia-api-key': 'test-key', 'x-algolia-application-id': 'migration-test' },
+      headers: { 'x-algolia-api-key': FLAPJACK_ADMIN_KEY, 'x-algolia-application-id': 'flapjack' },
     });
     log(`Deleted index on Flapjack (one-click) ... ${resp.ok ? 'OK' : 'FAILED (' + resp.status + ')'}`);
   } catch (e) {

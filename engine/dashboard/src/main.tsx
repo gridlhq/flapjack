@@ -14,8 +14,9 @@ const queryClient = new QueryClient({
   },
 });
 
-// Use /dashboard basename in production, empty in development
-const basename = import.meta.env.MODE === 'production' ? '/dashboard' : '';
+// Derive basename from Vite's base config (matches vite.config.ts).
+// BASE_URL is '/dashboard/' in production build, '/' in dev.
+const basename = import.meta.env.BASE_URL === '/' ? '' : import.meta.env.BASE_URL.replace(/\/$/, '');
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

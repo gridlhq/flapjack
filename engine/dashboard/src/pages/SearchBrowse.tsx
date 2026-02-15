@@ -9,14 +9,14 @@ import { SearchBox } from '@/components/search/SearchBox';
 import { ResultsPanel } from '@/components/search/ResultsPanel';
 import { FacetsPanel } from '@/components/search/FacetsPanel';
 import { AddDocumentsDialog } from '@/components/documents/AddDocumentsDialog';
-import { useIndices } from '@/hooks/useIndices';
+import { useIndexes } from '@/hooks/useIndexes';
 import { formatBytes } from '@/lib/utils';
 import api from '@/lib/api';
 import type { SearchParams } from '@/lib/types';
 
 export function SearchBrowse() {
   const { indexName } = useParams<{ indexName: string }>();
-  const { data: indices } = useIndices();
+  const { data: indexes } = useIndexes();
   const [trackAnalytics, setTrackAnalytics] = useState(false);
   const [searchParams, setSearchParams] = useState<SearchParams>({
     query: '',
@@ -26,10 +26,18 @@ export function SearchBrowse() {
   });
   const [showAddDocs, setShowAddDocs] = useState(false);
 
-  const currentIndex = indices?.find((idx) => idx.uid === indexName);
+  const currentIndex = indexes?.find((idx) => idx.uid === indexName);
 
-  // Generate a stable user token for the dashboard session
-  const dashboardUserToken = useMemo(() => `dashboard-${crypto.randomUUID().slice(0, 8)}`, []);
+  // Stable user token persisted in sessionStorage to avoid inflating unique user counts
+  const dashboardUserToken = useMemo(() => {
+    const key = 'fj-dashboard-user-token';
+    let token = sessionStorage.getItem(key);
+    if (!token) {
+      token = `dashboard-${crypto.randomUUID().slice(0, 8)}`;
+      sessionStorage.setItem(key, token);
+    }
+    return token;
+  }, []);
 
   // Merge analytics params into search params when tracking is on
   const effectiveParams = useMemo<SearchParams>(() => {
@@ -165,6 +173,7 @@ export function SearchBrowse() {
         params={searchParams}
         onParamsChange={handleParamsChange}
       />
+      <p className="text-xs text-orange-500">Known bug: synonym matches are not highlighted in results</p>
 
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4 min-h-0">
         <ResultsPanel

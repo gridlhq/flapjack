@@ -52,7 +52,7 @@ pub struct KeyStore {
 impl KeyStore {
     pub fn load_or_create(data_dir: &Path, admin_key: &str) -> Self {
         let file_path = data_dir.join("keys.json");
-        let data = if file_path.exists() {
+        let mut data = if file_path.exists() {
             match std::fs::read_to_string(&file_path) {
                 Ok(contents) => match serde_json::from_str::<KeyStoreData>(&contents) {
                     Ok(d) => d,
@@ -67,19 +67,21 @@ impl KeyStore {
                 }
             }
         } else {
-            let data = Self::create_default_keys(admin_key);
-            let search_key = data
-                .keys
-                .iter()
-                .find(|k| k.description == "Default Search API Key");
-            tracing::info!("=== Flapjack API Keys ===");
-            tracing::info!("Admin API Key: {}", admin_key);
-            if let Some(sk) = search_key {
-                tracing::info!("Default Search API Key: {}", sk.value);
-            }
-            tracing::info!("=========================");
-            data
+            Self::create_default_keys(admin_key)
         };
+
+        // Ensure the admin entry in keys.json matches the provided admin_key.
+        // This handles key rotation via FLAPJACK_ADMIN_KEY env var: without this,
+        // the old key stays in keys.json and the new key can't authenticate.
+        if let Some(admin_entry) = data
+            .keys
+            .iter_mut()
+            .find(|k| k.description == "Admin API Key")
+        {
+            if admin_entry.value != admin_key {
+                admin_entry.value = admin_key.to_string();
+            }
+        }
 
         let store = Self {
             data: RwLock::new(data),
@@ -124,7 +126,7 @@ impl KeyStore {
         };
 
         let search_key = ApiKey {
-            value: generate_hex_key(),
+            value: format!("fj_{}", generate_hex_key()),
             created_at: now,
             acl: vec!["search".into()],
             description: "Default Search API Key".into(),
@@ -169,7 +171,7 @@ impl KeyStore {
     }
 
     pub fn create_key(&self, mut key: ApiKey) -> ApiKey {
-        key.value = generate_hex_key();
+        key.value = format!("fj_{}", generate_hex_key());
         key.created_at = Utc::now().timestamp_millis();
         let mut data = self.data.write().unwrap();
         data.keys.push(key.clone());
@@ -333,6 +335,54 @@ pub fn generate_hex_key() -> String {
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
+/// Generate a prefixed admin key (fj_ + 32 hex chars).
+pub fn generate_admin_key() -> String {
+    format!("fj_{}", generate_hex_key())
+}
+
+/// Read the admin key from an existing keys.json, if one exists.
+pub fn read_existing_admin_key(data_dir: &Path) -> Option<String> {
+    let file_path = data_dir.join("keys.json");
+    let contents = std::fs::read_to_string(&file_path).ok()?;
+    let data: KeyStoreData = serde_json::from_str(&contents).ok()?;
+    data.keys
+        .iter()
+        .find(|k| k.description == "Admin API Key")
+        .map(|k| k.value.clone())
+}
+
+/// Generate a new admin key and update keys.json. Returns the new key.
+pub fn reset_admin_key(data_dir: &Path) -> Result<String, String> {
+    let file_path = data_dir.join("keys.json");
+    if !file_path.exists() {
+        return Err("No keys.json found. Start the server first to initialize.".into());
+    }
+
+    let contents = std::fs::read_to_string(&file_path)
+        .map_err(|e| format!("Failed to read keys.json: {}", e))?;
+    let mut data: KeyStoreData = serde_json::from_str(&contents)
+        .map_err(|e| format!("Failed to parse keys.json: {}", e))?;
+
+    let new_key = generate_admin_key();
+
+    if let Some(admin) = data
+        .keys
+        .iter_mut()
+        .find(|k| k.description == "Admin API Key")
+    {
+        admin.value = new_key.clone();
+    } else {
+        return Err("No admin key found in keys.json.".into());
+    }
+
+    let json = serde_json::to_string_pretty(&data)
+        .map_err(|e| format!("Failed to serialize keys.json: {}", e))?;
+    std::fs::write(&file_path, json)
+        .map_err(|e| format!("Failed to write keys.json: {}", e))?;
+
+    Ok(new_key)
+}
+
 pub fn required_acl_for_route(method: &Method, path: &str) -> Option<&'static str> {
     if path.starts_with("/1/keys") {
         return Some("admin");
@@ -350,10 +400,22 @@ pub fn required_acl_for_route(method: &Method, path: &str) -> Option<&'static st
 
     let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
 
+    // GET /1/indexes → listIndexes, POST /1/indexes → addObject (create index)
+    if parts.len() == 2 && parts[0] == "1" && parts[1] == "indexes" {
+        return match *method {
+            Method::GET => Some("listIndexes"),
+            Method::POST => Some("addObject"),
+            _ => None,
+        };
+    }
+
     if parts.len() >= 3 && parts[0] == "1" && parts[1] == "indexes" {
         if parts.len() == 3 && !parts[2].is_empty() {
+            // POST /1/indexes/:indexName → addObject (Algolia save-object endpoint)
+            // DELETE /1/indexes/:indexName → deleteIndex
             return match *method {
                 Method::DELETE => Some("deleteIndex"),
+                Method::POST => Some("addObject"),
                 _ => None,
             };
         }
@@ -481,7 +543,12 @@ pub async fn authenticate_and_authorize(
 
     let path = request.uri().path().to_string();
 
-    if path == "/health" {
+    // Skip auth for public endpoints: health check, dashboard UI, API docs
+    if path == "/health"
+        || path.starts_with("/dashboard")
+        || path.starts_with("/swagger-ui")
+        || path.starts_with("/api-docs")
+    {
         return Ok(next.run(request).await);
     }
 

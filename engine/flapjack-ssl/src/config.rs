@@ -67,8 +67,10 @@ impl SslConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn test_config_from_env() {
         env::set_var("FLAPJACK_SSL_EMAIL", "test@example.com");
         env::set_var("FLAPJACK_PUBLIC_IP", "127.0.0.1");
@@ -84,6 +86,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_config_requires_email() {
         env::remove_var("FLAPJACK_SSL_EMAIL");
         env::set_var("FLAPJACK_PUBLIC_IP", "127.0.0.1");

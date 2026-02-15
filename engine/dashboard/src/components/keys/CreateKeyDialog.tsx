@@ -1,7 +1,7 @@
 import { memo, useState, useCallback } from 'react';
 import { Shield } from 'lucide-react';
 import { useCreateApiKey } from '@/hooks/useApiKeys';
-import { useIndices } from '@/hooks/useIndices';
+import { useIndexes } from '@/hooks/useIndexes';
 import { InfoTooltip } from '@/components/ui/info-tooltip';
 import {
   Dialog,
@@ -26,9 +26,9 @@ const ACL_OPTIONS = [
   { value: 'browse', label: 'Browse', description: 'Browse all documents' },
   { value: 'addObject', label: 'Add Object', description: 'Add new documents' },
   { value: 'deleteObject', label: 'Delete Object', description: 'Delete documents' },
-  { value: 'deleteIndex', label: 'Delete Index', description: 'Delete entire indices' },
+  { value: 'deleteIndex', label: 'Delete Index', description: 'Delete entire indexes' },
   { value: 'settings', label: 'Settings', description: 'Modify index settings' },
-  { value: 'listIndexes', label: 'List Indexes', description: 'List all indices' },
+  { value: 'listIndexes', label: 'List Indexes', description: 'List all indexes' },
   { value: 'analytics', label: 'Analytics', description: 'Access analytics data' },
 ];
 
@@ -37,11 +37,11 @@ export const CreateKeyDialog = memo(function CreateKeyDialog({
   onOpenChange,
 }: CreateKeyDialogProps) {
   const createKey = useCreateApiKey();
-  const { data: indices } = useIndices();
+  const { data: indexes } = useIndexes();
 
   const [description, setDescription] = useState('');
   const [selectedAcl, setSelectedAcl] = useState<string[]>(['search']);
-  const [selectedIndices, setSelectedIndices] = useState<string[]>([]);
+  const [selectedIndexes, setSelectedIndexes] = useState<string[]>([]);
   const [maxHitsPerQuery, setMaxHitsPerQuery] = useState('');
   const [maxQueriesPerIPPerHour, setMaxQueriesPerIPPerHour] = useState('');
 
@@ -55,7 +55,7 @@ export const CreateKeyDialog = memo(function CreateKeyDialog({
       await createKey.mutateAsync({
         description: description || undefined,
         acl: selectedAcl,
-        indexes: selectedIndices.length > 0 ? selectedIndices : undefined,
+        indexes: selectedIndexes.length > 0 ? selectedIndexes : undefined,
         maxHitsPerQuery: maxHitsPerQuery
           ? parseInt(maxHitsPerQuery, 10)
           : undefined,
@@ -67,7 +67,7 @@ export const CreateKeyDialog = memo(function CreateKeyDialog({
       // Reset form
       setDescription('');
       setSelectedAcl(['search']);
-      setSelectedIndices([]);
+      setSelectedIndexes([]);
       setMaxHitsPerQuery('');
       setMaxQueriesPerIPPerHour('');
       onOpenChange(false);
@@ -77,7 +77,7 @@ export const CreateKeyDialog = memo(function CreateKeyDialog({
   }, [
     description,
     selectedAcl,
-    selectedIndices,
+    selectedIndexes,
     maxHitsPerQuery,
     maxQueriesPerIPPerHour,
     createKey,
@@ -93,7 +93,7 @@ export const CreateKeyDialog = memo(function CreateKeyDialog({
   }, []);
 
   const toggleIndex = useCallback((indexUid: string) => {
-    setSelectedIndices((prev) =>
+    setSelectedIndexes((prev) =>
       prev.includes(indexUid)
         ? prev.filter((v) => v !== indexUid)
         : [...prev, indexUid]
@@ -161,19 +161,19 @@ export const CreateKeyDialog = memo(function CreateKeyDialog({
             <div className="flex items-center gap-2">
               <Shield className="h-4 w-4 text-amber-500" />
               <Label className="text-base font-semibold">Index Scope</Label>
-              <InfoTooltip content="Scoping a key to specific indices restricts what data it can access — essential for secure multi-index deployments." />
+              <InfoTooltip content="Scoping a key to specific indexes restricts what data it can access — essential for secure multi-index deployments." />
             </div>
             <p className="text-xs text-muted-foreground">
-              Restrict this key to specific indices for access control, or leave unselected for access to all indices
+              Restrict this key to specific indexes for access control, or leave unselected for access to all indexes
             </p>
-            {indices && indices.length > 0 ? (
+            {indexes && indexes.length > 0 ? (
               <div className="flex flex-wrap gap-2">
-                {indices.map((index) => (
+                {indexes.map((index) => (
                   <button
                     key={index.uid}
                     onClick={() => toggleIndex(index.uid)}
                     className={`px-3 py-1 rounded-md text-sm border transition-colors ${
-                      selectedIndices.includes(index.uid)
+                      selectedIndexes.includes(index.uid)
                         ? 'border-primary bg-primary/10'
                         : 'border-border hover:border-primary/50'
                     }`}
@@ -184,13 +184,13 @@ export const CreateKeyDialog = memo(function CreateKeyDialog({
               </div>
             ) : (
               <p className="text-xs text-muted-foreground italic">
-                No indices created yet. Create an index first to scope keys.
+                No indexes created yet. Create an index first to scope keys.
               </p>
             )}
-            {selectedIndices.length > 0 && (
+            {selectedIndexes.length > 0 && (
               <div className="flex items-center gap-2 mt-1 text-sm" data-testid="scope-summary">
                 <span className="text-muted-foreground">This key can access:</span>
-                {selectedIndices.map((idx) => (
+                {selectedIndexes.map((idx) => (
                   <Badge key={idx} variant="outline">{idx}</Badge>
                 ))}
               </div>

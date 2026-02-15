@@ -9,6 +9,7 @@ import {
   Eye,
   EyeOff,
   AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -26,6 +27,12 @@ interface MigrationResult {
   taskID: number;
 }
 
+interface AlgoliaIndexInfo {
+  name: string;
+  entries: number;
+  updatedAt: string;
+}
+
 export function Migrate() {
   const queryClient = useQueryClient();
 
@@ -35,6 +42,37 @@ export function Migrate() {
   const [targetIndex, setTargetIndex] = useState('');
   const [overwrite, setOverwrite] = useState(false);
   const [showKey, setShowKey] = useState(false);
+
+  // Algolia index listing
+  const [algoliaIndexes, setAlgoliaIndexes] = useState<AlgoliaIndexInfo[] | null>(null);
+  const [indexListError, setIndexListError] = useState<string | null>(null);
+
+  const fetchIndexes = useMutation({
+    mutationFn: async () => {
+      const response = await api.post<{ indexes: AlgoliaIndexInfo[] }>(
+        '/1/algolia-list-indexes',
+        { appId: appId.trim(), apiKey: apiKey.trim() }
+      );
+      return response.data.indexes;
+    },
+    onSuccess: (indexes) => {
+      setAlgoliaIndexes(indexes);
+      setIndexListError(null);
+      // Auto-select if there's only one index
+      if (indexes.length === 1) {
+        setSourceIndex(indexes[0].name);
+      }
+    },
+    onError: (error) => {
+      setAlgoliaIndexes(null);
+      const msg = getErrorMessage(error);
+      if (msg.includes('403') || msg.includes('Forbidden')) {
+        setIndexListError('API key does not have permission to list indexes. Type the index name manually.');
+      } else {
+        setIndexListError(msg);
+      }
+    },
+  });
 
   const migration = useMutation({
     mutationFn: async () => {
@@ -54,7 +92,7 @@ export function Migrate() {
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['indices'] });
+      queryClient.invalidateQueries({ queryKey: ['indexes'] });
     },
   });
 
@@ -62,6 +100,7 @@ export function Migrate() {
     migration.mutate();
   }, [migration]);
 
+  const canFetchIndexes = appId.trim() && apiKey.trim() && !fetchIndexes.isPending;
   const canSubmit =
     appId.trim() && apiKey.trim() && sourceIndex.trim() && !migration.isPending;
 
@@ -88,7 +127,11 @@ export function Migrate() {
               <Input
                 id="app-id"
                 value={appId}
-                onChange={(e) => setAppId(e.target.value)}
+                onChange={(e) => {
+                  setAppId(e.target.value);
+                  setAlgoliaIndexes(null);
+                  setIndexListError(null);
+                }}
                 placeholder="YourAlgoliaAppId"
                 disabled={migration.isPending}
                 autoComplete="off"
@@ -101,8 +144,12 @@ export function Migrate() {
                   id="api-key"
                   type={showKey ? 'text' : 'password'}
                   value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="Your admin API key"
+                  onChange={(e) => {
+                    setApiKey(e.target.value);
+                    setAlgoliaIndexes(null);
+                    setIndexListError(null);
+                  }}
+                  placeholder="Your Algolia Admin API key"
                   disabled={migration.isPending}
                   autoComplete="off"
                   className="pr-10"
@@ -125,13 +172,95 @@ export function Migrate() {
               </p>
             </div>
           </div>
+
+          {/* Load Indexes button */}
+          {appId.trim() && apiKey.trim() && (
+            <div className="pt-1">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fetchIndexes.mutate()}
+                disabled={!canFetchIndexes || migration.isPending}
+              >
+                {fetchIndexes.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Loading indexes...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    {algoliaIndexes ? 'Refresh Indexes' : 'Load Indexes from Algolia'}
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {/* Index picker (shown after loading) */}
+      {algoliaIndexes && algoliaIndexes.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">
+              Select Source Index
+              <span className="text-muted-foreground font-normal text-sm ml-2">
+                {algoliaIndexes.length} index{algoliaIndexes.length !== 1 ? 'es' : ''} found
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-1 max-h-64 overflow-y-auto">
+              {algoliaIndexes.map((idx) => (
+                <button
+                  key={idx.name}
+                  type="button"
+                  onClick={() => setSourceIndex(idx.name)}
+                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                    sourceIndex === idx.name
+                      ? 'bg-primary text-primary-foreground'
+                      : 'hover:bg-muted'
+                  }`}
+                  disabled={migration.isPending}
+                >
+                  <span className="font-medium">{idx.name}</span>
+                  <span className={`ml-2 text-xs ${
+                    sourceIndex === idx.name
+                      ? 'text-primary-foreground/70'
+                      : 'text-muted-foreground'
+                  }`}>
+                    {idx.entries.toLocaleString()} record{idx.entries !== 1 ? 's' : ''}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {algoliaIndexes && algoliaIndexes.length === 0 && (
+        <Card className="border-yellow-500/50">
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">
+              No indexes found in this Algolia account. Check your Application ID.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {indexListError && (
+        <Card className="border-yellow-500/50">
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">{indexListError}</p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Index names */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Index</CardTitle>
+          <CardTitle className="text-lg">Index Name</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -141,7 +270,7 @@ export function Migrate() {
                 id="source-index"
                 value={sourceIndex}
                 onChange={(e) => setSourceIndex(e.target.value)}
-                placeholder="e.g., products, articles"
+                placeholder={algoliaIndexes ? 'Select above or type name' : 'e.g., products, articles'}
                 disabled={migration.isPending}
               />
             </div>

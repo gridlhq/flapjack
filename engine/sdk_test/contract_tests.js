@@ -1,30 +1,6 @@
-import { algoliasearch } from 'algoliasearch';
+import { createFlapjackClient, FLAPJACK_ADMIN_KEY } from './lib/flapjack-client.js';
 
-function createLocalRequester() {
-  return {
-    async send(request) {
-      const url = new URL(request.url);
-      url.protocol = 'http:';
-      url.host = 'localhost:7700';
-      
-      const response = await fetch(url.toString(), {
-        method: request.method,
-        headers: request.headers,
-        body: request.data
-      });
-      
-      return {
-        status: response.status,
-        content: await response.text(),
-        isTimedOut: false
-      };
-    }
-  };
-}
-
-const client = algoliasearch('test-app', 'test-key', {
-  requester: createLocalRequester()
-});
+const client = createFlapjackClient();
 
 const TEST_INDEX = 'contract_test_' + Date.now();
 
@@ -170,8 +146,8 @@ test('PUT /1/indexes/{indexName}/{objectID}', async () => {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
-      'x-algolia-api-key': 'test-key',
-      'x-algolia-application-id': 'test-app'
+      'x-algolia-api-key': FLAPJACK_ADMIN_KEY,
+      'x-algolia-application-id': 'flapjack'
     },
     body: JSON.stringify({ name: 'Product 3', category: 'test' })
   });
@@ -480,8 +456,8 @@ test('POST /1/indexes/{indexName}/facets/{facetName}/query - facet search', asyn
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-algolia-api-key': 'test-key',
-      'x-algolia-application-id': 'test-app'
+      'x-algolia-api-key': FLAPJACK_ADMIN_KEY,
+      'x-algolia-application-id': 'flapjack'
     },
     body: JSON.stringify({ facetQuery: 'app' })
   });
@@ -505,8 +481,8 @@ test('DELETE /1/indexes/{indexName} - delete index', async () => {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-algolia-api-key': 'test-key',
-      'x-algolia-application-id': 'test-app'
+      'x-algolia-api-key': FLAPJACK_ADMIN_KEY,
+      'x-algolia-application-id': 'flapjack'
     },
     body: JSON.stringify({
       requests: [{ action: 'addObject', body: { objectID: '1', name: 'Test' } }]
@@ -518,8 +494,8 @@ test('DELETE /1/indexes/{indexName} - delete index', async () => {
   await fetch('http://localhost:7700/1/indexes/' + tempIndex, {
     method: 'DELETE',
     headers: {
-      'x-algolia-api-key': 'test-key',
-      'x-algolia-application-id': 'test-app'
+      'x-algolia-api-key': FLAPJACK_ADMIN_KEY,
+      'x-algolia-application-id': 'flapjack'
     }
   });
   
@@ -528,8 +504,8 @@ test('DELETE /1/indexes/{indexName} - delete index', async () => {
   const response = await fetch('http://localhost:7700/1/indexes/' + tempIndex + '/1', {
     method: 'GET',
     headers: {
-      'x-algolia-api-key': 'test-key',
-      'x-algolia-application-id': 'test-app'
+      'x-algolia-api-key': FLAPJACK_ADMIN_KEY,
+      'x-algolia-application-id': 'flapjack'
     }
   });
   

@@ -1,5 +1,7 @@
 # Flapjack Dashboard
 
+never run cargo clean! never run the entire test suite ntil the very last step! until you've run all relevant targeted tests and done "cargo smoke" etc
+
 Web UI for managing Flapjack search indices. React + TypeScript + Playwright.
 
 **This is a 100% AI-written codebase with single maintainer and zero manual QA.** Documentation is structured for AI consumption.
@@ -48,17 +50,18 @@ always refer to e2e-ui as e2e-ui tests so we dont get confused and think they're
 4. Implement tests (following spec exactly)
 5. Implement feature to pass tests
 
-**Test Types:**
-- **Unit tests** (65%): `npm run test:unit` — Vitest + React Testing Library
-- **Integration tests** (25%): `npm test` — Playwright with real backend
-- **E2E smoke tests** (5%): `npm run test:smoke` — Critical paths (~2 min)
-- **E2E full suite** (5%): `npm run test:e2e` — All features (~10-15 min)
+**Test Types — CRITICAL DISTINCTION:**
+- **E2E-UI tests**: `npm test` — **Real Chromium browser**, real server, simulated human. NO mocks. `tests/e2e-ui/`
+- **E2E-API tests**: `npm run test:e2e-api` — Pure HTTP API tests. **No browser.** No `page.goto()`. `tests/e2e-api/`
+- **Unit tests**: `npm run test:unit` — Vitest + React Testing Library. Fast, isolated.
+
+If a test opens a browser → it goes in `e2e-ui/`. Period.
+If a test only calls REST APIs → it goes in `e2e-api/`. Period.
 
 **Coverage targets:**
+- E2E-UI: 100% of user-facing features (real browser, simulated human)
+- E2E-API: API shape/data integrity verification
 - Unit: 85%+ (components, hooks, utilities)
-- Integration: 100% user-facing features
-- E2E smoke: 5-7 critical paths
-- E2E full: 30-50 comprehensive tests
 
 ### Development
 
@@ -74,9 +77,10 @@ npm run server
 
 # Run tests
 npm run test:unit        # Unit tests (watch mode)
-npm test                 # E2E integration tests
+npm test                 # E2E-UI tests (real browser, no mocks)
 npm run test:smoke       # Smoke tests only
-npm run test:e2e         # Full E2E suite
+npm run test:e2e-ui      # Full E2E-UI suite
+npm run test:e2e-api     # API-level tests (no browser rendering)
 npm run test:ui          # Playwright UI mode (debugging)
 
 # Build
@@ -128,11 +132,10 @@ dashboard/
 │   │   └── analytics.md
 │   ├── fixtures/                  # Test data with expected values
 │   │   └── test-data.ts
-│   ├── e2e/
+│   ├── e2e-ui/                     # NON-MOCKED SIMULATED-HUMAN REAL-BROWSER TESTS
 │   │   ├── smoke/                 # Fast critical paths (2 min)
 │   │   └── full/                  # Comprehensive suite (10-15 min)
-│   ├── integration/               # Integration tests (Playwright)
-│   └── pages/                     # Page object tests
+│   └── e2e-api/                   # API-level tests (no browser rendering)
 ├── package.json
 ├── playwright.config.ts
 ├── vitest.config.ts

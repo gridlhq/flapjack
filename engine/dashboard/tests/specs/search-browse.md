@@ -12,6 +12,8 @@
 **Location:** `tests/fixtures/test-data.ts`
 
 ```typescript
+// Actual seed data: 12 products in tests/fixtures/test-data.ts
+// 3 laptops: MacBook Pro 16", ThinkPad X1 Carbon, Dell XPS 15
 export const searchFixtures = {
   query: {
     simple: 'laptop',
@@ -21,19 +23,19 @@ export const searchFixtures = {
   },
   expectedResults: {
     simple: {
-      count: 5,
-      firstTitle: 'MacBook Pro 16"',
+      count: 3, // 3 laptops in seed data
+      firstTitle: 'MacBook Pro 16"', // highest rating (4.8) due to desc(rating) ranking
     },
     withTypo: {
-      count: 5, // same as 'laptop' due to typo tolerance
+      count: 3, // same as 'laptop' due to typo tolerance
     },
     noResults: {
       count: 0,
     },
   },
   facets: {
-    brand: ['Apple', 'Dell', 'HP'],
-    category: ['Laptops', 'Desktops', 'Accessories'],
+    brand: ['Apple', 'Lenovo', 'Dell', 'Samsung', 'Sony', 'LG', 'Logitech', 'Keychron', 'CalDigit'],
+    category: ['Laptops', 'Tablets', 'Audio', 'Storage', 'Monitors', 'Accessories'],
   },
 }
 ```
@@ -44,7 +46,7 @@ export const searchFixtures = {
 
 **User Story:** B-SEARCH-001
 **Type:** E2E Smoke
-**File:** `tests/e2e/smoke/search.spec.ts`
+**File:** `tests/e2e-ui/smoke/search.spec.ts`
 
 ### Setup
 - Index `products` exists with sample documents
@@ -60,15 +62,15 @@ export const searchFixtures = {
 - `[data-testid="results-panel"]` is visible
 - `[data-testid="document-card"]` count >= 1
 - First card contains text matching `searchFixtures.expectedResults.simple.firstTitle`
-- Results count shows "5 results"
+- Results count shows "3 results"
 
 ### Verify API
 - GET `/indexes/products/search?q=laptop` returns 200
-- Response.hits.length = 5
+- Response.hits.length = 3
 - Response.hits[0].title contains 'MacBook'
 
 ### Expected Values
-- Total results: 5 (from fixtures.expectedResults.simple.count)
+- Total results: 3 (from fixtures.expectedResults.simple.count)
 - First title: 'MacBook Pro 16"' (from fixtures)
 
 ### Cleanup
@@ -80,7 +82,7 @@ export const searchFixtures = {
 
 **User Story:** B-SEARCH-001 (edge case)
 **Type:** E2E Full
-**File:** `tests/e2e/full/search.spec.ts`
+**File:** `tests/e2e-ui/full/search.spec.ts`
 
 ### Fixtures
 - Query with typo: `searchFixtures.query.withTypo` ('labtop')
@@ -93,7 +95,7 @@ export const searchFixtures = {
 
 ### Verify UI
 - Results panel shows results (not "No results")
-- Results count: "5 results"
+- Results count: "3 results"
 - First card matches "MacBook Pro 16""
 
 ### Verify API
@@ -102,7 +104,7 @@ export const searchFixtures = {
 
 ### Expected Values
 - Same results as searching 'laptop'
-- Count: 5
+- Count: 3
 
 ### Cleanup
 - None
@@ -113,7 +115,7 @@ export const searchFixtures = {
 
 **User Story:** B-SEARCH-002
 **Type:** E2E Full
-**File:** `tests/e2e/full/search-facets.spec.ts`
+**File:** `tests/e2e-ui/full/search-facets.spec.ts`
 
 ### Setup
 - Index `products` with facets configured: ['brand', 'category']
@@ -151,7 +153,7 @@ export const searchFixtures = {
 
 **User Story:** B-SEARCH-002-BUG (regression test)
 **Type:** E2E Full
-**File:** `tests/e2e/full/search-facets.spec.ts`
+**File:** `tests/e2e-ui/full/search-facets.spec.ts`
 
 ### Setup
 - Index with documents that don't match specific filter combination
@@ -190,7 +192,7 @@ export const searchFixtures = {
 
 **User Story:** B-SEARCH-002
 **Type:** E2E Full
-**File:** `tests/e2e/full/search-facets.spec.ts`
+**File:** `tests/e2e-ui/full/search-facets.spec.ts`
 
 ### Setup
 - Search with active facet filters
@@ -212,7 +214,7 @@ export const searchFixtures = {
 - Response matches original search
 
 ### Expected Values
-- Results count: back to original (5)
+- Results count: back to original (3)
 - No active filters
 
 ### Cleanup
@@ -224,7 +226,7 @@ export const searchFixtures = {
 
 **User Story:** B-SEARCH-003
 **Type:** E2E Full
-**File:** `tests/e2e/full/search-pagination.spec.ts`
+**File:** `tests/e2e-ui/full/search-pagination.spec.ts`
 
 ### Setup
 - Index with 25 documents (more than one page at 10 per page)
@@ -265,7 +267,7 @@ export const searchFixtures = {
 
 **User Story:** B-SEARCH-004
 **Type:** E2E Full
-**File:** `tests/e2e/full/document-viewer.spec.ts`
+**File:** `tests/e2e-ui/full/document-viewer.spec.ts`
 
 ### Setup
 - Search with results
@@ -324,7 +326,7 @@ expect(screen.getByRole('textbox')).toHaveValue('')
 
 ### Component: DocumentCard
 
-**File:** `src/components/search/DocumentCard.test.tsx`
+**File:** `src/components/search/DocumentCard.test.tsx` _(TODO: unit test file not yet implemented)_
 
 #### Test: Renders document summary in collapsed state
 ```typescript
@@ -353,22 +355,22 @@ expect(screen.getByText(/"objectID"/)).toBeInTheDocument() // JSON key visible
 
 ### Component: FacetsPanel
 
-**File:** `src/components/search/FacetsPanel.test.tsx`
+**File:** `src/components/search/FacetsPanel.test.tsx` _(TODO: unit test file not yet implemented)_
 
 #### Test: Renders facet values with counts
 ```typescript
 const mockFacets = {
   brand: {
-    'Apple': 5,
-    'Dell': 3,
-    'HP': 2,
+    'Apple': 3,
+    'Dell': 1,
+    'Samsung': 2,
   },
 }
 
 render(<FacetsPanel facets={mockFacets} />)
 
 expect(screen.getByText('Apple')).toBeInTheDocument()
-expect(screen.getByText('5')).toBeInTheDocument()
+expect(screen.getByText('3')).toBeInTheDocument()
 ```
 
 #### Test: Calls onFilterChange when facet value clicked
@@ -408,7 +410,7 @@ expect(screen.getByText('Apple')).toBeInTheDocument()
 
 ### Hook: useSearch
 
-**File:** `src/hooks/useSearch.test.ts`
+**File:** `src/hooks/useSearch.test.ts` _(TODO: unit test file not yet implemented)_
 
 #### Test: Fetches search results on query change
 ```typescript
@@ -449,9 +451,57 @@ expect(result.current.data.hits).toHaveLength(5)
 
 ---
 
+## TEST: Facets remain visible when filter produces 0 results (B-SEARCH-005)
+
+**User Story:** B-SEARCH-005
+**Type:** E2E-UI (route mocking)
+**File:** `tests/e2e-ui/full/search-facets-regression.spec.ts`
+
+### Setup
+- Mock search endpoint: first call returns results with facets, second call (with facetFilters) returns 0 hits
+- Navigate to `/index/test-index`
+
+### Execute
+1. Wait for facets panel to load with facet values
+2. Click a facet value to apply filter
+3. Mock returns 0 results for filtered query
+
+### Verify UI
+- Facets panel is still visible (data-testid="facets-panel")
+- Facets panel does NOT show "No facets configured"
+- Active filter is shown and can be cleared
+- Clear button is visible
+
+### Expected Values
+- Facets panel: visible
+- "No facets configured": NOT visible
+
+---
+
+## TEST: Facet counts reflect current search (B-SEARCH-006)
+
+**User Story:** B-SEARCH-006
+**Type:** E2E-UI (route mocking)
+**File:** `tests/e2e-ui/full/search-facets-regression.spec.ts`
+
+### Setup
+- Mock search endpoint: return different facet counts based on query
+
+### Execute
+1. Navigate to `/index/test-index`
+2. Verify initial facet counts
+3. Type a search query
+4. Wait for search results to update
+
+### Verify UI
+- Facet counts update to reflect filtered results
+- Counts match the search response facet data
+
+---
+
 ## Known Issues
 
-- **B-SEARCH-002-BUG:** FacetsPanel makes redundant query - needs state lifting to parent
+- **B-SEARCH-002-BUG:** FacetsPanel made redundant query — FIXED: uses separate unfiltered query for facet list
 - **Performance:** Analytics fetches all data on mount - needs lazy loading
 
 ---
@@ -460,6 +510,5 @@ expect(result.current.data.hits).toHaveLength(5)
 
 - Facets panel bug has regression test to prevent recurrence
 - All tests use fixtures with expected values
-- Search tests require backend server with populated index
+- E2E-UI tests use route mocking (no real backend required)
 - Unit tests mock API responses
-- E2E tests use real Flapjack server

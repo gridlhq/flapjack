@@ -35,7 +35,7 @@ export const mockIndexResponse = {
 
 **User Story:** B-IDX-001
 **Type:** E2E Integration
-**File:** `tests/e2e/smoke/overview.spec.ts`
+**File:** `tests/e2e-ui/smoke/overview.spec.ts`
 
 ### Setup
 - Backend server running on port 7700
@@ -56,7 +56,7 @@ export const mockIndexResponse = {
 - Response is array of index objects
 
 ### Expected Values
-- Stats cards: 4 cards (Indexes, Documents, API Calls, Storage)
+- Stats cards: 4 cards (Indexes, Documents, Storage, Status/Health)
 - Index list: >= 1 index displayed
 - Pagination: visible if > 10 indexes
 
@@ -69,7 +69,7 @@ export const mockIndexResponse = {
 
 **User Story:** B-IDX-002
 **Type:** E2E Full
-**File:** `tests/e2e/full/index-management.spec.ts`
+**File:** `tests/e2e-ui/full/index-management.spec.ts`
 
 ### Fixtures
 - `validIndexName` = 'test-index-1234'
@@ -112,7 +112,7 @@ await page.request.delete(`http://localhost:7700/indexes/${validIndexName}`)
 
 **User Story:** B-IDX-002 (edge case)
 **Type:** Unit + E2E
-**File:** `src/lib/validators.test.ts` + `tests/e2e/full/index-management.spec.ts`
+**File:** `src/lib/validators.test.ts` + `tests/e2e-ui/full/index-management.spec.ts`
 
 ### Fixtures
 - `invalidIndexNames.uppercase` = 'TestIndex'
@@ -147,7 +147,7 @@ await page.request.delete(`http://localhost:7700/indexes/${validIndexName}`)
 
 **User Story:** B-IDX-003
 **Type:** E2E Full
-**File:** `tests/e2e/full/index-management.spec.ts`
+**File:** `tests/e2e-ui/full/index-management.spec.ts`
 
 ### Fixtures
 - Create temporary index: `test-delete-index`
@@ -197,7 +197,7 @@ try {
 
 **User Story:** B-IDX-003 (edge case)
 **Type:** E2E Full
-**File:** `tests/e2e/full/index-management.spec.ts`
+**File:** `tests/e2e-ui/full/index-management.spec.ts`
 
 ### Setup
 - Index `test-cancel-delete` exists
@@ -230,7 +230,7 @@ await page.request.delete('http://localhost:7700/indexes/test-cancel-delete')
 
 ### Component: IndexCard
 
-**File:** `src/components/IndexCard.test.tsx`
+**File:** `src/components/IndexCard.test.tsx` _(TODO: unit test file not yet implemented)_
 
 #### Test: Renders index name and stats
 ```typescript
@@ -261,7 +261,7 @@ expect(handleDelete).toHaveBeenCalledWith('my-index')
 
 ### Component: CreateIndexDialog
 
-**File:** `src/components/CreateIndexDialog.test.tsx`
+**File:** `src/components/CreateIndexDialog.test.tsx` _(TODO: unit test file not yet implemented)_
 
 #### Test: Validates index name on blur
 ```typescript
@@ -290,7 +290,7 @@ await waitFor(() => {
 
 ### Utility: validateIndexName
 
-**File:** `src/lib/validators.test.ts`
+**File:** `src/lib/validators.test.ts` _(TODO: unit test file not yet implemented)_
 
 #### Test: Accepts valid names
 ```typescript

@@ -32,6 +32,17 @@ def japicmp = tasks.register('japicmp', JapicmpTask) {
   txtOutputFile.set(file("$buildDir/reports/japi.txt"))
   ignoreMissingClasses.set(true)
   includeSynthetic.set(true)
+
+  // Skip if baseline doesn't exist (first release)
+  onlyIf {
+    try {
+      baselineConfig.get().resolve()
+      true
+    } catch (Exception e) {
+      logger.info("Skipping japicmp - baseline version not found (likely first release)")
+      false
+    }
+  }
 }
 
 tasks.findByName('check').configure {

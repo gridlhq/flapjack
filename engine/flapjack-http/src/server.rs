@@ -12,13 +12,17 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::auth::{authenticate_and_authorize, generate_hex_key, KeyStore};
+use crate::auth::{
+    authenticate_and_authorize, generate_admin_key, generate_hex_key, read_existing_admin_key,
+    KeyStore,
+};
 use crate::handlers::snapshot;
 use crate::handlers::{
     add_documents, add_record_auto_id, batch_search, browse_index, clear_index, clear_rules,
     clear_synonyms, compact_index, create_index, delete_by_query, delete_index, delete_object,
     delete_rule, delete_synonym, get_object, get_objects, get_rule, get_synonym, get_task,
-    get_task_for_index, health, list_indices, migrate_from_algolia, operation_index,
+    get_task_for_index, health, list_algolia_indexes, list_indices, migrate_from_algolia,
+    operation_index,
     partial_update_object, put_object, save_rule, save_rules, save_synonym, save_synonyms, search,
     search_facet_values, search_rules, search_synonyms, AppState,
 };
@@ -27,12 +31,24 @@ use crate::openapi::ApiDoc;
 use flapjack::IndexManager;
 
 pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
+    let startup_start = std::time::Instant::now();
+
     let env_mode = std::env::var("FLAPJACK_ENV").unwrap_or_else(|_| "development".into());
-    let admin_key = std::env::var("FLAPJACK_ADMIN_KEY")
+    let no_auth = std::env::var("FLAPJACK_NO_AUTH")
+        .ok()
+        .filter(|v| v == "1")
+        .is_some();
+
+    if no_auth && env_mode == "production" {
+        eprintln!("ERROR: --no-auth cannot be used in production mode.");
+        std::process::exit(1);
+    }
+
+    let admin_key_env = std::env::var("FLAPJACK_ADMIN_KEY")
         .ok()
         .filter(|k| !k.is_empty());
 
-    match (env_mode.as_str(), &admin_key) {
+    match (env_mode.as_str(), &admin_key_env) {
         ("production", None) => {
             let suggested = generate_hex_key();
             eprintln!("ERROR: FLAPJACK_ADMIN_KEY is required in production mode.");
@@ -71,23 +87,39 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
 
     let data_dir = std::env::var("FLAPJACK_DATA_DIR").unwrap_or_else(|_| "./data".to_string());
 
-    let key_store = match std::env::var("FLAPJACK_ADMIN_KEY") {
-        Ok(admin_key) if !admin_key.is_empty() => {
-            let ks = Arc::new(KeyStore::load_or_create(
-                std::path::Path::new(&data_dir),
-                &admin_key,
-            ));
+    // Determine effective admin key:
+    //   1. --no-auth → no key
+    //   2. FLAPJACK_ADMIN_KEY env var → use it
+    //   3. Existing admin key in keys.json → use it (auto-migrate to fj_ prefix)
+    //   4. Otherwise → auto-generate a new key (with fj_ prefix)
+    let (admin_key, key_is_new) = if no_auth {
+        (None, false)
+    } else if let Some(key) = admin_key_env {
+        (Some(key), false)
+    } else if let Some(key) = read_existing_admin_key(Path::new(&data_dir)) {
+        // Auto-migrate old keys that don't have the fj_ prefix
+        if key.starts_with("fj_") {
+            (Some(key), false)
+        } else {
+            let migrated = format!("fj_{}", key);
+            tracing::info!("Migrating admin key to fj_ prefix format");
+            (Some(migrated), false)
+        }
+    } else {
+        let key = generate_admin_key();
+        (Some(key), true)
+    };
+
+    let key_store = match admin_key {
+        Some(ref key) => {
+            let ks = Arc::new(KeyStore::load_or_create(Path::new(&data_dir), key));
             tracing::info!("API key authentication enabled");
             Some(ks)
         }
-        _ => {
-            if env_mode == "development" {
-                tracing::warn!("⚠ No FLAPJACK_ADMIN_KEY set — all routes unprotected.");
-                tracing::warn!("⚠ Set FLAPJACK_ENV=production to enforce authentication.");
-            }
-            None
-        }
+        None => None,
     };
+
+    let has_auth = key_store.is_some();
 
     let manager = IndexManager::new(&data_dir);
 
@@ -302,6 +334,7 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
             post(add_record_auto_id).delete(delete_index),
         )
         .route("/1/migrate-from-algolia", post(migrate_from_algolia))
+        .route("/1/algolia-list-indexes", post(list_algolia_indexes))
         .route("/1/tasks/:task_id", get(get_task))
         .route(
             "/1/indexes/:indexName/task/:task_id",
@@ -324,7 +357,8 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
 
     let swagger = SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi());
 
-    // Internal replication endpoints (no auth)
+    // Internal replication endpoints (auth middleware applies when auth is enabled;
+    // no specific ACL required beyond a valid key — relies on network isolation for peer trust)
     let internal = Router::new()
         .route(
             "/internal/replicate",
@@ -439,7 +473,8 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
 
     // Dashboard static files
     let dashboard_path = Path::new("dashboard/dist");
-    let dashboard_service = if dashboard_path.exists() {
+    let has_dashboard = dashboard_path.exists();
+    let dashboard_service = if has_dashboard {
         tracing::info!("Dashboard enabled at /dashboard");
         Some(
             ServeDir::new(dashboard_path)
@@ -464,9 +499,9 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         .merge(protected)
         .merge(analytics_routes)
         .merge(insights_routes)
-        .merge(internal); // Add internal routes before auth middleware
+        .merge(internal);
 
-    // Add dashboard route if available (before auth middleware so static files don't require API key)
+    // Add dashboard route (auth middleware skips /dashboard paths)
     let app = if let Some(dashboard_svc) = dashboard_service {
         app.nest_service("/dashboard", dashboard_svc)
     } else {
@@ -497,62 +532,191 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         },
     );
     // Quickstart API: simple, no-auth convenience endpoints for local dev.
-    // Merged AFTER auth middleware layer so these routes bypass authentication.
-    let quickstart = Router::new()
-        .route(
-            "/indexes",
-            get(crate::handlers::quickstart::qs_list_indexes),
-        )
-        .route(
-            "/indexes/:indexName/search",
-            get(crate::handlers::quickstart::qs_search_get)
-                .post(crate::handlers::quickstart::qs_search_post),
-        )
-        .route(
-            "/indexes/:indexName/documents",
-            post(crate::handlers::quickstart::qs_add_documents),
-        )
-        .route(
-            "/indexes/:indexName/documents/delete",
-            post(crate::handlers::quickstart::qs_delete_documents),
-        )
-        .route(
-            "/indexes/:indexName/documents/:docId",
-            get(crate::handlers::quickstart::qs_get_document)
-                .delete(crate::handlers::quickstart::qs_delete_document),
-        )
-        .route(
-            "/indexes/:indexName/settings",
-            get(crate::handlers::quickstart::qs_get_settings)
-                .put(crate::handlers::quickstart::qs_set_settings),
-        )
-        .route(
-            "/indexes/:indexName",
-            delete(crate::handlers::quickstart::qs_delete_index),
-        )
-        .route(
-            "/tasks/:taskId",
-            get(crate::handlers::quickstart::qs_get_task),
-        )
-        .route("/migrate", post(crate::handlers::quickstart::qs_migrate))
-        .with_state(state.clone());
-
+    // Only available when auth is disabled (--no-auth / FLAPJACK_NO_AUTH=1).
+    // When auth is enabled, all data access must go through the authenticated
+    // /1/indexes/* routes — no search engine (Algolia, Meilisearch, Typesense)
+    // exposes unprotected data routes, even for convenience.
+    let app = app.layer(auth_middleware);
+    let app = if !has_auth {
+        let quickstart = Router::new()
+            .route(
+                "/indexes",
+                get(crate::handlers::quickstart::qs_list_indexes),
+            )
+            .route(
+                "/indexes/:indexName/search",
+                get(crate::handlers::quickstart::qs_search_get)
+                    .post(crate::handlers::quickstart::qs_search_post),
+            )
+            .route(
+                "/indexes/:indexName/documents",
+                post(crate::handlers::quickstart::qs_add_documents),
+            )
+            .route(
+                "/indexes/:indexName/documents/delete",
+                post(crate::handlers::quickstart::qs_delete_documents),
+            )
+            .route(
+                "/indexes/:indexName/documents/:docId",
+                get(crate::handlers::quickstart::qs_get_document)
+                    .delete(crate::handlers::quickstart::qs_delete_document),
+            )
+            .route(
+                "/indexes/:indexName/settings",
+                get(crate::handlers::quickstart::qs_get_settings)
+                    .put(crate::handlers::quickstart::qs_set_settings),
+            )
+            .route(
+                "/indexes/:indexName",
+                delete(crate::handlers::quickstart::qs_delete_index),
+            )
+            .route(
+                "/tasks/:taskId",
+                get(crate::handlers::quickstart::qs_get_task),
+            )
+            .route("/migrate", post(crate::handlers::quickstart::qs_migrate))
+            .with_state(state.clone());
+        app.merge(quickstart)
+    } else {
+        app
+    };
     let app = app
-        .layer(auth_middleware)
-        .merge(quickstart)
         .layer(memory_middleware)
         .layer(DefaultBodyLimit::max(max_body_mb * 1024 * 1024))
         .layer(middleware::from_fn(normalize_content_type))
         .layer(CorsLayer::very_permissive().max_age(std::time::Duration::from_secs(86400)))
         .layer(middleware::from_fn(allow_private_network));
 
-    tracing::info!("Starting Flapjack server on {}", bind_addr);
-
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
+
+    let auth_status = if no_auth {
+        AuthStatus::Disabled
+    } else if key_is_new {
+        AuthStatus::NewKey(admin_key.clone().unwrap())
+    } else if let Some(ref key) = admin_key {
+        AuthStatus::ExistingKey(key.clone())
+    } else {
+        AuthStatus::Disabled
+    };
+
+    print_startup_banner(
+        &bind_addr,
+        has_dashboard,
+        auth_status,
+        startup_start.elapsed().as_millis(),
+    );
+
     axum::serve(listener, app).await?;
 
     Ok(())
 }
+
+enum AuthStatus {
+    NewKey(String),
+    ExistingKey(String),
+    Disabled,
+}
+
+fn print_startup_banner(
+    bind_addr: &str,
+    has_dashboard: bool,
+    auth: AuthStatus,
+    startup_ms: u128,
+) {
+    use colored::Colorize;
+
+    let url = format!("http://{}", bind_addr);
+    let version = format!("v{}", env!("CARGO_PKG_VERSION"));
+    let timing = format!("ready in {}ms", startup_ms);
+
+    println!();
+    println!(
+        "  {} {}  {}",
+        "🥞 Flapjack".bold().bright_green(),
+        version.as_str().dimmed(),
+        timing.as_str().dimmed(),
+    );
+    println!();
+    println!("  {}  Local:      {}", "➜".green(), url.as_str().cyan());
+    if has_dashboard {
+        let dash = format!("{}/dashboard", url);
+        println!("  {}  Dashboard:  {}", "➜".green(), dash.as_str().cyan());
+    }
+    let docs = format!("{}/swagger-ui", url);
+    println!("  {}  API Docs:   {}", "➜".green(), docs.as_str().cyan());
+
+    match auth {
+        AuthStatus::NewKey(ref key) => {
+            println!();
+            println!(
+                "  {}  Admin API Key:  {}",
+                "🔑".bold(),
+                key.as_str().cyan().bold()
+            );
+            println!(
+                "     {}",
+                "(auto-generated on first start)".dimmed()
+            );
+            println!();
+            println!("  {}  Quick Start:", "📖".bold());
+            println!(
+                "     {}  {}",
+                "curl".bold(),
+                format!(
+                    "-H 'x-algolia-api-key: {}' -H 'x-algolia-application-id: flapjack' {}/1/indexes",
+                    key, url
+                ).dimmed()
+            );
+            println!();
+            println!("  {}  Useful Commands:", "⚡".bold());
+            println!(
+                "     {}  {}",
+                "Set your own key:".dimmed(),
+                "FLAPJACK_ADMIN_KEY=<key> flapjack".cyan()
+            );
+            println!(
+                "     {}  {}",
+                "Reset admin key: ".dimmed(),
+                "flapjack reset-admin-key".cyan()
+            );
+            println!(
+                "     {}  {}",
+                "Disable auth:    ".dimmed(),
+                "flapjack --no-auth".cyan()
+            );
+        }
+        AuthStatus::ExistingKey(ref key) => {
+            println!();
+            println!(
+                "  {}  Admin API Key:  {}",
+                "🔑".bold(),
+                key.as_str().cyan().bold()
+            );
+            println!();
+            println!("  {}  Useful Commands:", "⚡".bold());
+            println!(
+                "     {}  {}",
+                "Reset admin key: ".dimmed(),
+                "flapjack reset-admin-key".cyan()
+            );
+            println!(
+                "     {}  {}",
+                "Disable auth:    ".dimmed(),
+                "flapjack --no-auth".cyan()
+            );
+        }
+        AuthStatus::Disabled => {
+            println!();
+            println!(
+                "  {}  {}",
+                "⚠".yellow(),
+                "Auth disabled (--no-auth) — all routes are unprotected".yellow(),
+            );
+        }
+    }
+    println!();
+}
+
 async fn auto_restore_from_s3(
     data_dir: &str,
     s3_config: &flapjack::index::s3::S3Config,

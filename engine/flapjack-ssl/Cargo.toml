@@ -17,3 +17,4 @@ thiserror = "1.0"
 
 [dev-dependencies]
 tokio = { version = "1.35", features = ["macros", "rt-multi-thread", "sync", "time"] }
+serial_test = "3.0"

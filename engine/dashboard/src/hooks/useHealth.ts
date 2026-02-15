@@ -13,7 +13,8 @@ export function useHealth() {
       // Backend returns 200 OK when healthy (may have empty body)
       return { status: 'ok' } as HealthResponse;
     },
-    refetchInterval: 10000, // Check health every 10 seconds
-    retry: 2,
+    refetchInterval: 3000, // Check health every 3 seconds
+    retry: 1,
+    retryDelay: 1000,
   });
 }

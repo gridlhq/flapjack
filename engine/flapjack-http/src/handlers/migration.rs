@@ -111,6 +111,67 @@ async fn algolia_post(
         .map_err(|e| format!("Failed to parse Algolia response: {}", e))
 }
 
+// ── List Algolia indexes ────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct ListAlgoliaIndexesRequest {
+    #[serde(rename = "appId")]
+    pub app_id: String,
+
+    #[serde(rename = "apiKey")]
+    pub api_key: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AlgoliaIndexInfo {
+    pub name: String,
+    pub entries: u64,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
+}
+
+pub async fn list_algolia_indexes(
+    Json(payload): Json<ListAlgoliaIndexesRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    if payload.app_id.is_empty() || payload.api_key.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"message": "appId and apiKey are required"})),
+        ));
+    }
+
+    let client = reqwest::Client::new();
+    let resp = algolia_get(&client, &payload.app_id, &payload.api_key, "/1/indexes")
+        .await
+        .map_err(|e| algolia_error(&e))?;
+
+    let items = resp
+        .get("items")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let indexes: Vec<AlgoliaIndexInfo> = items
+        .iter()
+        .filter_map(|item| {
+            let name = item.get("name")?.as_str()?.to_string();
+            let entries = item.get("entries").and_then(|v| v.as_u64()).unwrap_or(0);
+            let updated_at = item
+                .get("updatedAt")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            Some(AlgoliaIndexInfo {
+                name,
+                entries,
+                updated_at,
+            })
+        })
+        .collect();
+
+    Ok(Json(serde_json::json!({ "indexes": indexes })))
+}
+
 /// One-click migration from Algolia to Flapjack.
 ///
 /// Fetches settings, synonyms, rules, and all objects from the source Algolia

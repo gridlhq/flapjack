@@ -15,16 +15,12 @@ export const useAuth = create<AuthStore>()(
       apiKey: null,
       appId: 'flapjack',
       setApiKey: (key: string) => {
-        localStorage.setItem('flapjack-api-key', key);
         set({ apiKey: key });
       },
       setAppId: (id: string) => {
-        localStorage.setItem('flapjack-app-id', id);
         set({ appId: id });
       },
       clearAuth: () => {
-        localStorage.removeItem('flapjack-api-key');
-        localStorage.removeItem('flapjack-app-id');
         set({ apiKey: null, appId: 'flapjack' });
       },
     }),

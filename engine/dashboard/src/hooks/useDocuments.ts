@@ -23,7 +23,7 @@ export function useDeleteDocument(indexName: string) {
     },
     onSuccess: (_data, objectID) => {
       queryClient.invalidateQueries({ queryKey: ['search'] });
-      queryClient.invalidateQueries({ queryKey: ['indices'] });
+      queryClient.invalidateQueries({ queryKey: ['indexes'] });
       toast({
         title: 'Document deleted',
         description: `"${objectID}" has been removed.`,
@@ -54,7 +54,7 @@ export function useAddDocuments(indexName: string) {
     },
     onSuccess: (data, documents) => {
       queryClient.invalidateQueries({ queryKey: ['search'] });
-      queryClient.invalidateQueries({ queryKey: ['indices'] });
+      queryClient.invalidateQueries({ queryKey: ['indexes'] });
 
       const taskID = data.taskID;
 
@@ -82,7 +82,7 @@ export function useAddDocuments(indexName: string) {
             removeActiveTask(taskID);
             // Re-invalidate to pick up newly indexed docs
             queryClient.invalidateQueries({ queryKey: ['search'] });
-            queryClient.invalidateQueries({ queryKey: ['indices'] });
+            queryClient.invalidateQueries({ queryKey: ['indexes'] });
             queryClient.invalidateQueries({ queryKey: ['index-stats'] });
             dismiss();
             const rejected = task.rejected_count || 0;

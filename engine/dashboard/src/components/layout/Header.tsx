@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Moon, Sun, Settings, Menu, Loader2, ListTodo } from 'lucide-react';
+import { Moon, Sun, Settings, Menu, Loader2, ListTodo, Bug } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { useTheme } from '@/hooks/useTheme';
@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useHealth } from '@/hooks/useHealth';
 import { useIndexingStatus } from '@/hooks/useIndexingStatus';
 import { ConnectionDialog } from './ConnectionDialog';
+import { useDevMode } from '@/hooks/useDevMode';
 
 interface HeaderProps {
   onMenuToggle?: () => void;
@@ -18,6 +19,7 @@ export function Header({ onMenuToggle }: HeaderProps) {
   const { apiKey } = useAuth();
   const health = useHealth();
   const { isIndexing, totalPending, activeTasks } = useIndexingStatus();
+  const devMode = useDevMode();
   const [showSettings, setShowSettings] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
   const queueRef = useRef<HTMLDivElement>(null);
@@ -55,6 +57,7 @@ export function Header({ onMenuToggle }: HeaderProps) {
           <Menu className="h-5 w-5" />
         </Button>
         <Link to="/" className="text-xl font-bold hover:opacity-80 transition-opacity"><span className="text-2xl">🥞</span> Flapjack</Link>
+        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-orange-500 text-white uppercase tracking-wider leading-none">Beta</span>
         <span className="text-sm text-muted-foreground hidden sm:inline">{serverHost}</span>
         {isChecking ? (
           <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400">
@@ -142,6 +145,16 @@ export function Header({ onMenuToggle }: HeaderProps) {
             API Docs
           </Button>
         </a>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={devMode.toggle}
+          aria-label="Toggle dev mode"
+          title={devMode.enabled ? 'Disable dev mode' : 'Enable dev mode'}
+          className={devMode.enabled ? 'text-orange-500' : ''}
+        >
+          <Bug className="h-5 w-5" />
+        </Button>
         <Button
           variant="ghost"
           size="icon"

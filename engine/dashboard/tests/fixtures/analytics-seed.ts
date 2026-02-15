@@ -13,7 +13,7 @@ import type { APIRequestContext } from '@playwright/test';
 const API = 'http://localhost:7700';
 const HEADERS = {
   'x-algolia-application-id': 'flapjack',
-  'x-algolia-api-key': 'abcdef0123456789',
+  'x-algolia-api-key': 'fj_devtestadminkey000000',
   'Content-Type': 'application/json',
 };
 

@@ -2,61 +2,84 @@
 
 End-to-end tests for the Flapjack dashboard using [Playwright](https://playwright.dev).
 
+## Test Categories — IMPORTANT DISTINCTION
+
+| Category | Directory | What it does | Browser? |
+|----------|-----------|--------------|----------|
+| **e2e-ui** | `tests/e2e-ui/` | Simulated-human interaction with a real rendered browser. Clicks, types, navigates exactly like a user would. **NO mocks.** | YES — real Chromium |
+| **e2e-api** | `tests/e2e-api/` | REST API calls directly to the server. Verifies response shapes, data integrity, and API contracts. Some tests also open a browser for hybrid verification. | Mixed — mostly API |
+
+When we say "e2e-ui tests" we mean **non-mocked, simulated-human, real-browser tests**. Not API tests. Not unit tests. Real browser.
+
 ## Directory Structure
 
 ```
 tests/
-  global-setup.ts              Loads .env.secret for integration tests
+  global-setup.ts              Loads .env.secret for e2e-api tests
   fixtures/
     auth.fixture.ts            Shared localStorage auth seeding
     algolia.fixture.ts         Algolia index seed / teardown helpers
+    analytics-seed.ts          Analytics data seeding helpers
     test-data.ts               Test data constants (products, synonyms, rules)
-  pages/                       UI-only page tests (no external services)
-    overview.spec.ts
-    search.spec.ts
-    settings.spec.ts
-    apikeys.spec.ts
-    navigation.spec.ts
-    system.spec.ts
-    migrate.spec.ts            Migrate page UI (form, validation, toggles)
-  integration/                 Tests requiring external services (Algolia)
-    migrate.spec.ts            Full migration E2E-UI (seeds Algolia → migrates → verifies)
-  e2e-ui/                      End-to-end UI tests
-    smoke/                     Critical path smoke tests (fast)
-    full/                      Comprehensive E2E-UI test suite (slower)
+  e2e-ui/                      REAL BROWSER — simulated human interaction
+    seed.setup.ts              Seeds test data before e2e-ui suite
+    cleanup.setup.ts           Tears down test data after e2e-ui suite
+    helpers.ts                 Constants and re-exports
+    smoke/                     Critical path smoke tests (~2 min)
+      critical-paths.spec.ts   7 must-pass tests
+    full/                      Comprehensive E2E-UI suite (10-15 min)
+      overview.spec.ts         Index management, stat cards, create/delete
+      search.spec.ts           Search, facets, filtering, pagination
+      analytics.spec.ts        6 tabs, KPIs, charts, date ranges
+      analytics-deep.spec.ts   Deep data verification (seeded values)
+      rules.spec.ts            Rule CRUD, JSON editor, conditions
+      synonyms.spec.ts         Synonym CRUD, types, search/filter
+      settings.spec.ts         Settings form, JSON editor, save/reset
+      merchandising.spec.ts    Pin/hide, save as rule, reset
+      api-keys.spec.ts         Key CRUD, permissions, scoping
+      search-logs.spec.ts      API log viewer, expand, filter, export
+      system.spec.ts           Health, indexes, replication, snapshots
+      migrate.spec.ts          Migration form UI and validation
+      migrate-algolia.spec.ts  Full Algolia migration (needs credentials)
+      navigation.spec.ts       Sidebar, routing, dark mode
+      cross-page-flows.spec.ts Cross-page data consistency
+  e2e-api/                     PURE API — no browser, no page.goto()
+    analytics-api-shapes.spec.ts   API response shapes
+    analytics-data-api.spec.ts     Data rollup verification (seeded)
+    demo-analytics-api.spec.ts     Seed/flush/clear endpoints
+  specs/                       BDD specifications (Tier 2)
+    *.md                       Feature specs with Given/When/Then
+    behaviors/                 Detailed behavior specs
 ```
 
-**pages/** — Fast tests that only need a running Flapjack server + Vite dev server.
+**e2e-ui/** — Real Chromium browser, real server, no mocks. Every test interacts with the UI exactly like a human user would. This is our primary test coverage. **If a test uses `page.goto()`, it goes here.**
 
-**integration/** — Tests that talk to external services (Algolia). They skip gracefully when credentials are not configured.
+**e2e-api/** — Pure REST API tests via Playwright's `request` fixture. No browser rendering. No `page.goto()`. HTTP calls only. Tests response shapes, data integrity, and API contracts.
 
 ## Prerequisites
 
 - **Flapjack server** running on `localhost:7700`
 - **Vite dev server** on `localhost:5177` (started automatically by Playwright unless already running)
-- **Algolia credentials** (integration tests only) — set `ALGOLIA_APP_ID` and `ALGOLIA_ADMIN_KEY` in `../../.secret/.env.secret`
+- **Algolia credentials** (e2e-api tests only) — set `ALGOLIA_APP_ID` and `ALGOLIA_ADMIN_KEY` in `../../.secret/.env.secret`
 
 ## Running Tests
 
 ```bash
-# All tests (page + integration + e2e-ui)
+# E2E-UI tests (real browser, simulated human — primary suite)
+npm run test:e2e-ui           # All E2E-UI tests (smoke + full)
+npm run test:e2e-ui:smoke     # Just smoke tests (critical paths, ~2 min)
+npm run test:e2e-ui:full      # Full E2E-UI suite (10-15 min)
+
+# E2E-API tests (API-level, some require Algolia credentials)
+npm run test:e2e-api
+
+# All tests (e2e-ui + e2e-api)
 npm test
-
-# Only page tests (fast, no Algolia credentials needed)
-npm run test:pages
-
-# Only integration tests (requires Algolia credentials)
-npm run test:integration
-
-# E2E-UI tests
-npm run test:e2e-ui           # All E2E-UI tests
-npm run test:e2e-ui:smoke     # Just smoke tests (critical paths)
-npm run test:e2e-ui:full      # Full E2E-UI suite
 
 # Interactive UI mode (recommended for development)
 npm run test:ui
 
-# Headed mode (see the browser)
+# Headed mode (see the browser — use for debugging, not CI)
 npm run test:headed
 
 # Debug mode (step through with Playwright Inspector)
@@ -104,11 +127,11 @@ await responsePromise;
 
 ### `.or()` for unknown server state
 
-When the server state is unknown (e.g. indices may or may not exist), use Playwright's `.or()` pattern to wait for one of several valid outcomes:
+When the server state is unknown (e.g. indexes may or may not exist), use Playwright's `.or()` pattern to wait for one of several valid outcomes:
 
 ```typescript
 await expect(
-  page.getByText('Search Behavior').or(page.getByText(/no indices/i)),
+  page.getByText('Search Behavior').or(page.getByText(/no indexes/i)),
 ).toBeVisible();
 ```
 
@@ -141,11 +164,13 @@ test('my test', async ({ page }) => {
 });
 ```
 
-### Adding integration tests
+### Adding e2e-api tests
 
-Place tests that require external services in `tests/integration/`. Use the conditional skip pattern:
+Place API-level tests (no browser rendering) in `tests/e2e-api/`. For tests requiring external services, use the conditional skip pattern:
 
 ```typescript
+// E2E-API: These tests call REST APIs directly (no browser rendering).
+// For real-browser simulated-human tests, see tests/e2e-ui/
 import { test, expect } from '../fixtures/auth.fixture';
 import { hasAlgoliaCredentials } from '../fixtures/algolia.fixture';
 
@@ -153,7 +178,7 @@ const describeOrSkip = hasAlgoliaCredentials()
   ? test.describe
   : test.describe.skip;
 
-describeOrSkip('My Integration Test', () => {
+describeOrSkip('My E2E-API Test', () => {
   // Tests here skip gracefully when credentials are missing
 });
 ```
@@ -197,18 +222,27 @@ Then uncomment the browser configs in `playwright.config.ts`.
 
 ## Test Coverage
 
-### Page Tests
-- **Overview** — stats cards, index list, create index dialog (validation, templates, cancel), dark mode
-- **Search & Browse** — search input, results panel, facets, add documents dialog (JSON/upload/sample tabs), breadcrumb navigation
-- **Settings** — settings form, searchable attributes, faceting, save button, no-indices empty state
-- **API Keys** — create key dialog, form fields, permissions, cancel, page description
-- **Navigation** — sidebar links, active state highlighting, dark mode persistence, 404 handling, connection status, logo link, migrate link, connection settings dialog
-- **System** — health/indices/replication tabs, sidebar navigation
-- **Migrate (UI)** — form inputs, API key visibility toggle, button enable/disable, dynamic button text, target placeholder, overwrite toggle, info section
+### E2E-UI Tests (Real Browser, Simulated Human — PRIMARY SUITE)
 
-### Integration Tests
-- **Migrate** — full Algolia-to-Flapjack migration: seeds Algolia with 12 products + synonyms + rules, fills the migration form in the browser, verifies success card with correct counts, navigates to the index, confirms documents are searchable. Also tests error state with invalid credentials.
+- **Smoke** — 7 critical path tests (~2 min): overview loads, search works, nav works, settings/keys/system load, create+delete index
+- **Full Suite** — Comprehensive per-page tests (10-15 min):
+  - **Overview** — stat cards, index list, create/delete index, templates, export/upload, analytics summary, navigation to index
+  - **Search & Browse** — search input, facets filtering, clear filters, breadcrumbs, add documents dialog, analytics toggle
+  - **Settings** — searchable attrs, faceting, ranking, JSON editor toggle, compact button, save+persist, reset
+  - **API Keys** — CRUD, permissions toggle, copy feedback, index scope, form validation
+  - **Analytics** — 6 tabs (overview, searches, no-results, filters, devices, geography), KPI cards, charts, date ranges, filter input, geo drill-down, clear analytics
+  - **Navigation** — sidebar links, active states, dark mode, logo, connection dialog
+  - **System** — health details, indexes, replication, snapshots
+  - **Migrate** — form validation, API key toggle, overwrite switch, error handling
+  - **Rules** — list, create via JSON editor, delete via UI, clear all, condition/consequence display
+  - **Synonyms** — list, create multi-way + one-way, delete, clear all, search/filter, type badges
+  - **Merchandising** — search, pin/hide, save as rule, reset, cross-page verification
+  - **Search Logs** — log capture, expand/collapse entries, filter, curl export, clear, view modes
+  - **Cross-Page Flows** — settings→search consistency, merchandising→rules, full lifecycle, navigation data integrity
 
-### E2E-UI Tests
-- **Smoke** — Critical path tests that run on every PR (create index → add docs → search)
-- **Full** — Comprehensive end-to-end UI test suite (runs on main branch / nightly)
+### E2E-API Tests (API-Level, No Browser Rendering)
+
+- **Analytics Pipeline** — API response shapes, click analytics, search→analytics pipeline
+- **Analytics Data Verification** — Data rollup integrity, device/geo breakdowns, filter subsets
+- **Demo Analytics** — Seed→navigate→verify flow
+- **Migrate** — Full Algolia migration E2E (requires Algolia credentials)

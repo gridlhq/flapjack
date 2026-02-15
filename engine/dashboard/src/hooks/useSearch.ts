@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import api from '@/lib/api';
 import type { SearchParams, SearchResponse, Document } from '@/lib/types';
 
@@ -7,9 +7,10 @@ interface UseSearchOptions {
   params: SearchParams;
   enabled?: boolean;
   userToken?: string;
+  keepPrevious?: boolean;
 }
 
-export function useSearch<T = Document>({ indexName, params, enabled = true, userToken }: UseSearchOptions) {
+export function useSearch<T = Document>({ indexName, params, enabled = true, userToken, keepPrevious }: UseSearchOptions) {
   return useQuery({
     queryKey: ['search', indexName, params],
     queryFn: async () => {
@@ -28,6 +29,7 @@ export function useSearch<T = Document>({ indexName, params, enabled = true, use
     enabled: enabled && !!indexName,
     staleTime: 0, // Always refetch for fresh results
     retry: false,
+    placeholderData: keepPrevious ? keepPreviousData : undefined,
   });
 }
 

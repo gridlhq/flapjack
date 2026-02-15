@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   ChevronLeft, Search, Pin, EyeOff, Eye, Undo2, Save,
@@ -32,6 +32,11 @@ export function MerchandisingStudio() {
   const [pins, setPins] = useState<PinAction[]>([]);
   const [hides, setHides] = useState<HideAction[]>([]);
   const [ruleDescription, setRuleDescription] = useState('');
+
+  // Drag-and-drop state
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
+  const dragCounter = useRef(0);
 
   const saveRule = useSaveRule(indexName || '');
 
@@ -116,6 +121,67 @@ export function MerchandisingStudio() {
         return { ...p, position: newPos };
       });
     });
+  }, []);
+
+  // Drag-and-drop handlers
+  const handleDragStart = useCallback((e: React.DragEvent, objectID: string) => {
+    setDraggedId(objectID);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', objectID);
+    // Make the drag image slightly transparent
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = '0.5';
+    }
+  }, []);
+
+  const handleDragEnd = useCallback((e: React.DragEvent) => {
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = '1';
+    }
+    setDraggedId(null);
+    setDropTargetIndex(null);
+    dragCounter.current = 0;
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDropTargetIndex(index);
+  }, []);
+
+  const handleDragEnter = useCallback((e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    dragCounter.current++;
+    setDropTargetIndex(index);
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    dragCounter.current--;
+    if (dragCounter.current <= 0) {
+      setDropTargetIndex(null);
+      dragCounter.current = 0;
+    }
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent, targetIndex: number) => {
+    e.preventDefault();
+    const objectID = e.dataTransfer.getData('text/plain');
+    if (!objectID) return;
+
+    setPins((prev) => {
+      // If already pinned, update position
+      if (prev.some((p) => p.objectID === objectID)) {
+        return prev.map((p) =>
+          p.objectID === objectID ? { ...p, position: targetIndex } : p
+        );
+      }
+      // Otherwise, pin at target position
+      return [...prev, { objectID, position: targetIndex }];
+    });
+
+    setDraggedId(null);
+    setDropTargetIndex(null);
+    dragCounter.current = 0;
   }, []);
 
   const handleReset = useCallback(() => {
@@ -215,9 +281,10 @@ export function MerchandisingStudio() {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
             className="pl-9"
+            data-testid="merch-search-input"
           />
         </div>
-        <Button onClick={handleSearch}>Search</Button>
+        <Button onClick={handleSearch} data-testid="merch-search-btn">Search</Button>
       </div>
 
       {/* Description field (when changes exist) */}
@@ -236,7 +303,7 @@ export function MerchandisingStudio() {
       {/* Content area */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4 min-h-0">
         {/* Results grid */}
-        <div className="overflow-auto space-y-2">
+        <div className="overflow-auto space-y-0">
           {!submittedQuery ? (
             <Card className="p-8 text-center">
               <h3 className="text-lg font-semibold mb-2">Enter a search query</h3>
@@ -251,104 +318,133 @@ export function MerchandisingStudio() {
             <Card className="p-8 text-center text-muted-foreground">No results</Card>
           ) : (
             <>
-              <p className="text-sm text-muted-foreground">
-                {searchData?.nbHits} results for "{submittedQuery}" ({searchData?.processingTimeMS}ms)
+              <p className="text-sm text-muted-foreground mb-2">
+                {searchData?.nbHits} results for &ldquo;{submittedQuery}&rdquo; ({searchData?.processingTimeMS}ms)
+                {' '}<span className="text-muted-foreground/60">&mdash; drag to reorder, pinned items are locked in position</span>
               </p>
               {previewResults.map((hit, index) => {
                 const pinned = isPinned(hit.objectID);
                 const { objectID, _highlightResult, ...fields } = hit;
                 const primaryField = Object.keys(fields)[0];
                 const secondaryField = Object.keys(fields)[1];
+                const isDragTarget = dropTargetIndex === index && draggedId !== objectID;
 
                 return (
-                  <Card
-                    key={hit.objectID}
-                    className={`p-4 transition-all ${
-                      pinned
-                        ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-950/20'
-                        : ''
-                    }`}
-                    data-testid="merch-card"
-                  >
-                    <div className="flex items-center gap-3">
-                      {/* Position indicator */}
-                      <div className="flex flex-col items-center gap-0.5 shrink-0 w-8">
-                        {pinned ? (
-                          <>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-5 w-5 p-0"
-                              title="Move up"
-                              onClick={() => movePin(objectID, 'up')}
-                            >
-                              <ArrowUp className="h-3 w-3" />
-                            </Button>
-                            <Badge className="text-xs bg-blue-500">#{index + 1}</Badge>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-5 w-5 p-0"
-                              title="Move down"
-                              onClick={() => movePin(objectID, 'down')}
-                            >
-                              <ArrowDown className="h-3 w-3" />
-                            </Button>
-                          </>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">{index + 1}</span>
-                        )}
-                      </div>
-
-                      {/* Drag handle (visual only for now) */}
-                      <GripVertical className="h-4 w-4 text-muted-foreground/40 shrink-0" />
-
-                      {/* Document content */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="font-mono text-xs shrink-0">
-                            {objectID}
-                          </Badge>
+                  <div key={hit.objectID} className="relative">
+                    {/* Drop indicator line */}
+                    {isDragTarget && (
+                      <div className="absolute -top-0.5 left-0 right-0 h-1 bg-blue-500 rounded-full z-10" data-testid="drop-indicator" />
+                    )}
+                    <Card
+                      className={`p-0 mb-1 transition-all ${
+                        pinned
+                          ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-950/20'
+                          : ''
+                      } ${
+                        draggedId === objectID ? 'opacity-50 scale-[0.98]' : ''
+                      }`}
+                      data-testid="merch-card"
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, objectID)}
+                      onDragEnd={handleDragEnd}
+                      onDragOver={(e) => handleDragOver(e, index)}
+                      onDragEnter={(e) => handleDragEnter(e, index)}
+                      onDragLeave={handleDragLeave}
+                      onDrop={(e) => handleDrop(e, index)}
+                    >
+                      <div className="flex items-stretch">
+                        {/* Drag handle area - large grab zone on the left */}
+                        <div
+                          className={`flex items-center gap-1.5 px-3 py-3 cursor-grab active:cursor-grabbing rounded-l-lg select-none shrink-0 ${
+                            pinned
+                              ? 'bg-blue-100/80 dark:bg-blue-900/30 hover:bg-blue-200/80 dark:hover:bg-blue-900/50'
+                              : 'bg-muted/50 hover:bg-muted'
+                          }`}
+                          data-testid="drag-handle"
+                        >
+                          {/* Position + Grip */}
+                          <div className="flex flex-col items-center gap-0.5 w-6">
+                            {pinned ? (
+                              <Badge className="text-[10px] bg-blue-500 px-1.5">#{index + 1}</Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground font-medium">{index + 1}</span>
+                            )}
+                          </div>
+                          <GripVertical className="h-5 w-5 text-muted-foreground/60" />
+                          {/* Up/Down arrows for pinned items */}
                           {pinned && (
-                            <Badge variant="secondary" className="text-xs">
-                              <Pin className="h-3 w-3 mr-1" />
-                              Pinned #{pins.find((p) => p.objectID === objectID)?.position}
-                            </Badge>
+                            <div className="flex flex-col gap-0.5">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-5 w-5 p-0"
+                                title="Move up"
+                                onClick={(e) => { e.stopPropagation(); movePin(objectID, 'up'); }}
+                              >
+                                <ArrowUp className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-5 w-5 p-0"
+                                title="Move down"
+                                onClick={(e) => { e.stopPropagation(); movePin(objectID, 'down'); }}
+                              >
+                                <ArrowDown className="h-3 w-3" />
+                              </Button>
+                            </div>
                           )}
                         </div>
-                        {primaryField && (
-                          <p className="text-sm font-medium mt-1 truncate">
-                            {String(fields[primaryField])}
-                          </p>
-                        )}
-                        {secondaryField && (
-                          <p className="text-xs text-muted-foreground truncate">
-                            {String(fields[secondaryField])}
-                          </p>
-                        )}
-                      </div>
 
-                      {/* Actions */}
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Button
-                          variant={pinned ? 'default' : 'outline'}
-                          size="sm"
-                          onClick={() => togglePin(objectID, index)}
-                          title={pinned ? 'Unpin' : 'Pin to this position'}
-                        >
-                          <Pin className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => toggleHide(objectID)}
-                          title="Hide from results"
-                        >
-                          <EyeOff className="h-4 w-4" />
-                        </Button>
+                        {/* Document content */}
+                        <div className="flex-1 min-w-0 p-3 flex items-center gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="font-mono text-xs shrink-0">
+                                {objectID}
+                              </Badge>
+                              {pinned && (
+                                <Badge variant="secondary" className="text-xs">
+                                  <Pin className="h-3 w-3 mr-1" />
+                                  Pinned #{pins.find((p) => p.objectID === objectID)?.position}
+                                </Badge>
+                              )}
+                            </div>
+                            {primaryField && (
+                              <p className="text-sm font-medium mt-1 truncate">
+                                {String(fields[primaryField])}
+                              </p>
+                            )}
+                            {secondaryField && (
+                              <p className="text-xs text-muted-foreground truncate">
+                                {String(fields[secondaryField])}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Actions */}
+                          <div className="flex items-center gap-1 shrink-0">
+                            <Button
+                              variant={pinned ? 'default' : 'outline'}
+                              size="sm"
+                              onClick={() => togglePin(objectID, index)}
+                              title={pinned ? 'Unpin' : 'Pin to this position'}
+                            >
+                              <Pin className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => toggleHide(objectID)}
+                              title="Hide from results"
+                            >
+                              <EyeOff className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </Card>
+                    </Card>
+                  </div>
                 );
               })}
 
@@ -401,9 +497,10 @@ export function MerchandisingStudio() {
             <h3 className="font-semibold text-sm mb-3">How it works</h3>
             <div className="space-y-2 text-xs text-muted-foreground">
               <p>1. Search for a query your users type</p>
-              <p>2. <Pin className="inline h-3 w-3" /> <strong>Pin</strong> results to lock them at a position</p>
-              <p>3. <EyeOff className="inline h-3 w-3" /> <strong>Hide</strong> irrelevant results</p>
-              <p>4. <Save className="inline h-3 w-3" /> <strong>Save</strong> as a rule</p>
+              <p>2. <GripVertical className="inline h-3 w-3" /> <strong>Drag</strong> results to reorder (auto-pins)</p>
+              <p>3. <Pin className="inline h-3 w-3" /> <strong>Pin</strong> results to lock them at a position</p>
+              <p>4. <EyeOff className="inline h-3 w-3" /> <strong>Hide</strong> irrelevant results</p>
+              <p>5. <Save className="inline h-3 w-3" /> <strong>Save</strong> as a rule</p>
             </div>
           </Card>
 

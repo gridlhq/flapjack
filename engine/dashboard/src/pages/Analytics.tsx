@@ -1,8 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { useIndices } from '@/hooks/useIndices';
+import { useIndexes } from '@/hooks/useIndexes';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Badge } from '@/components/ui/badge';
 import {
   useSearchCount,
   useUsersCount,
@@ -63,21 +65,23 @@ const RANGE_OPTIONS = [
 export function Analytics() {
   const { indexName: urlIndexName } = useParams<{ indexName: string }>();
   const navigate = useNavigate();
-  const { data: indices } = useIndices();
+  const { data: indexes } = useIndexes();
   const [rangeDays, setRangeDays] = useState(7);
   const queryClient = useQueryClient();
 
   const range: DateRange = useMemo(() => defaultRange(rangeDays), [rangeDays]);
   const prevRange: DateRange = useMemo(() => previousRange(range), [range]);
 
-  const indexName = urlIndexName || indices?.[0]?.uid || '';
+  const indexName = urlIndexName || indexes?.[0]?.uid || '';
 
   // If accessed without an index in the URL, redirect to the first available index
   React.useEffect(() => {
-    if (!urlIndexName && indices?.length) {
-      navigate(`/index/${encodeURIComponent(indices[0].uid)}/analytics`, { replace: true });
+    if (!urlIndexName && indexes?.length) {
+      navigate(`/index/${encodeURIComponent(indexes[0].uid)}/analytics`, { replace: true });
     }
-  }, [urlIndexName, indices, navigate]);
+  }, [urlIndexName, indexes, navigate]);
+
+  const [showClearDialog, setShowClearDialog] = useState(false);
 
   const clearMutation = useMutation({
     mutationFn: async (index: string) => {
@@ -85,7 +89,8 @@ export function Analytics() {
       return res.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['analytics'] });
+      queryClient.resetQueries({ queryKey: ['analytics'] });
+      setShowClearDialog(false);
     },
   });
 
@@ -122,7 +127,10 @@ export function Analytics() {
         )}
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
-            <h1 className="text-3xl font-bold" data-testid="analytics-heading">Analytics</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-3xl font-bold" data-testid="analytics-heading">Analytics</h1>
+              <Badge className="bg-orange-500 text-white hover:bg-orange-600 text-xs font-bold">BETA</Badge>
+            </div>
             {rangeLabel && (
               <p className="text-sm text-muted-foreground mt-1" data-testid="analytics-date-label">{rangeLabel}</p>
             )}
@@ -144,11 +152,7 @@ export function Analytics() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  if (confirm(`Clear all analytics data for "${indexName}"?`)) {
-                    clearMutation.mutate(indexName);
-                  }
-                }}
+                onClick={() => setShowClearDialog(true)}
                 disabled={clearMutation.isPending}
                 title="Delete all analytics data for this index"
               >
@@ -192,7 +196,7 @@ export function Analytics() {
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
             <Search className="h-12 w-12 mx-auto mb-4 opacity-30" />
-            <h3 className="text-lg font-medium mb-2">No Indices Found</h3>
+            <h3 className="text-lg font-medium mb-2">No Indexes Found</h3>
             <p className="text-sm">Create a demo index (Movies or Products) to get started — analytics data is included automatically.</p>
           </CardContent>
         </Card>
@@ -227,6 +231,25 @@ export function Analytics() {
           </TabsContent>
         </Tabs>
       )}
+
+      <ConfirmDialog
+        open={showClearDialog}
+        onOpenChange={setShowClearDialog}
+        title="Clear Analytics"
+        description={
+          <>
+            Are you sure you want to clear all analytics data for{' '}
+            <code className="font-mono text-sm bg-muted px-1 py-0.5 rounded">
+              {indexName}
+            </code>
+            ? This action cannot be undone.
+          </>
+        }
+        confirmLabel="Clear"
+        variant="destructive"
+        onConfirm={() => clearMutation.mutate(indexName)}
+        isPending={clearMutation.isPending}
+      />
     </div>
   );
 }

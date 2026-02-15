@@ -40,6 +40,11 @@
     "suggest": {
         "guzzlehttp/guzzle": "If you prefer to use Guzzle HTTP client instead of the Http Client implementation provided by the package"
     },
+    "config": {
+        "platform": {
+            "php": "8.1"
+        }
+    },
     "minimum-stability": "dev",
     "prefer-stable": true
 }

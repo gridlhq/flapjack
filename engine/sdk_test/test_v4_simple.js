@@ -1,6 +1,11 @@
 const algoliasearch = require('algoliasearch');
+const dotenv = require('dotenv');
+const path = require('path');
 
-const client = algoliasearch('test-app', 'test-key');
+dotenv.config({ path: path.join(__dirname, '..', '.secret', '.env.secret') });
+const FLAPJACK_ADMIN_KEY = process.env.FLAPJACK_ADMIN_KEY || 'fj_test_admin_key_for_local_dev';
+
+const client = algoliasearch('flapjack', FLAPJACK_ADMIN_KEY);
 client.hosts = {
   read: [{url: 'localhost:7700', protocol: 'http'}],
   write: [{url: 'localhost:7700', protocol: 'http'}]

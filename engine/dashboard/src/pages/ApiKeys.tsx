@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { Plus, Copy, Trash2, Check, Globe, Shield } from 'lucide-react';
 import { useApiKeys, useDeleteApiKey } from '@/hooks/useApiKeys';
-import { useIndices } from '@/hooks/useIndices';
+import { useIndexes } from '@/hooks/useIndexes';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -11,19 +11,19 @@ import { CreateKeyDialog } from '@/components/keys/CreateKeyDialog';
 
 export function ApiKeys() {
   const { data: keys, isLoading } = useApiKeys();
-  const { data: indices } = useIndices();
+  const { data: indexes } = useIndexes();
   const deleteKey = useDeleteApiKey();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [filterIndex, setFilterIndex] = useState<string | null>(null);
 
-  // Collect all unique index names from keys + indices list for the filter bar
+  // Collect all unique index names from keys + indexes list for the filter bar
   const allIndexNames = useMemo(() => {
     const names = new Set<string>();
     keys?.forEach((key) => key.indexes?.forEach((idx) => names.add(idx)));
-    indices?.forEach((idx) => names.add(idx.uid));
+    indexes?.forEach((idx) => names.add(idx.uid));
     return Array.from(names).sort();
-  }, [keys, indices]);
+  }, [keys, indexes]);
 
   // Filter keys by selected index
   const filteredKeys = useMemo(() => {
@@ -113,7 +113,7 @@ export function ApiKeys() {
         <div data-testid="index-filter-bar">
           <div className="text-sm font-medium mb-1 flex items-center gap-1.5">
             Filter by Index
-            <InfoTooltip content="Filter keys by which index they can access. Keys with 'All Indices' scope appear in every filter." />
+            <InfoTooltip content="Filter keys by which index they can access. Keys with 'All Indexes' scope appear in every filter." />
           </div>
           <p className="text-xs text-muted-foreground mb-2" data-testid="filter-help-text">
             Select an index to see which API keys have access to it
@@ -210,7 +210,7 @@ export function ApiKeys() {
                 <div data-testid="key-scope">
                   <div className="text-sm font-medium mb-2 flex items-center gap-1.5">
                     Index Scope
-                    <InfoTooltip content="Restricting a key to specific indices limits its access. The key can only read and write data in the selected indices." />
+                    <InfoTooltip content="Restricting a key to specific indexes limits its access. The key can only read and write data in the selected indexes." />
                   </div>
                   {key.indexes && key.indexes.length > 0 ? (
                     <div className="flex items-center gap-2 flex-wrap">
@@ -224,7 +224,7 @@ export function ApiKeys() {
                   ) : (
                     <div className="flex items-center gap-2">
                       <Globe className="h-4 w-4 text-muted-foreground" />
-                      <Badge variant="secondary">All Indices</Badge>
+                      <Badge variant="secondary">All Indexes</Badge>
                     </div>
                   )}
                 </div>

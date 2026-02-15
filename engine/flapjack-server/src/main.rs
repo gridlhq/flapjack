@@ -17,12 +17,18 @@ struct Cli {
     bind_addr: String,
     #[arg(long, default_value = "7700")]
     port: u16,
+
+    /// Disable authentication entirely (not allowed in production)
+    #[arg(long)]
+    no_auth: bool,
 }
 
 #[derive(Subcommand)]
 enum Command {
     /// Remove Flapjack binary and clean up shell PATH entries
     Uninstall,
+    /// Generate a new admin API key (replaces the current one in keys.json)
+    ResetAdminKey,
 }
 
 fn run_uninstall() -> Result<(), Box<dyn std::error::Error>> {
@@ -115,10 +121,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         Some(Command::Uninstall) => run_uninstall(),
+        Some(Command::ResetAdminKey) => run_reset_admin_key(&cli.data_dir),
         None => {
             std::env::set_var("FLAPJACK_DATA_DIR", &cli.data_dir);
             std::env::set_var("FLAPJACK_BIND_ADDR", &cli.bind_addr);
+            if cli.no_auth {
+                std::env::set_var("FLAPJACK_NO_AUTH", "1");
+            }
             serve().await
+        }
+    }
+}
+
+fn run_reset_admin_key(data_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
+    match flapjack_http::auth::reset_admin_key(std::path::Path::new(data_dir)) {
+        Ok(new_key) => {
+            println!("{}", new_key);
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("ERROR: {}", e);
+            std::process::exit(1);
         }
     }
 }

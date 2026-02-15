@@ -5,7 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { useHealthDetail, useInternalStatus } from '@/hooks/useSystemStatus';
-import { useIndices } from '@/hooks/useIndices';
+import { useIndexes } from '@/hooks/useIndexes';
 import {
   useExportIndex,
   useImportIndex,
@@ -31,12 +31,12 @@ import { formatBytes } from '@/lib/utils';
 import { InfoTooltip } from '@/components/ui/info-tooltip';
 
 function IndexHealthSummary() {
-  const { data: indices, isLoading } = useIndices();
+  const { data: indexes, isLoading } = useIndexes();
 
-  if (isLoading || !indices || indices.length === 0) return null;
+  if (isLoading || !indexes || indexes.length === 0) return null;
 
-  const healthyCount = indices.filter((idx) => (idx.numberOfPendingTasks ?? 0) === 0).length;
-  const totalPending = indices.reduce((sum, idx) => sum + (idx.numberOfPendingTasks ?? 0), 0);
+  const healthyCount = indexes.filter((idx) => (idx.numberOfPendingTasks ?? 0) === 0).length;
+  const totalPending = indexes.reduce((sum, idx) => sum + (idx.numberOfPendingTasks ?? 0), 0);
 
   return (
     <Card data-testid="index-health-summary">
@@ -48,7 +48,7 @@ function IndexHealthSummary() {
       </CardHeader>
       <CardContent>
         <div className="flex flex-wrap items-center gap-3 mb-2">
-          {indices.map((idx) => {
+          {indexes.map((idx) => {
             const pending = idx.numberOfPendingTasks ?? 0;
             const isHealthy = pending === 0;
             return (
@@ -71,7 +71,7 @@ function IndexHealthSummary() {
           })}
         </div>
         <p className="text-sm text-muted-foreground">
-          {healthyCount} of {indices.length} indices healthy{totalPending > 0 ? ` · ${totalPending} pending task(s)` : ''}
+          {healthyCount} of {indexes.length} indexes healthy{totalPending > 0 ? ` · ${totalPending} pending task(s)` : ''}
         </p>
       </CardContent>
     </Card>
@@ -151,8 +151,8 @@ function HealthTab() {
   );
 }
 
-function IndicesTab() {
-  const { data: indices, isLoading, isError } = useIndices();
+function IndexesTab() {
+  const { data: indexes, isLoading, isError } = useIndexes();
 
   if (isLoading) {
     return (
@@ -164,36 +164,36 @@ function IndicesTab() {
     );
   }
 
-  if (isError || !indices) {
+  if (isError || !indexes) {
     return (
       <Card>
         <CardContent className="pt-6 text-center text-muted-foreground">
-          Unable to load indices.
+          Unable to load indexes.
         </CardContent>
       </Card>
     );
   }
 
-  const totalDocs = indices.reduce((sum, idx) => sum + (idx.entries ?? 0), 0);
-  const totalSize = indices.reduce((sum, idx) => sum + (idx.dataSize ?? 0), 0);
-  const pendingTasks = indices.reduce((sum, idx) => sum + (idx.numberOfPendingTasks ?? 0), 0);
+  const totalDocs = indexes.reduce((sum, idx) => sum + (idx.entries ?? 0), 0);
+  const totalSize = indexes.reduce((sum, idx) => sum + (idx.dataSize ?? 0), 0);
+  const pendingTasks = indexes.reduce((sum, idx) => sum + (idx.numberOfPendingTasks ?? 0), 0);
 
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-3">
-        <Card data-testid="indices-total-count">
+        <Card data-testid="indexes-total-count">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Indices</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Indexes</CardTitle>
           </CardHeader>
-          <CardContent><p className="text-2xl font-bold">{indices.length}</p></CardContent>
+          <CardContent><p className="text-2xl font-bold">{indexes.length}</p></CardContent>
         </Card>
-        <Card data-testid="indices-total-docs">
+        <Card data-testid="indexes-total-docs">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Documents</CardTitle>
           </CardHeader>
           <CardContent><p className="text-2xl font-bold">{totalDocs.toLocaleString()}</p></CardContent>
         </Card>
-        <Card data-testid="indices-total-storage">
+        <Card data-testid="indexes-total-storage">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Storage</CardTitle>
           </CardHeader>
@@ -206,7 +206,7 @@ function IndicesTab() {
           <CardContent className="pt-6">
             <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
               <RefreshCw className="h-4 w-4 animate-spin" />
-              <span className="text-sm font-medium">{pendingTasks} pending task(s) across indices</span>
+              <span className="text-sm font-medium">{pendingTasks} pending task(s) across indexes</span>
             </div>
           </CardContent>
         </Card>
@@ -232,7 +232,7 @@ function IndicesTab() {
                 </tr>
               </thead>
               <tbody>
-                {indices.map((idx) => {
+                {indexes.map((idx) => {
                   const pending = idx.numberOfPendingTasks ?? 0;
                   return (
                     <tr key={idx.uid} className="border-b last:border-0">
@@ -320,6 +320,11 @@ function ReplicationTab() {
           </CardHeader>
           <CardContent>
             <p className="text-sm font-mono break-all">{data?.node_id || 'N/A'}</p>
+            {(!data?.node_id || data.node_id === 'unknown') && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Expected for standalone instances. Node IDs are assigned when replication is configured.
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -365,7 +370,7 @@ function ReplicationTab() {
 }
 
 function SnapshotsTab() {
-  const { data: indices, isLoading: indicesLoading } = useIndices();
+  const { data: indexes, isLoading: indexesLoading } = useIndexes();
   const exportIndex = useExportIndex();
   const importIndex = useImportIndex();
   const snapshotToS3 = useSnapshotToS3();
@@ -374,7 +379,7 @@ function SnapshotsTab() {
   const importTargetRef = useRef<string>('');
 
   // Probe S3 availability by listing snapshots for the first index
-  const firstIndex = indices?.[0]?.uid || '';
+  const firstIndex = indexes?.[0]?.uid || '';
   const { data: snapshots, isError: s3Error } = useListSnapshots(firstIndex);
   const s3Available = !s3Error && !!firstIndex;
 
@@ -392,14 +397,14 @@ function SnapshotsTab() {
   };
 
   const handleExportAll = () => {
-    indices?.forEach((idx) => exportIndex.mutate(idx.uid));
+    indexes?.forEach((idx) => exportIndex.mutate(idx.uid));
   };
 
   const handleBackupAll = () => {
-    indices?.forEach((idx) => snapshotToS3.mutate(idx.uid));
+    indexes?.forEach((idx) => snapshotToS3.mutate(idx.uid));
   };
 
-  if (indicesLoading) {
+  if (indexesLoading) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-24" />
@@ -408,11 +413,11 @@ function SnapshotsTab() {
     );
   }
 
-  if (!indices || indices.length === 0) {
+  if (!indexes || indexes.length === 0) {
     return (
       <Card>
         <CardContent className="pt-6 text-center text-muted-foreground">
-          No indices available. Create an index first to use snapshots.
+          No indexes available. Create an index first to use snapshots.
         </CardContent>
       </Card>
     );
@@ -452,7 +457,7 @@ function SnapshotsTab() {
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
-            {indices.map((idx) => (
+            {indexes.map((idx) => (
               <div
                 key={idx.uid}
                 className="flex items-center justify-between p-3 rounded-md border border-border"
@@ -503,7 +508,7 @@ function SnapshotsTab() {
                 <CloudOff className="h-4 w-4 text-muted-foreground" />
               )}
               S3 Backups
-              <InfoTooltip content="Back up indices to S3-compatible storage. Requires FLAPJACK_S3_BUCKET and FLAPJACK_S3_REGION environment variables." />
+              <InfoTooltip content="Back up indexes to S3-compatible storage. Requires FLAPJACK_S3_BUCKET and FLAPJACK_S3_REGION environment variables." />
             </CardTitle>
             {s3Available && (
               <Button
@@ -536,7 +541,7 @@ function SnapshotsTab() {
                   {snapshots.length} snapshot(s) available for {firstIndex}
                 </div>
               )}
-              {indices.map((idx) => (
+              {indexes.map((idx) => (
                 <div
                   key={idx.uid}
                   className="flex items-center justify-between p-3 rounded-md border border-border"
@@ -586,7 +591,7 @@ export const System = memo(function System() {
       <Tabs defaultValue="health">
         <TabsList>
           <TabsTrigger value="health">Health</TabsTrigger>
-          <TabsTrigger value="indices">Indices</TabsTrigger>
+          <TabsTrigger value="indexes">Indexes</TabsTrigger>
           <TabsTrigger value="replication">Replication</TabsTrigger>
           <TabsTrigger value="snapshots">Snapshots</TabsTrigger>
         </TabsList>
@@ -595,8 +600,8 @@ export const System = memo(function System() {
           <HealthTab />
         </TabsContent>
 
-        <TabsContent value="indices">
-          <IndicesTab />
+        <TabsContent value="indexes">
+          <IndexesTab />
         </TabsContent>
 
         <TabsContent value="replication">

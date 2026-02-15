@@ -111,19 +111,29 @@ async fn process_writes(
     let mut deadline = Instant::now() + Duration::from_millis(100);
 
     loop {
-        tracing::warn!(
-            "[WQ {}] waiting, pending={}, deadline_in={}ms",
-            tenant_id,
-            pending.len(),
-            deadline
-                .saturating_duration_since(Instant::now())
-                .as_millis()
-        );
+        if pending.is_empty() {
+            tracing::trace!(
+                "[WQ {}] idle, deadline_in={}ms",
+                tenant_id,
+                deadline
+                    .saturating_duration_since(Instant::now())
+                    .as_millis()
+            );
+        } else {
+            tracing::debug!(
+                "[WQ {}] waiting, pending={}, deadline_in={}ms",
+                tenant_id,
+                pending.len(),
+                deadline
+                    .saturating_duration_since(Instant::now())
+                    .as_millis()
+            );
+        }
         match timeout_at(deadline.into(), rx.recv()).await {
             Ok(Some(op)) => {
                 let action_count = op.actions.len();
                 let is_compact = matches!(op.actions.first(), Some(WriteAction::Compact));
-                tracing::warn!(
+                tracing::debug!(
                     "[WQ {}] received op task={} actions={}{}",
                     tenant_id,
                     op.task_id,
@@ -153,7 +163,7 @@ async fn process_writes(
 
                 pending.push(op);
                 if pending.len() >= 10 {
-                    tracing::warn!(
+                    tracing::debug!(
                         "[WQ {}] batch threshold, committing {} ops",
                         tenant_id,
                         pending.len()
@@ -173,7 +183,7 @@ async fn process_writes(
                 }
             }
             Ok(None) => {
-                tracing::warn!(
+                tracing::info!(
                     "[WQ {}] channel closed, flushing {} pending",
                     tenant_id,
                     pending.len()
@@ -194,12 +204,12 @@ async fn process_writes(
                 break;
             }
             Err(_timeout) => {
-                tracing::warn!(
-                    "[WQ {}] timeout, flushing {} pending",
-                    tenant_id,
-                    pending.len()
-                );
                 if !pending.is_empty() {
+                    tracing::debug!(
+                        "[WQ {}] timeout, flushing {} pending",
+                        tenant_id,
+                        pending.len()
+                    );
                     commit_batch(
                         &index,
                         &tasks,

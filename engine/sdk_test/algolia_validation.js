@@ -18,6 +18,7 @@ dotenv.config({ path: join(__dirname, '..', '.secret', '.env.secret') });
 
 const ALGOLIA_APP_ID = process.env.ALGOLIA_APP_ID;
 const ALGOLIA_API_KEY = process.env.ALGOLIA_ADMIN_KEY;
+const FLAPJACK_ADMIN_KEY = process.env.FLAPJACK_ADMIN_KEY || 'fj_test_admin_key_for_local_dev';
 
 const args = process.argv.slice(2);
 
@@ -74,7 +75,7 @@ const flags = {
 const suiteFilters = args.filter(a => !a.startsWith('--'));
 
 const algoliaClient = algoliasearch(ALGOLIA_APP_ID, ALGOLIA_API_KEY);
-const flapjackClient = algoliasearch('test-app', 'test-key', {
+const flapjackClient = algoliasearch('flapjack', FLAPJACK_ADMIN_KEY, {
   requester: {
     async send(request) {
       const url = new URL(request.url);
@@ -112,17 +113,17 @@ const flapjackClient = algoliasearch('test-app', 'test-key', {
 });
 
 function createFlapjackClient(verbose) {
-  return algoliasearch('test-app', 'test-key', {
+  return algoliasearch('flapjack', FLAPJACK_ADMIN_KEY, {
     requester: {
       async send(request) {
         const url = new URL(request.url);
         url.protocol = 'http:';
         url.host = 'localhost:7700';
-        
+
         if (verbose && request.data) {
           console.log('[FLAPJACK BODY]', request.data.slice(0, 300));
         }
-        
+
         const response = await fetch(url.toString(), {
           method: request.method,
           headers: request.headers,

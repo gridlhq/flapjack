@@ -65,7 +65,7 @@ export function useReindex(indexName: string) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['search'] });
-      queryClient.invalidateQueries({ queryKey: ['indices'] });
+      queryClient.invalidateQueries({ queryKey: ['indexes'] });
       queryClient.invalidateQueries({ queryKey: ['index-stats'] });
       toast({
         title: 'Re-index complete',

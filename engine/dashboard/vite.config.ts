@@ -5,7 +5,10 @@ import { visualizer } from 'rollup-plugin-visualizer';
 
 const BACKEND_TARGET = process.env.FLAPJACK_BACKEND_URL || 'http://localhost:7700';
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // In production build, assets are served under /dashboard/ by the backend server.
+  // In dev, serve at root so Playwright tests and React Router work without a basename.
+  base: command === 'build' ? '/dashboard/' : '/',
   plugins: [
     react(),
     visualizer({
@@ -57,4 +60,4 @@ export default defineConfig({
       '/swagger-ui': BACKEND_TARGET,
     },
   },
-});
+}));

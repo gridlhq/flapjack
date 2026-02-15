@@ -50,6 +50,16 @@ jobs:
           key: release-${{ matrix.target }}
           workspaces: engine
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build dashboard
+        run: |
+          cd dashboard
+          npm ci
+          npm run build
+
       - name: Install musl-tools
         if: matrix.target == 'x86_64-unknown-linux-musl'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
@@ -71,18 +81,24 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          cd target/${{ matrix.target }}/release
-          tar czf ../../../flapjack-${{ matrix.target }}.tar.gz flapjack
-          cd ../../..
+          mkdir -p staging/dashboard/dist
+          cp target/${{ matrix.target }}/release/flapjack staging/
+          cp -r dashboard/dist/* staging/dashboard/dist/
+          cd staging
+          tar czf ../flapjack-${{ matrix.target }}.tar.gz .
+          cd ..
           shasum -a 256 flapjack-${{ matrix.target }}.tar.gz > flapjack-${{ matrix.target }}.tar.gz.sha256
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          cd target/${{ matrix.target }}/release
-          7z a ../../../flapjack-${{ matrix.target }}.zip flapjack.exe
-          cd ../../..
+          mkdir -p staging/dashboard/dist
+          cp target/${{ matrix.target }}/release/flapjack.exe staging/
+          cp -r dashboard/dist/* staging/dashboard/dist/
+          cd staging
+          7z a ../flapjack-${{ matrix.target }}.zip .
+          cd ..
           sha256sum flapjack-${{ matrix.target }}.zip > flapjack-${{ matrix.target }}.zip.sha256
 
       - name: Upload artifact

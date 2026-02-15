@@ -15,7 +15,7 @@ if [ ! -f "$BIN" ]; then
   exit 1
 fi
 
-export FLAPJACK_ADMIN_KEY="${FLAPJACK_ADMIN_KEY:-abcdef0123456789}"
+export FLAPJACK_ADMIN_KEY="${FLAPJACK_ADMIN_KEY:-fj_devtestadminkey000000}"
 export FLAPJACK_DATA_DIR="${FLAPJACK_DATA_DIR:-/tmp/flapjack-dashboard-clean}"
 export FLAPJACK_BIND_ADDR="${FLAPJACK_BIND_ADDR:-127.0.0.1:7700}"
 

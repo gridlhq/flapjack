@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { useTheme } from './hooks/useTheme';
 import { Layout } from './components/layout/Layout';
+import { AuthGate } from './components/layout/AuthGate';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Toaster } from './components/ui/toaster';
 
@@ -34,7 +35,7 @@ function App() {
   useTheme();
 
   return (
-    <>
+    <AuthGate>
       <Routes>
         <Route path="/" element={<Layout />}>
           <Route index element={<LazyPage><Overview /></LazyPage>} />
@@ -53,7 +54,7 @@ function App() {
         </Route>
       </Routes>
       <Toaster />
-    </>
+    </AuthGate>
   );
 }
 

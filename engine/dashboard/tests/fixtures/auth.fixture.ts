@@ -8,11 +8,11 @@ import { test as base } from '@playwright/test';
 export const test = base.extend({
   page: async ({ page }, use) => {
     await page.addInitScript(() => {
-      localStorage.setItem('flapjack-api-key', 'abcdef0123456789');
+      localStorage.setItem('flapjack-api-key', 'fj_devtestadminkey000000');
       localStorage.setItem('flapjack-app-id', 'flapjack');
       // Seed the Zustand persist store so useAuth().apiKey is populated on hydration
       localStorage.setItem('flapjack-auth', JSON.stringify({
-        state: { apiKey: 'abcdef0123456789', appId: 'flapjack' },
+        state: { apiKey: 'fj_devtestadminkey000000', appId: 'flapjack' },
         version: 0,
       }));
     });

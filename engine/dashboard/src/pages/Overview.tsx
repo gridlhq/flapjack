@@ -1,14 +1,14 @@
 import { useState, useMemo, useCallback, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useIndices, useDeleteIndex } from '@/hooks/useIndices';
+import { useIndexes, useDeleteIndex } from '@/hooks/useIndexes';
 import { useHealth } from '@/hooks/useHealth';
 import { useAnalyticsOverview, defaultRange, type DateRange } from '@/hooks/useAnalytics';
 import { useExportIndex, useImportIndex } from '@/hooks/useSnapshots';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, ChevronLeft, ChevronRight, Search, Users, AlertCircle, BarChart3, Trash2, Database, Download, Upload } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, Search, Users, AlertCircle, BarChart3, Trash2, Download, Upload } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { CreateIndexDialog } from '@/components/indices/CreateIndexDialog';
+import { CreateIndexDialog } from '@/components/indexes/CreateIndexDialog';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { InfoTooltip } from '@/components/ui/info-tooltip';
 import { formatBytes, formatDate } from '@/lib/utils';
@@ -17,7 +17,7 @@ import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tool
 const ITEMS_PER_PAGE = 10;
 
 export function Overview() {
-  const { data: indices, isLoading, error } = useIndices();
+  const { data: indexes, isLoading, error } = useIndexes();
   const { data: health, isLoading: healthLoading, error: healthError } = useHealth();
   const [currentPage, setCurrentPage] = useState(1);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -37,10 +37,37 @@ export function Overview() {
     }
   }, [pendingDeleteIndex, deleteMutation]);
 
+  const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const uploadFileRef = useRef<HTMLInputElement>(null);
+
   const handleImport = useCallback((indexName: string) => {
     importTargetRef.current = indexName;
     fileInputRef.current?.click();
   }, []);
+
+  const handleTopLevelUpload = useCallback(() => {
+    if (indexes?.length === 1) {
+      // Only one index — import directly
+      importTargetRef.current = indexes[0].uid;
+      uploadFileRef.current?.click();
+    } else if (indexes?.length) {
+      setShowUploadDialog(true);
+    }
+  }, [indexes]);
+
+  const handleUploadToIndex = useCallback((indexName: string) => {
+    importTargetRef.current = indexName;
+    setShowUploadDialog(false);
+    uploadFileRef.current?.click();
+  }, []);
+
+  const onUploadFileSelected = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && importTargetRef.current) {
+      importIndex.mutate({ indexName: importTargetRef.current, file });
+    }
+    e.target.value = '';
+  }, [importIndex]);
 
   const onFileSelected = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -51,22 +78,22 @@ export function Overview() {
   }, [importIndex]);
 
   const handleExportAll = useCallback(() => {
-    indices?.forEach((idx) => exportIndex.mutate(idx.uid));
-  }, [indices, exportIndex]);
+    indexes?.forEach((idx) => exportIndex.mutate(idx.uid));
+  }, [indexes, exportIndex]);
 
   const analyticsRange: DateRange = useMemo(() => defaultRange(7), []);
   const { data: overview, isLoading: overviewLoading } = useAnalyticsOverview(analyticsRange);
 
-  const totalDocs = indices?.reduce((sum, idx) => sum + (idx.entries || 0), 0) || 0;
-  const totalSize = indices?.reduce((sum, idx) => sum + (idx.dataSize || 0), 0) || 0;
+  const totalDocs = indexes?.reduce((sum, idx) => sum + (idx.entries || 0), 0) || 0;
+  const totalSize = indexes?.reduce((sum, idx) => sum + (idx.dataSize || 0), 0) || 0;
 
   // Pagination
-  const totalPages = Math.ceil((indices?.length || 0) / ITEMS_PER_PAGE);
-  const paginatedIndices = useMemo(() => {
-    if (!indices) return [];
+  const totalPages = Math.ceil((indexes?.length || 0) / ITEMS_PER_PAGE);
+  const paginatedIndexes = useMemo(() => {
+    if (!indexes) return [];
     const start = (currentPage - 1) * ITEMS_PER_PAGE;
-    return indices.slice(start, start + ITEMS_PER_PAGE);
-  }, [indices, currentPage]);
+    return indexes.slice(start, start + ITEMS_PER_PAGE);
+  }, [indexes, currentPage]);
 
   return (
     <div className="space-y-6">
@@ -78,18 +105,36 @@ export function Overview() {
         onChange={onFileSelected}
         data-testid="overview-file-input"
       />
+      <input
+        ref={uploadFileRef}
+        type="file"
+        accept=".tar.gz,.tgz"
+        className="hidden"
+        onChange={onUploadFileSelected}
+        data-testid="overview-upload-file-input"
+      />
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Overview</h1>
         <div className="flex gap-2">
-          {indices && indices.length > 0 && (
-            <Button
-              variant="outline"
-              onClick={handleExportAll}
-              disabled={exportIndex.isPending}
-              data-testid="overview-export-all-btn"
-            >
-              <Download className="mr-2 h-4 w-4" /> Export All
-            </Button>
+          {indexes && indexes.length > 0 && (
+            <>
+              <Button
+                variant="outline"
+                onClick={handleTopLevelUpload}
+                disabled={importIndex.isPending}
+                data-testid="overview-upload-btn"
+              >
+                <Upload className="mr-2 h-4 w-4" /> Upload
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleExportAll}
+                disabled={exportIndex.isPending}
+                data-testid="overview-export-all-btn"
+              >
+                <Download className="mr-2 h-4 w-4" /> Export All
+              </Button>
+            </>
           )}
           <Button onClick={() => setShowCreateDialog(true)}>
             <Plus className="mr-2 h-4 w-4" /> Create Index
@@ -99,15 +144,15 @@ export function Overview() {
 
       {/* Stats Cards */}
       <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
-        <Card data-testid="stat-card-indices">
+        <Card data-testid="stat-card-indexes">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
-              Indices
+              Indexes
               <InfoTooltip content="Each index is an isolated data container with its own documents, settings, and search configuration." />
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{indices?.length || 0}</div>
+            <div className="text-2xl font-bold">{indexes?.length || 0}</div>
           </CardContent>
         </Card>
         <Card data-testid="stat-card-documents">
@@ -151,51 +196,6 @@ export function Overview() {
         </Card>
       </div>
 
-      {/* Index Health Cards — shown when multiple indices exist */}
-      {indices && indices.length > 1 && (
-        <Card data-testid="index-health-section">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base font-medium flex items-center gap-2">
-              <Database className="h-4 w-4" />
-              Index Health
-              <InfoTooltip content="A quick summary of each index's data and health status." />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {indices.map((index) => {
-                const pending = index.numberOfPendingTasks ?? 0;
-                const isHealthy = pending === 0;
-                return (
-                  <div
-                    key={index.uid}
-                    className="flex items-center gap-3 p-3 rounded-md border border-border hover:bg-accent/50 transition-colors cursor-pointer"
-                    onClick={() => navigate(`/index/${encodeURIComponent(index.uid)}`)}
-                    data-testid={`index-card-${index.uid}`}
-                  >
-                    <span
-                      className={`inline-block h-2.5 w-2.5 rounded-full shrink-0 ${
-                        isHealthy ? 'bg-green-500' : 'bg-amber-500 animate-pulse'
-                      }`}
-                      data-testid={`index-status-${index.uid}`}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="font-medium text-sm truncate">{index.uid}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {(index.entries || 0).toLocaleString()} docs · {formatBytes(index.dataSize || 0)}
-                        {pending > 0 && (
-                          <span className="text-amber-600 dark:text-amber-400"> · {pending} pending</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* Server-Wide Analytics */}
       {(overviewLoading || overview?.totalSearches > 0) && (
         <Card data-testid="overview-analytics">
@@ -205,8 +205,8 @@ export function Overview() {
                 <BarChart3 className="h-4 w-4" />
                 Search Analytics (Last 7 Days)
               </CardTitle>
-              {indices?.[0] && (
-                <Link to={`/index/${encodeURIComponent(indices[0].uid)}/analytics`} className="text-xs text-primary hover:underline">View Details</Link>
+              {indexes?.[0] && (
+                <Link to={`/index/${encodeURIComponent(indexes[0].uid)}/analytics`} className="text-xs text-primary hover:underline">View Details</Link>
               )}
             </div>
           </CardHeader>
@@ -264,7 +264,7 @@ export function Overview() {
                 )}
                 {overview?.indices?.length > 1 && (
                   <div className="text-xs text-muted-foreground">
-                    Across {overview.indices.length} indices: {overview.indices.slice(0, 5).map((idx: any) => `${idx.index} (${idx.searches})`).join(', ')}
+                    Across {overview.indices.length} indexes: {overview.indices.slice(0, 5).map((idx: any) => `${idx.index} (${idx.searches})`).join(', ')}
                     {overview.indices.length > 5 && ` and ${overview.indices.length - 5} more`}
                   </div>
                 )}
@@ -277,7 +277,7 @@ export function Overview() {
       {/* Index List */}
       <Card>
         <CardHeader>
-          <CardTitle>Indices</CardTitle>
+          <CardTitle>Indexes</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -297,23 +297,37 @@ export function Overview() {
             </div>
           ) : error ? (
             <div className="text-center py-8 text-red-600">
-              Error loading indices: {error instanceof Error ? error.message : 'Unknown error'}
+              Error loading indexes: {error instanceof Error ? error.message : 'Unknown error'}
             </div>
-          ) : indices && indices.length > 0 ? (
+          ) : indexes && indexes.length > 0 ? (
             <div className="space-y-4">
               <div className="space-y-2">
-                {paginatedIndices.map((index) => (
+                {paginatedIndexes.map((index) => {
+                  const pending = index.numberOfPendingTasks ?? 0;
+                  const isHealthy = pending === 0;
+                  return (
                   <div
                     key={index.uid}
                     className="flex items-center justify-between p-4 rounded-md border border-border hover:bg-accent/50 transition-colors cursor-pointer"
                     onClick={() => navigate(`/index/${encodeURIComponent(index.uid)}`)}
                   >
-                    <div>
-                      <h3 className="font-medium">{index.uid}</h3>
-                      <p className="text-sm text-muted-foreground">
-                        {index.entries?.toLocaleString() || 0} documents · {formatBytes(index.dataSize || 0)}
-                        {index.updatedAt && ` · Updated ${formatDate(index.updatedAt)}`}
-                      </p>
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`inline-block h-2.5 w-2.5 rounded-full shrink-0 ${
+                          isHealthy ? 'bg-green-500' : 'bg-amber-500 animate-pulse'
+                        }`}
+                        title={isHealthy ? 'Healthy' : `${pending} pending task${pending !== 1 ? 's' : ''}`}
+                      />
+                      <div>
+                        <h3 className="font-medium">{index.uid}</h3>
+                        <p className="text-sm text-muted-foreground">
+                          {index.entries?.toLocaleString() || 0} documents · {formatBytes(index.dataSize || 0)}
+                          {index.updatedAt && ` · Updated ${formatDate(index.updatedAt)}`}
+                          {pending > 0 && (
+                            <span className="text-amber-600 dark:text-amber-400"> · {pending} pending</span>
+                          )}
+                        </p>
+                      </div>
                     </div>
                     <div className="flex gap-2 items-center" onClick={(e) => e.stopPropagation()}>
                       <Button
@@ -353,14 +367,15 @@ export function Overview() {
                       </Button>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Pagination */}
               {totalPages > 1 && (
                 <div className="flex items-center justify-between pt-4 border-t">
                   <div className="text-sm text-muted-foreground">
-                    Showing {((currentPage - 1) * ITEMS_PER_PAGE) + 1}-{Math.min(currentPage * ITEMS_PER_PAGE, indices.length)} of {indices.length} indices
+                    Showing {((currentPage - 1) * ITEMS_PER_PAGE) + 1}-{Math.min(currentPage * ITEMS_PER_PAGE, indexes.length)} of {indexes.length} indexes
                   </div>
                   <div className="flex gap-2">
                     <Button
@@ -387,7 +402,7 @@ export function Overview() {
             </div>
           ) : (
             <div className="text-center py-8 text-muted-foreground">
-              No indices yet. Create your first index to get started.
+              No indexes yet. Create your first index to get started.
             </div>
           )}
         </CardContent>
@@ -415,6 +430,34 @@ export function Overview() {
         variant="destructive"
         onConfirm={confirmDelete}
         isPending={deleteMutation.isPending}
+      />
+
+      {/* Upload index selection dialog */}
+      <ConfirmDialog
+        open={showUploadDialog}
+        onOpenChange={setShowUploadDialog}
+        title="Upload Snapshot"
+        description={
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">Select an index to import the snapshot into:</p>
+            <div className="space-y-1">
+              {indexes?.map((idx) => (
+                <button
+                  key={idx.uid}
+                  onClick={() => handleUploadToIndex(idx.uid)}
+                  className="w-full text-left px-3 py-2 rounded-md border border-border hover:bg-accent transition-colors text-sm"
+                >
+                  <span className="font-medium">{idx.uid}</span>
+                  <span className="text-muted-foreground ml-2">
+                    ({(idx.entries || 0).toLocaleString()} docs)
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        }
+        confirmLabel="Cancel"
+        onConfirm={() => setShowUploadDialog(false)}
       />
     </div>
   );

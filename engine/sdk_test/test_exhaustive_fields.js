@@ -12,29 +12,8 @@ const ALGOLIA_APP_ID = process.env.ALGOLIA_APP_ID;
 const ALGOLIA_API_KEY = process.env.ALGOLIA_ADMIN_KEY;
 
 const algoliaClient = algoliasearch(ALGOLIA_APP_ID, ALGOLIA_API_KEY);
-const flapjackClient = algoliasearch('test-app', 'test-key', {
-  requester: {
-    async send(request) {
-      const url = new URL(request.url);
-      url.protocol = 'http:';
-      url.host = 'localhost:7700';
-      
-      const response = await fetch(url.toString(), {
-        method: request.method,
-        headers: request.headers,
-        body: request.data
-      });
-      
-      const content = await response.text();
-      return {
-        status: response.status,
-        content: content,
-        isTimedOut: false,
-        headers: Object.fromEntries(response.headers.entries())
-      };
-    }
-  }
-});
+import { createFlapjackClient } from './lib/flapjack-client.js';
+const flapjackClient = createFlapjackClient();
 
 async function testExhaustiveFields() {
   const testIndex = 'test_exhaustive_debug';

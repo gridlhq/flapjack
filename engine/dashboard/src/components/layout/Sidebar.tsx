@@ -2,7 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { Home, Key, Activity, ArrowRightLeft, ScrollText, X, Database, ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useEffect, useState } from 'react';
-import { useIndices } from '@/hooks/useIndices';
+import { useIndexes } from '@/hooks/useIndexes';
 import { InfoTooltip } from '@/components/ui/info-tooltip';
 
 interface SidebarProps {
@@ -18,23 +18,23 @@ const navItems = [
   { to: '/system', icon: Activity, label: 'System' },
 ];
 
-const MAX_VISIBLE_INDICES = 5;
+const MAX_VISIBLE_INDEXES = 5;
 
 export function Sidebar({ open, onClose }: SidebarProps) {
   const location = useLocation();
-  const { data: indices } = useIndices();
-  const [showAllIndices, setShowAllIndices] = useState(false);
+  const { data: indexes } = useIndexes();
+  const [showAllIndexes, setShowAllIndexes] = useState(false);
 
   // Close sidebar on route change (mobile)
   useEffect(() => {
     onClose?.();
   }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const visibleIndices = showAllIndices
-    ? indices
-    : indices?.slice(0, MAX_VISIBLE_INDICES);
+  const visibleIndexes = showAllIndexes
+    ? indexes
+    : indexes?.slice(0, MAX_VISIBLE_INDEXES);
 
-  const hasMoreIndices = (indices?.length || 0) > MAX_VISIBLE_INDICES;
+  const hasMoreIndexes = (indexes?.length || 0) > MAX_VISIBLE_INDEXES;
 
   return (
     <>
@@ -88,15 +88,15 @@ export function Sidebar({ open, onClose }: SidebarProps) {
           ))}
         </nav>
 
-        {/* Indices section */}
-        {indices && indices.length > 0 && (
-          <div className="mt-6" data-testid="sidebar-indices">
-            <div className="px-4 mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5" data-testid="sidebar-indices-header">
-              Indices
+        {/* Indexes section */}
+        {indexes && indexes.length > 0 && (
+          <div className="mt-6" data-testid="sidebar-indexes">
+            <div className="px-4 mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5" data-testid="sidebar-indexes-header">
+              Indexes
               <InfoTooltip content="Each index is an isolated search collection with its own data, settings, and access controls." side="right" />
             </div>
             <div className="space-y-1">
-              {visibleIndices?.map((index) => {
+              {visibleIndexes?.map((index) => {
                 const indexPath = `/index/${encodeURIComponent(index.uid)}`;
                 const isActive = location.pathname.startsWith(indexPath);
                 return (
@@ -116,13 +116,13 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                   </NavLink>
                 );
               })}
-              {hasMoreIndices && (
+              {hasMoreIndexes && (
                 <button
-                  onClick={() => setShowAllIndices(!showAllIndices)}
+                  onClick={() => setShowAllIndexes(!showAllIndexes)}
                   className="flex items-center gap-3 px-4 py-1.5 rounded-md text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors w-full"
-                  data-testid="sidebar-show-all-indices"
+                  data-testid="sidebar-show-all-indexes"
                 >
-                  {showAllIndices ? (
+                  {showAllIndexes ? (
                     <>
                       <ChevronDown className="h-3 w-3" />
                       Show less
@@ -130,7 +130,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                   ) : (
                     <>
                       <ChevronRight className="h-3 w-3" />
-                      Show all ({indices.length})
+                      Show all ({indexes.length})
                     </>
                   )}
                 </button>

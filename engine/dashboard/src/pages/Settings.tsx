@@ -2,7 +2,7 @@ import { useState, useCallback, lazy, Suspense } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Save, RotateCcw, Code, ChevronLeft, HardDriveDownload } from 'lucide-react';
 import { useSettings, useUpdateSettings } from '@/hooks/useSettings';
-import { useCompactIndex } from '@/hooks/useIndices';
+import { useCompactIndex } from '@/hooks/useIndexes';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';

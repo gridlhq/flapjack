@@ -1,30 +1,6 @@
-import { algoliasearch } from 'algoliasearch';
+import { createFlapjackClient } from './lib/flapjack-client.js';
 
-function createLocalRequester() {
-  return {
-    async send(request) {
-      const url = new URL(request.url);
-      url.protocol = 'http:';
-      url.host = 'localhost:7700';
-      
-      const response = await fetch(url.toString(), {
-        method: request.method,
-        headers: request.headers,
-        body: request.data
-      });
-      
-      return {
-        status: response.status,
-        content: await response.text(),
-        isTimedOut: false
-      };
-    }
-  };
-}
-
-const client = algoliasearch('test-app', 'test-key', {
-  requester: createLocalRequester()
-});
+const client = createFlapjackClient();
 
 async function runTests() {
   const TEST_INDEX = 'test_' + Date.now();

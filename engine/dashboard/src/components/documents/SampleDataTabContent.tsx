@@ -5,6 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Database, ShoppingBag, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/hooks/use-toast';
+import api from '@/lib/api';
 import moviesData from '@/data/movies.json';
 import productsData from '@/data/products.json';
 
@@ -60,16 +62,88 @@ const DATASETS: DatasetConfig[] = [
   },
 ];
 
+// Demo synonyms per dataset — makes exploring search more interesting
+const DEMO_SYNONYMS: Record<DatasetKey, Array<Record<string, unknown>>> = {
+  movies: [
+    { objectID: 'syn-film-movie', type: 'synonym', synonyms: ['film', 'movie', 'picture', 'flick'] },
+    { objectID: 'syn-scifi', type: 'synonym', synonyms: ['sci-fi', 'science fiction', 'scifi'] },
+    { objectID: 'syn-scary', type: 'synonym', synonyms: ['scary', 'horror', 'thriller', 'frightening'] },
+    { objectID: 'syn-funny', type: 'synonym', synonyms: ['funny', 'comedy', 'humorous', 'hilarious'] },
+    { objectID: 'syn-animated', type: 'synonym', synonyms: ['animated', 'animation', 'cartoon'] },
+    { objectID: 'syn-romantic', type: 'synonym', synonyms: ['romantic', 'romance', 'love story'] },
+  ],
+  products: [
+    { objectID: 'syn-laptop-notebook', type: 'synonym', synonyms: ['laptop', 'notebook', 'computer'] },
+    { objectID: 'syn-headphones', type: 'synonym', synonyms: ['headphones', 'earphones', 'earbuds', 'headset'] },
+    { objectID: 'syn-phone', type: 'synonym', synonyms: ['phone', 'mobile', 'smartphone', 'cellphone'] },
+    { objectID: 'syn-shirt', type: 'synonym', synonyms: ['shirt', 'tee', 't-shirt', 'top'] },
+    { objectID: 'syn-sneakers', type: 'synonym', synonyms: ['sneakers', 'shoes', 'trainers', 'kicks'] },
+    { objectID: 'syn-cheap', type: 'onewaysynonym', input: 'cheap', synonyms: ['affordable', 'budget', 'value'] },
+  ],
+};
+
+// Demo merchandising rules — show off pin/hide capabilities
+const DEMO_RULES: Record<DatasetKey, Array<Record<string, unknown>>> = {
+  movies: [
+    {
+      objectID: 'merch-best-movies',
+      conditions: [{ pattern: 'best', anchoring: 'contains' }],
+      consequence: { promote: [{ objectID: 'movie_1', position: 0 }, { objectID: 'movie_2', position: 1 }] },
+      description: 'Pin Shawshank & Godfather for "best" queries',
+      enabled: true,
+    },
+    {
+      objectID: 'merch-action-movies',
+      conditions: [{ pattern: 'action', anchoring: 'contains' }],
+      consequence: { promote: [{ objectID: 'movie_3', position: 0 }] },
+      description: 'Pin The Dark Knight for "action" queries',
+      enabled: true,
+    },
+  ],
+  products: [
+    {
+      objectID: 'merch-headphones',
+      conditions: [{ pattern: 'headphones', anchoring: 'contains' }],
+      consequence: { promote: [{ objectID: 'prod_1', position: 0 }] },
+      description: 'Pin Noise-Cancelling Headphones for "headphones" queries',
+      enabled: true,
+    },
+    {
+      objectID: 'merch-laptop-stand',
+      conditions: [{ pattern: 'laptop', anchoring: 'contains' }],
+      consequence: { promote: [{ objectID: 'prod_2', position: 0 }] },
+      description: 'Pin Laptop Stand for "laptop" queries',
+      enabled: true,
+    },
+  ],
+};
+
 function formatCellValue(value: unknown, colKey: string): string {
   if (Array.isArray(value)) return value.join(', ');
   if (typeof value === 'number' && colKey === 'price') return `$${value.toFixed(2)}`;
   return String(value ?? '');
 }
 
+/** Seed synonyms and merchandising rules for the given index + dataset */
+async function seedExtras(indexName: string, datasetKey: DatasetKey) {
+  const synonyms = DEMO_SYNONYMS[datasetKey];
+  const rules = DEMO_RULES[datasetKey];
+
+  // Batch synonyms
+  if (synonyms.length > 0) {
+    await api.post(`/1/indexes/${indexName}/synonyms/batch`, synonyms).catch(() => {});
+  }
+  // Batch rules
+  if (rules.length > 0) {
+    await api.post(`/1/indexes/${indexName}/rules/batch`, rules).catch(() => {});
+  }
+}
+
 export function SampleDataTabContent({ indexName, onSuccess }: SampleDataTabContentProps) {
   const [dataset, setDataset] = useState<DatasetKey>('movies');
-  const [countInput, setCountInput] = useState('100');
+  const [countInput, setCountInput] = useState('1000');
   const addDocuments = useAddDocuments(indexName);
+  const { toast } = useToast();
 
   const config = DATASETS.find((d) => d.key === dataset)!;
   const maxCount = config.data.length;
@@ -80,11 +154,17 @@ export function SampleDataTabContent({ indexName, onSuccess }: SampleDataTabCont
   const handleLoad = useCallback(async () => {
     try {
       await addDocuments.mutateAsync(selected);
+      // Also seed synonyms and merchandising rules for this dataset
+      await seedExtras(indexName, dataset);
+      toast({
+        title: 'Demo data loaded',
+        description: `${count} documents + synonyms + merchandising rules added.`,
+      });
       onSuccess();
     } catch {
       // error handled by the hook's onError toast
     }
-  }, [selected, addDocuments, onSuccess]);
+  }, [selected, addDocuments, onSuccess, indexName, dataset, count, toast]);
 
   return (
     <div className="space-y-4">
@@ -132,6 +212,12 @@ export function SampleDataTabContent({ indexName, onSuccess }: SampleDataTabCont
           />
           <span className="text-xs text-muted-foreground">of {maxCount} available</span>
         </div>
+      </div>
+
+      {/* What's included */}
+      <div className="text-xs text-muted-foreground bg-muted/30 rounded-md p-2.5 space-y-0.5">
+        <p className="font-medium text-foreground">Includes demo data for:</p>
+        <p>Documents + Synonyms ({DEMO_SYNONYMS[dataset].length}) + Merchandising Rules ({DEMO_RULES[dataset].length})</p>
       </div>
 
       {/* Preview table */}
@@ -193,7 +279,7 @@ export function SampleDataTabContent({ indexName, onSuccess }: SampleDataTabCont
         ) : (
           <>
             <config.icon className="h-4 w-4 mr-2" />
-            Load {count} {config.label}
+            Load {count} {config.label} + Synonyms + Rules
           </>
         )}
       </Button>

@@ -19,3 +19,4 @@ tikv-jemallocator = { version = "0.6", features = ["stats", "background_threads_
 [dev-dependencies]
 assert_cmd = "2.0"
 predicates = "3.0"
+serde_json = "1"

@@ -59,7 +59,7 @@ pub use indices::{
 pub use keys::{
     create_key, delete_key, generate_secured_key, get_key, list_keys, restore_key, update_key,
 };
-pub use migration::migrate_from_algolia;
+pub use migration::{list_algolia_indexes, migrate_from_algolia};
 pub use objects::{
     add_documents, add_record_auto_id, delete_by_query, delete_object, get_object, get_objects,
     partial_update_object, put_object,

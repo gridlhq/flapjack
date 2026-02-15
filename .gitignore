@@ -8,10 +8,10 @@ node_modules/
 /.vscode
 /.env
 /.secret
-/engine/_dev/dev-data
+/dev-data
 /data
-/engine/_dev/tmp
-/engine/_dev/venv
+/tmp
+/venv
 
 # Data directories
 /datasets/
@@ -21,10 +21,10 @@ railway.json
 .claude/settings.local.json
 sdk_test/.cache/
 **/test-results/
-engine/_dev/benchmarks_2/results.json
-engine/_dev/demo-dualclient/dist/openapi.json
-engine/_dev/demo-dualclient/dist/stats.json
-engine/_dev/demo-dualclient/public/openapi.json
+benchmarks_2/results.json
+demo-dualclient/dist/openapi.json
+demo-dualclient/dist/stats.json
+demo-dualclient/public/openapi.json
 
 # Build artifacts
 /dist
@@ -80,3 +80,7 @@ bin/
 node_modules/
 
 __pycache__/
+
+# Large binary/archive files
+sdks/wordpress/*.zip
+sdks/javascript/.yarn/releases/

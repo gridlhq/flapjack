@@ -208,7 +208,7 @@ jobs:
       - name: Start Flapjack server
         run: |
           chmod +x /tmp/flapjack/flapjack
-          /tmp/flapjack/flapjack --no-auth --data-dir /tmp/flapjack-data &
+          FLAPJACK_ADMIN_KEY=fj_devtestadminkey000000 /tmp/flapjack/flapjack --data-dir /tmp/flapjack-data &
           sleep 3
           curl -sf http://localhost:7700/health || (echo "Server failed to start" && exit 1)
       - uses: actions/setup-node@v4
@@ -246,7 +246,7 @@ jobs:
       - name: Start Flapjack server
         run: |
           chmod +x /tmp/flapjack/flapjack
-          /tmp/flapjack/flapjack --no-auth --data-dir /tmp/flapjack-data &
+          FLAPJACK_ADMIN_KEY=fj_devtestadminkey000000 /tmp/flapjack/flapjack --data-dir /tmp/flapjack-data &
           sleep 3
           curl -sf http://localhost:7700/health || (echo "Server failed to start" && exit 1)
       - uses: actions/setup-node@v4

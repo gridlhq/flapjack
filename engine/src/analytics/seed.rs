@@ -34,6 +34,7 @@ const DEFAULT_QUERIES: &[(&str, u32, bool)] = &[
     ("mouse pad", 6, true),
     ("office chair", 4, true),
     ("standing desk", 3, true),
+    ("batman", 5, true),
     // Queries that return no results
     ("free download", 0, false),
     ("asdfghjkl", 0, false),
@@ -140,6 +141,24 @@ const GEO_DISTRIBUTION: &[(&str, &str, f64, Option<&str>)] = &[
     ("MX", "189.203.18.", 0.01, None),
     ("KR", "121.78.168.", 0.01, None),
     ("SG", "103.6.84.", 0.01, None),
+];
+
+/// Filter attributes and values for generating realistic filter analytics.
+/// Format: (attribute, value, weight)
+const FILTER_PATTERNS: &[(&str, &str, f64)] = &[
+    ("brand", "Apple", 0.15),
+    ("brand", "Samsung", 0.12),
+    ("brand", "Sony", 0.08),
+    ("brand", "Dell", 0.06),
+    ("brand", "Google", 0.05),
+    ("category", "Electronics", 0.14),
+    ("category", "Laptops", 0.10),
+    ("category", "Phones", 0.09),
+    ("category", "Audio", 0.07),
+    ("category", "Tablets", 0.06),
+    ("price_range", "0-50", 0.04),
+    ("price_range", "50-200", 0.02),
+    ("price_range", "200-500", 0.02),
 ];
 
 /// Device distribution tags.
@@ -329,6 +348,17 @@ pub fn seed_analytics(
             let (country_code, ip_prefix, _, region) = GEO_DISTRIBUTION[geo_idx];
             let user_ip = format!("{}{}", ip_prefix, rng.range(1, 254));
 
+            // ~30% of searches include filters
+            let filter_str = if has_results && rng.next_f64() < 0.30 {
+                let filter_weights: Vec<f64> =
+                    FILTER_PATTERNS.iter().map(|(_, _, w)| *w).collect();
+                let fi = rng.weighted_pick(&filter_weights);
+                let (attr, val, _) = FILTER_PATTERNS[fi];
+                Some(format!("{}:{}", attr, val))
+            } else {
+                None
+            };
+
             day_searches.push(SearchEvent {
                 timestamp_ms: ts,
                 query: query_text.to_string(),
@@ -338,7 +368,7 @@ pub fn seed_analytics(
                 processing_time_ms: rng.range(2, 45),
                 user_token: Some(users[user_idx].clone()),
                 user_ip: Some(user_ip),
-                filters: None,
+                filters: filter_str,
                 facets: None,
                 analytics_tags: Some(format!("{},source:organic", device_tag)),
                 page: 0,

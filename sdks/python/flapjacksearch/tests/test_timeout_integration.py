@@ -12,7 +12,7 @@ from flapjacksearch.http.verb import Verb
 
 TEST_SERVER = (
     "localhost" if environ.get("CI") == "true" else "host.docker.internal"
-) + ":6676"
+) + ":7700"
 
 
 def create_config_with_host(host_url: str) -> Tuple[BaseConfig, Host]:
@@ -77,7 +77,7 @@ def test_sync_retry_count_resets():
 
     response = transporter.request(
         verb=Verb.GET,
-        path="/1/test/instant",
+        path="/health",
         request_options=request_options,
         use_read_transporter=True,
     )
@@ -157,7 +157,7 @@ async def test_async_retry_count_resets():
 
     response = await transporter.request(
         verb=Verb.GET,
-        path="/1/test/instant",
+        path="/health",
         request_options=request_options,
         use_read_transporter=True,
     )

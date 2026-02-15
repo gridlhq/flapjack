@@ -195,11 +195,22 @@ jobs:
 
   dashboard-pages:
     name: Dashboard page tests
-    needs: check-repo
+    needs: [check-repo, build-server]
     if: needs.check-repo.outputs.is-public-repo == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Download server binary
+        uses: actions/download-artifact@v4
+        with:
+          name: flapjack-server
+          path: /tmp/flapjack
+      - name: Start Flapjack server
+        run: |
+          chmod +x /tmp/flapjack/flapjack
+          /tmp/flapjack/flapjack --no-auth --data-dir /tmp/flapjack-data &
+          sleep 3
+          curl -sf http://localhost:7700/health || (echo "Server failed to start" && exit 1)
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -222,11 +233,22 @@ jobs:
 
   dashboard-integration:
     name: Dashboard integration tests
-    needs: check-repo
+    needs: [check-repo, build-server]
     if: needs.check-repo.outputs.is-public-repo == 'true' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Download server binary
+        uses: actions/download-artifact@v4
+        with:
+          name: flapjack-server
+          path: /tmp/flapjack
+      - name: Start Flapjack server
+        run: |
+          chmod +x /tmp/flapjack/flapjack
+          /tmp/flapjack/flapjack --no-auth --data-dir /tmp/flapjack-data &
+          sleep 3
+          curl -sf http://localhost:7700/health || (echo "Server failed to start" && exit 1)
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -417,6 +439,8 @@ jobs:
         with:
           ruby-version: ${{ matrix.ruby }}
           working-directory: sdks/ruby
+      - name: Update bundler
+        run: gem install bundler
       - name: Install dependencies
         working-directory: sdks/ruby
         run: bundle install

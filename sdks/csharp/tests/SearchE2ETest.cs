@@ -36,6 +36,15 @@ public class SearchE2ETest : IAsyncLifetime
         };
         _client = new SearchClient(config);
 
+        // Configure index settings for filtering and faceting
+        var settings = new IndexSettings
+        {
+            SearchableAttributes = new List<string> { "name", "brand", "category" },
+            AttributesForFaceting = new List<string> { "brand", "category", "price" }
+        };
+        await _client.SetSettingsAsync(TestIndex, settings);
+        await Task.Delay(1500);
+
         // Seed test data using batch
         var records = new List<BatchRequest>
         {

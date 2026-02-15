@@ -40,6 +40,7 @@ composer.lock
 
 # Lock files for dependencies (keep Cargo.lock for binaries, ignore others)
 **/package-lock.json
+!engine/dashboard/package-lock.json
 
 # ML model caches
 **/.fastembed_cache/

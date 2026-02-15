@@ -22,6 +22,8 @@
     "test:ui": "playwright test --project=e2e-ui --ui",
     "test:headed": "playwright test --project=e2e-ui --headed",
     "test:debug": "playwright test --project=e2e-ui --debug",
+    "test:pages": "playwright test --project=e2e-ui",
+    "test:integration": "playwright test --project=e2e-api",
     "test:report": "playwright show-report"
   },
   "dependencies": {

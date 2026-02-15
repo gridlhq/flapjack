@@ -152,7 +152,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: flapjack-server
-          path: engine/target/release/flapjack-server
+          path: engine/target/release/flapjack
           retention-days: 1
 
   # ============================================================================
@@ -272,8 +272,8 @@ jobs:
           path: /tmp/flapjack
       - name: Start Flapjack server
         run: |
-          chmod +x /tmp/flapjack/flapjack-server
-          /tmp/flapjack/flapjack-server --no-auth --data-dir /tmp/flapjack-data &
+          chmod +x /tmp/flapjack/flapjack
+          /tmp/flapjack/flapjack --no-auth --data-dir /tmp/flapjack-data &
           sleep 3
           curl -sf http://localhost:7700/health || (echo "Server failed to start" && exit 1)
       - name: Setup PHP
@@ -306,8 +306,8 @@ jobs:
           path: /tmp/flapjack
       - name: Start Flapjack server
         run: |
-          chmod +x /tmp/flapjack/flapjack-server
-          /tmp/flapjack/flapjack-server --no-auth --data-dir /tmp/flapjack-data &
+          chmod +x /tmp/flapjack/flapjack
+          /tmp/flapjack/flapjack --no-auth --data-dir /tmp/flapjack-data &
           sleep 3
           curl -sf http://localhost:7700/health || (echo "Server failed to start" && exit 1)
       - name: Setup Python
@@ -378,8 +378,8 @@ jobs:
           path: /tmp/flapjack
       - name: Start Flapjack server
         run: |
-          chmod +x /tmp/flapjack/flapjack-server
-          /tmp/flapjack/flapjack-server --no-auth --data-dir /tmp/flapjack-data &
+          chmod +x /tmp/flapjack/flapjack
+          /tmp/flapjack/flapjack --no-auth --data-dir /tmp/flapjack-data &
           sleep 3
           curl -sf http://localhost:7700/health || (echo "Server failed to start" && exit 1)
       - name: Setup Go
@@ -408,8 +408,8 @@ jobs:
           path: /tmp/flapjack
       - name: Start Flapjack server
         run: |
-          chmod +x /tmp/flapjack/flapjack-server
-          /tmp/flapjack/flapjack-server --no-auth --data-dir /tmp/flapjack-data &
+          chmod +x /tmp/flapjack/flapjack
+          /tmp/flapjack/flapjack --no-auth --data-dir /tmp/flapjack-data &
           sleep 3
           curl -sf http://localhost:7700/health || (echo "Server failed to start" && exit 1)
       - name: Setup Ruby
@@ -438,8 +438,8 @@ jobs:
           path: /tmp/flapjack
       - name: Start Flapjack server
         run: |
-          chmod +x /tmp/flapjack/flapjack-server
-          /tmp/flapjack/flapjack-server --no-auth --data-dir /tmp/flapjack-data &
+          chmod +x /tmp/flapjack/flapjack
+          /tmp/flapjack/flapjack --no-auth --data-dir /tmp/flapjack-data &
           sleep 3
           curl -sf http://localhost:7700/health || (echo "Server failed to start" && exit 1)
       - name: Setup Java
@@ -465,8 +465,8 @@ jobs:
           path: /tmp/flapjack
       - name: Start Flapjack server
         run: |
-          chmod +x /tmp/flapjack/flapjack-server
-          /tmp/flapjack/flapjack-server --no-auth --data-dir /tmp/flapjack-data &
+          chmod +x /tmp/flapjack/flapjack
+          /tmp/flapjack/flapjack --no-auth --data-dir /tmp/flapjack-data &
           sleep 3
           curl -sf http://localhost:7700/health || (echo "Server failed to start" && exit 1)
       - name: Setup .NET
@@ -513,8 +513,8 @@ jobs:
       - name: Start Flapjack server
         if: steps.check-tests.outputs.has-tests == 'true'
         run: |
-          chmod +x /tmp/flapjack/flapjack-server
-          /tmp/flapjack/flapjack-server --no-auth --data-dir /tmp/flapjack-data &
+          chmod +x /tmp/flapjack/flapjack
+          /tmp/flapjack/flapjack --no-auth --data-dir /tmp/flapjack-data &
           sleep 3
           curl -sf http://localhost:7700/health || (echo "Server failed to start" && exit 1)
       - name: Setup PHP

@@ -578,12 +578,29 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
 
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
 
+    // Check if admin key has been shown before
+    let admin_key_shown_flag = Path::new(&data_dir).join(".admin_key_shown");
+    let should_show_key = !admin_key_shown_flag.exists();
+
     let auth_status = if no_auth {
         AuthStatus::Disabled
     } else if key_is_new {
+        // New keys are always shown, and we create the flag file
+        if let Err(e) = std::fs::write(&admin_key_shown_flag, "") {
+            tracing::warn!("Failed to create .admin_key_shown flag: {}", e);
+        }
         AuthStatus::NewKey(admin_key.clone().unwrap())
     } else if let Some(ref key) = admin_key {
-        AuthStatus::ExistingKey(key.clone())
+        if should_show_key {
+            // First time showing existing key after restart - show it once
+            if let Err(e) = std::fs::write(&admin_key_shown_flag, "") {
+                tracing::warn!("Failed to create .admin_key_shown flag: {}", e);
+            }
+            AuthStatus::ExistingKey(key.clone())
+        } else {
+            // Key has been shown before - don't show it again
+            AuthStatus::ExistingKeyHidden
+        }
     } else {
         AuthStatus::Disabled
     };
@@ -598,6 +615,7 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
 enum AuthStatus {
     NewKey(String),
     ExistingKey(String),
+    ExistingKeyHidden,
     Disabled,
 }
 
@@ -666,12 +684,38 @@ fn print_startup_banner(bind_addr: &str, auth: AuthStatus, startup_ms: u128) {
                 "🔑".bold(),
                 key.as_str().cyan().bold()
             );
+            println!("     {}", "(shown once for security)".dimmed());
             println!();
             println!("  {}  Useful Commands:", "⚡".bold());
             println!(
                 "     {}  {}",
                 "Reset admin key: ".dimmed(),
                 "flapjack reset-admin-key".cyan()
+            );
+            println!(
+                "     {}  {}",
+                "Disable auth:    ".dimmed(),
+                "flapjack --no-auth".cyan()
+            );
+        }
+        AuthStatus::ExistingKeyHidden => {
+            println!();
+            println!(
+                "  {}  Admin API Key:  {}",
+                "🔑".bold(),
+                "****** (hidden for security)".dimmed()
+            );
+            println!();
+            println!("  {}  Useful Commands:", "⚡".bold());
+            println!(
+                "     {}  {}",
+                "Reset admin key: ".dimmed(),
+                "flapjack reset-admin-key".cyan()
+            );
+            println!(
+                "     {}  {}",
+                "Show current key:".dimmed(),
+                "rm .data/.admin_key_shown && flapjack".cyan()
             );
             println!(
                 "     {}  {}",

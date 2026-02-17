@@ -173,7 +173,6 @@ export function SearchBrowse() {
         params={searchParams}
         onParamsChange={handleParamsChange}
       />
-      <p className="text-xs text-orange-500">Known bug: synonym matches are not highlighted in results</p>
 
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4 min-h-0">
         <ResultsPanel

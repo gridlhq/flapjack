@@ -60,6 +60,8 @@ pub async fn create_key(
     };
 
     let created = key_store.create_key(key);
+    // Only show the full key value at creation time (like Stripe API keys)
+    // After this, the key is hashed and the full value is never shown again
     let response = serde_json::json!({
         "key": created.value,
         "createdAt": Utc::now().to_rfc3339(),

@@ -1,9 +1,8 @@
-# 🥞 Flapjack
+# 🥞 Flapjack ![Beta](https://img.shields.io/badge/status-beta-orange)
 
 [![CI](https://github.com/gridlhq/flapjack/actions/workflows/ci.yml/badge.svg)](https://github.com/gridlhq/flapjack/actions/workflows/ci.yml)
 [![Release](https://github.com/gridlhq/flapjack/actions/workflows/release.yml/badge.svg)](https://github.com/gridlhq/flapjack/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Status: Beta](https://img.shields.io/badge/Status-Beta-orange)](https://github.com/gridlhq/flapjack)
 
 Drop-in replacement for [Algolia](https://algolia.com) — works with [InstantSearch.js](https://github.com/algolia/instantsearch) and the [algoliasearch](https://github.com/algolia/algoliasearch-client-javascript) client. Typo-tolerant full-text search with faceting, geo search, and custom ranking. Single static binary, runs anywhere, data stays on disk.
 

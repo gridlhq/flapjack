@@ -1,0 +1,124 @@
+{
+  "version": "v1",
+  "captured_at": "2026-02-17T17:56:57.833273+00:00",
+  "test_data": [
+    {
+      "objectID": "1",
+      "title": "Gaming Laptop",
+      "description": "Powerful laptop for gaming"
+    },
+    {
+      "objectID": "2",
+      "title": "Notebook Stand",
+      "description": "Stand for your notebook"
+    },
+    {
+      "objectID": "3",
+      "title": "Computer Mouse",
+      "description": "Wireless mouse"
+    }
+  ],
+  "synonyms": [
+    {
+      "objectID": "notebook-laptop-synonym",
+      "type": "synonym",
+      "synonyms": [
+        "notebook",
+        "laptop",
+        "computer"
+      ]
+    }
+  ],
+  "query": "notebook",
+  "expected_response": {
+    "hits": [
+      {
+        "title": "Computer Mouse",
+        "description": "Wireless mouse",
+        "objectID": "3",
+        "_highlightResult": {
+          "title": {
+            "value": "<em>Computer</em> Mouse",
+            "matchLevel": "full",
+            "fullyHighlighted": false,
+            "matchedWords": [
+              "notebook"
+            ]
+          },
+          "description": {
+            "value": "Wireless mouse",
+            "matchLevel": "none",
+            "matchedWords": []
+          }
+        }
+      },
+      {
+        "title": "Notebook Stand",
+        "description": "Stand for your notebook",
+        "objectID": "2",
+        "_highlightResult": {
+          "title": {
+            "value": "<em>Notebook</em> Stand",
+            "matchLevel": "full",
+            "fullyHighlighted": false,
+            "matchedWords": [
+              "notebook"
+            ]
+          },
+          "description": {
+            "value": "Stand for your <em>notebook</em>",
+            "matchLevel": "full",
+            "fullyHighlighted": false,
+            "matchedWords": [
+              "notebook"
+            ]
+          }
+        }
+      },
+      {
+        "title": "Gaming Laptop",
+        "description": "Powerful laptop for gaming",
+        "objectID": "1",
+        "_highlightResult": {
+          "title": {
+            "value": "Gaming <em>Laptop</em>",
+            "matchLevel": "full",
+            "fullyHighlighted": false,
+            "matchedWords": [
+              "notebook"
+            ]
+          },
+          "description": {
+            "value": "Powerful <em>laptop</em> for gaming",
+            "matchLevel": "full",
+            "fullyHighlighted": false,
+            "matchedWords": [
+              "notebook"
+            ]
+          }
+        }
+      }
+    ],
+    "nbHits": 3,
+    "page": 0,
+    "nbPages": 1,
+    "hitsPerPage": 100,
+    "exhaustiveNbHits": true,
+    "exhaustiveTypo": true,
+    "exhaustive": {
+      "nbHits": true,
+      "typo": true
+    },
+    "query": "notebook",
+    "params": "query=notebook&hitsPerPage=100",
+    "renderingContent": {},
+    "processingTimeMS": 1,
+    "processingTimingsMS": {
+      "_request": {
+        "roundTrip": 14
+      },
+      "total": 1
+    },
+    "serverTimeMS": 1
+  }
+}

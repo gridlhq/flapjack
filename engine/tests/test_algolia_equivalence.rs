@@ -442,3 +442,336 @@ async fn test_empty_query_with_filter_matches_algolia() {
         flapjack_hits, fixture.expected_nb_hits
     );
 }
+
+// Extended fixture for synonym tests that includes full response structure
+#[derive(Debug, Serialize, Deserialize)]
+struct AlgoliaSynonymFixture {
+    version: String,
+    captured_at: String,
+    test_data: Vec<Value>,
+    synonyms: Vec<Value>,
+    query: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    replace_synonyms_in_highlight: Option<bool>,
+    expected_response: Value, // Full response including _highlightResult
+}
+
+async fn capture_synonym_test_from_algolia(
+    app_id: &str,
+    api_key: &str,
+    index_name: &str,
+    test_data: Vec<Value>,
+    synonyms: Vec<Value>,
+    query: &str,
+    replace_synonyms_in_highlight: Option<bool>,
+) -> AlgoliaSynonymFixture {
+    let client = reqwest::Client::new();
+
+    // Set up synonyms first
+    for synonym in &synonyms {
+        let response = client
+            .put(format!(
+                "https://{}-dsn.algolia.net/1/indexes/{}/synonyms/{}",
+                app_id,
+                index_name,
+                synonym["objectID"].as_str().unwrap()
+            ))
+            .header("x-algolia-api-key", api_key)
+            .header("x-algolia-application-id", app_id)
+            .json(synonym)
+            .send()
+            .await
+            .expect("Algolia synonym creation failed");
+
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap();
+            panic!("Algolia synonym creation failed: {}", error_text);
+        }
+    }
+
+    // Wait for synonym indexing
+    tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+
+    // Index documents
+    client
+        .post(format!(
+            "https://{}-dsn.algolia.net/1/indexes/{}/batch",
+            app_id, index_name
+        ))
+        .header("x-algolia-api-key", api_key)
+        .header("x-algolia-application-id", app_id)
+        .json(&serde_json::json!({
+            "requests": test_data.iter().map(|obj| {
+                serde_json::json!({"action": "addObject", "body": obj})
+            }).collect::<Vec<_>>()
+        }))
+        .send()
+        .await
+        .expect("Algolia batch upload failed");
+
+    // Wait for document indexing
+    tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
+
+    // Search with synonym settings
+    let mut search_body = serde_json::json!({
+        "query": query,
+        "hitsPerPage": 100,
+    });
+
+    if let Some(replace) = replace_synonyms_in_highlight {
+        search_body["replaceSynonymsInHighlight"] = serde_json::json!(replace);
+    }
+
+    let response = client
+        .post(format!(
+            "https://{}-dsn.algolia.net/1/indexes/{}/query",
+            app_id, index_name
+        ))
+        .header("x-algolia-api-key", api_key)
+        .header("x-algolia-application-id", app_id)
+        .json(&search_body)
+        .send()
+        .await
+        .expect("Algolia search failed");
+
+    let status = response.status();
+    let response_text = response.text().await.expect("Failed to read response body");
+
+    if !status.is_success() {
+        panic!("Algolia API error ({}): {}", status, response_text);
+    }
+
+    let algolia_response: Value =
+        serde_json::from_str(&response_text).expect("Failed to parse Algolia response");
+
+    AlgoliaSynonymFixture {
+        version: "v1".to_string(),
+        captured_at: chrono::Utc::now().to_rfc3339(),
+        test_data,
+        synonyms,
+        query: query.to_string(),
+        replace_synonyms_in_highlight,
+        expected_response: algolia_response,
+    }
+}
+
+async fn get_or_capture_synonym_fixture(
+    fixture_name: &str,
+    test_data: Vec<Value>,
+    synonyms: Vec<Value>,
+    query: &str,
+    replace_synonyms_in_highlight: Option<bool>,
+) -> AlgoliaSynonymFixture {
+    let fixture_path = format!("tests/fixtures/algolia/{}.json", fixture_name);
+
+    if Path::new(&fixture_path).exists() {
+        let json = fs::read_to_string(&fixture_path).unwrap();
+        return serde_json::from_str(&json).unwrap();
+    }
+
+    dotenv::from_path(".secret/.env.secret").ok();
+
+    let app_id = env::var("ALGOLIA_APP_ID")
+        .expect("Fixture missing and ALGOLIA_APP_ID not in .secret/.env.secret");
+    let api_key = env::var("ALGOLIA_ADMIN_KEY")
+        .expect("Fixture missing and ALGOLIA_ADMIN_KEY not in .secret/.env.secret");
+
+    let index_name = format!("flapjack_test_{}", uuid::Uuid::new_v4());
+
+    let fixture = capture_synonym_test_from_algolia(
+        &app_id,
+        &api_key,
+        &index_name,
+        test_data,
+        synonyms,
+        query,
+        replace_synonyms_in_highlight,
+    )
+    .await;
+
+    fs::create_dir_all("tests/fixtures/algolia").unwrap();
+    fs::write(
+        &fixture_path,
+        serde_json::to_string_pretty(&fixture).unwrap(),
+    )
+    .unwrap();
+
+    fixture
+}
+
+#[tokio::test]
+async fn test_synonym_highlighting_default_matches_algolia() {
+    // Test with replaceSynonymsInHighlight = false (Algolia default)
+    // Query: "notebook" with synonym "laptop" -> document contains "laptop"
+    // Expected: Highlight "laptop" in the document (NOT "notebook")
+
+    let test_data = vec![
+        serde_json::json!({"objectID": "1", "title": "Gaming Laptop", "description": "Powerful laptop for gaming"}),
+        serde_json::json!({"objectID": "2", "title": "Notebook Stand", "description": "Stand for your notebook"}),
+        serde_json::json!({"objectID": "3", "title": "Computer Mouse", "description": "Wireless mouse"}),
+    ];
+
+    let synonyms = vec![serde_json::json!({
+        "objectID": "notebook-laptop-synonym",
+        "type": "synonym",
+        "synonyms": ["notebook", "laptop", "computer"]
+    })];
+
+    let fixture = get_or_capture_synonym_fixture(
+        "synonym-highlight-default",
+        test_data.clone(),
+        synonyms.clone(),
+        "notebook",
+        None, // Use Algolia default (false)
+    )
+    .await;
+
+    // Set up Flapjack
+    let (addr, _temp) = common::spawn_server().await;
+    let client = reqwest::Client::new();
+
+    // Add synonyms to Flapjack
+    for synonym in &synonyms {
+        client
+            .put(format!(
+                "http://{}/1/indexes/products/synonyms/{}",
+                addr,
+                synonym["objectID"].as_str().unwrap()
+            ))
+            .header("x-algolia-api-key", "test")
+            .header("x-algolia-application-id", "test")
+            .json(synonym)
+            .send()
+            .await
+            .unwrap();
+    }
+
+    // Index documents
+    client
+        .post(format!("http://{}/1/indexes/products/batch", addr))
+        .header("x-algolia-api-key", "test")
+        .header("x-algolia-application-id", "test")
+        .json(&serde_json::json!({
+            "requests": test_data.iter().map(|obj| {
+                serde_json::json!({"action": "addObject", "body": obj})
+            }).collect::<Vec<_>>()
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+    // Search
+    let flapjack_response = client
+        .post(format!("http://{}/1/indexes/products/query", addr))
+        .header("x-algolia-api-key", "test")
+        .header("x-algolia-application-id", "test")
+        .json(&serde_json::json!({"query": fixture.query, "hitsPerPage": 100}))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap();
+
+    // Compare hit counts
+    let flapjack_nb_hits = flapjack_response["nbHits"].as_u64().unwrap();
+    let algolia_nb_hits = fixture.expected_response["nbHits"].as_u64().unwrap();
+
+    println!("\n=== FLAPJACK RESPONSE ===");
+    println!("{}", serde_json::to_string_pretty(&flapjack_response).unwrap());
+    println!("\n=== ALGOLIA RESPONSE ===");
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&fixture.expected_response).unwrap()
+    );
+
+    assert_eq!(
+        flapjack_nb_hits, algolia_nb_hits,
+        "Hit count mismatch for synonym query '{}': Flapjack={}, Algolia={}",
+        fixture.query, flapjack_nb_hits, algolia_nb_hits
+    );
+
+    // Compare _highlightResult structures for each hit
+    let flapjack_hits = flapjack_response["hits"].as_array().unwrap();
+    let algolia_hits = fixture.expected_response["hits"].as_array().unwrap();
+
+    assert_eq!(
+        flapjack_hits.len(),
+        algolia_hits.len(),
+        "Number of hits don't match"
+    );
+
+    // Build a map of Algolia hits by objectID for easier comparison
+    let algolia_map: std::collections::HashMap<&str, &serde_json::Value> = algolia_hits
+        .iter()
+        .map(|hit| (hit["objectID"].as_str().unwrap(), hit))
+        .collect();
+
+    for fj_hit in flapjack_hits.iter() {
+        let object_id = fj_hit["objectID"].as_str().unwrap();
+        let alg_hit = algolia_map.get(object_id).unwrap_or_else(|| {
+            panic!("Flapjack returned objectID {} but Algolia didn't", object_id)
+        });
+
+        // Compare _highlightResult
+        let fj_highlight = &fj_hit["_highlightResult"];
+        let alg_highlight = &alg_hit["_highlightResult"];
+
+        // Compare each field's highlight structure
+        if let (Some(fj_obj), Some(alg_obj)) = (fj_highlight.as_object(), alg_highlight.as_object())
+        {
+            for (field_name, alg_field_highlight) in alg_obj {
+                let fj_field_highlight = fj_obj.get(field_name).unwrap_or_else(|| {
+                    panic!(
+                        "objectID {}: Flapjack missing _highlightResult field '{}'",
+                        object_id, field_name
+                    )
+                });
+
+                // Compare value (the highlighted text)
+                let alg_value = alg_field_highlight["value"].as_str().unwrap();
+                let fj_value = fj_field_highlight["value"].as_str().unwrap();
+
+                assert_eq!(
+                    fj_value, alg_value,
+                    "objectID {}: _highlightResult.{}.value mismatch\nFlapjack: {}\nAlgolia:  {}",
+                    object_id, field_name, fj_value, alg_value
+                );
+
+                // Compare matchLevel
+                let alg_match_level = alg_field_highlight["matchLevel"].as_str().unwrap();
+                let fj_match_level = fj_field_highlight["matchLevel"].as_str().unwrap();
+
+                assert_eq!(
+                    fj_match_level, alg_match_level,
+                    "objectID {}: _highlightResult.{}.matchLevel mismatch: Flapjack={}, Algolia={}",
+                    object_id, field_name, fj_match_level, alg_match_level
+                );
+
+                // Compare matchedWords
+                let alg_matched_words = alg_field_highlight["matchedWords"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|v| v.as_str().unwrap())
+                    .collect::<Vec<_>>();
+                let fj_matched_words = fj_field_highlight["matchedWords"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|v| v.as_str().unwrap())
+                    .collect::<Vec<_>>();
+
+                assert_eq!(
+                    fj_matched_words, alg_matched_words,
+                    "objectID {}: _highlightResult.{}.matchedWords mismatch: Flapjack={:?}, Algolia={:?}",
+                    object_id, field_name, fj_matched_words, alg_matched_words
+                );
+            }
+        }
+    }
+
+    println!("✅ Synonym highlighting matches Algolia byte-for-byte!");
+}

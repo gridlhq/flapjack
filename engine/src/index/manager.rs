@@ -850,7 +850,7 @@ impl IndexManager {
 
         let mut all_results = Vec::new();
         let mut seen_ids = HashSet::new();
-        let mut first_query_total: Option<usize> = None;
+        let mut query_totals: Vec<usize> = Vec::new();
 
         let effective_limit = limit + offset;
         let mut split_alternatives_generated = false;
@@ -915,11 +915,6 @@ impl IndexManager {
                 t5.saturating_sub(t4),
                 t6.saturating_sub(t5)
             );
-            match first_query_total {
-                Some(prev) if result.total > prev => first_query_total = Some(result.total),
-                None => first_query_total = Some(result.total),
-                _ => {}
-            }
             if query_idx == 0 && facet_result.is_none() && !result.facets.is_empty() {
                 // Cache inline-collected facets for subsequent keystrokes
                 if let Some(ref key) = facet_cache_key {
@@ -945,6 +940,10 @@ impl IndexManager {
                 }
                 facet_result = Some((result.total, result.facets));
             }
+
+            // Track total from this query for final total calculation
+            query_totals.push(result.total);
+
             for doc in result.documents {
                 if seen_ids.insert(doc.document.id.clone()) {
                     all_results.push(doc);
@@ -992,8 +991,24 @@ impl IndexManager {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        let mut total = first_query_total.unwrap_or(0);
         let result_count = all_results.len();
+
+        // Calculate total based on whether synonyms were expanded
+        let mut total = if query_totals.len() == 1 {
+            // Single query: use its total directly
+            query_totals[0]
+        } else {
+            // Multiple queries (synonym expansion): use actual unique doc count
+            // if we collected all results, otherwise estimate with max
+            if result_count < effective_limit {
+                // We got all unique documents
+                result_count
+            } else {
+                // Hit the limit, might have missed some. Use max as estimate.
+                // This is not perfect but better than summing (which double-counts).
+                query_totals.iter().copied().max().unwrap_or(result_count)
+            }
+        };
         let start = offset.min(result_count);
         let end = (start + limit).min(result_count);
         let page_results = all_results[start..end].to_vec();

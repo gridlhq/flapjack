@@ -126,7 +126,7 @@ impl KeyStore {
         };
 
         let search_key = ApiKey {
-            value: format!("fj_{}", generate_hex_key()),
+            value: format!("fj_search_{}", generate_hex_key()),
             created_at: now,
             acl: vec!["search".into()],
             description: "Default Search API Key".into(),
@@ -171,7 +171,7 @@ impl KeyStore {
     }
 
     pub fn create_key(&self, mut key: ApiKey) -> ApiKey {
-        key.value = format!("fj_{}", generate_hex_key());
+        key.value = format!("fj_search_{}", generate_hex_key());
         key.created_at = Utc::now().timestamp_millis();
         let mut data = self.data.write().unwrap();
         data.keys.push(key.clone());
@@ -335,9 +335,9 @@ pub fn generate_hex_key() -> String {
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
-/// Generate a prefixed admin key (fj_ + 32 hex chars).
+/// Generate a prefixed admin key (fj_admin_ + 32 hex chars).
 pub fn generate_admin_key() -> String {
-    format!("fj_{}", generate_hex_key())
+    format!("fj_admin_{}", generate_hex_key())
 }
 
 /// Read the admin key from an existing keys.json, if one exists.
@@ -378,6 +378,12 @@ pub fn reset_admin_key(data_dir: &Path) -> Result<String, String> {
     let json = serde_json::to_string_pretty(&data)
         .map_err(|e| format!("Failed to serialize keys.json: {}", e))?;
     std::fs::write(&file_path, json).map_err(|e| format!("Failed to write keys.json: {}", e))?;
+
+    // Remove the .admin_key_shown flag so the new key will be displayed
+    let flag_file = data_dir.join(".admin_key_shown");
+    if flag_file.exists() {
+        let _ = std::fs::remove_file(&flag_file);
+    }
 
     Ok(new_key)
 }

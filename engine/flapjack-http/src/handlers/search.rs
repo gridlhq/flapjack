@@ -110,6 +110,48 @@ fn highlight_value_to_json(value: &HighlightValue) -> serde_json::Value {
     }
 }
 
+/// Replace matchedWords in highlight results with original query terms.
+/// This implements Algolia's replaceSynonymsInHighlight=false behavior (the default).
+fn replace_matched_words_with_original(
+    value: HighlightValue,
+    original_words: &[String],
+) -> HighlightValue {
+    use flapjack::query::highlighter::MatchLevel;
+
+    match value {
+        HighlightValue::Single(mut result) => {
+            // Only replace if there were matches
+            if !result.matched_words.is_empty() {
+                result.matched_words = original_words.to_vec();
+                // Recalculate matchLevel based on original query words
+                // If we found any matches, it's a full match of the original query
+                result.match_level = MatchLevel::Full;
+            }
+            HighlightValue::Single(result)
+        }
+        HighlightValue::Array(results) => {
+            let updated = results
+                .into_iter()
+                .map(|mut result| {
+                    if !result.matched_words.is_empty() {
+                        result.matched_words = original_words.to_vec();
+                        result.match_level = MatchLevel::Full;
+                    }
+                    result
+                })
+                .collect();
+            HighlightValue::Array(updated)
+        }
+        HighlightValue::Object(map) => {
+            let updated = map
+                .into_iter()
+                .map(|(k, v)| (k, replace_matched_words_with_original(v, original_words)))
+                .collect();
+            HighlightValue::Object(updated)
+        }
+    }
+}
+
 fn snippet_value_map_to_json(map: &HashMap<String, SnippetValue>) -> serde_json::Value {
     let mut obj = serde_json::Map::new();
     for (k, v) in map {
@@ -415,7 +457,27 @@ fn search_single_sync(
 
     let search_elapsed = start.elapsed();
 
-    let query_words = extract_query_words(&req.query);
+    // Extract original query words for matchedWords (Algolia compatibility)
+    let original_query_words = extract_query_words(&req.query);
+
+    // For highlighting, expand to include synonyms to highlight all variant matches
+    let mut query_words = original_query_words.clone();
+
+    // If synonyms are enabled, expand query words to highlight all synonym matches
+    if req.enable_synonyms.unwrap_or(true) {
+        if let Some(synonym_store) = state.manager.get_synonyms(&index_name) {
+            let expanded_queries = synonym_store.expand_query(&req.query);
+            // Extract words from all expanded queries and add to query_words
+            let mut all_words: std::collections::HashSet<String> = query_words.iter().cloned().collect();
+            for expanded in &expanded_queries {
+                for word in extract_query_words(expanded) {
+                    all_words.insert(word);
+                }
+            }
+            query_words = all_words.into_iter().collect();
+        }
+    }
+
     let highlighter = match (&req.highlight_pre_tag, &req.highlight_post_tag) {
         (Some(pre), Some(post)) => Highlighter::new(pre.clone(), post.clone()),
         _ => Highlighter::default(),
@@ -538,11 +600,19 @@ fn search_single_sync(
             let skip_highlight =
                 matches!(&req.attributes_to_highlight, Some(attrs) if attrs.is_empty());
             if !skip_highlight {
-                let highlight_map = highlighter.highlight_document(
+                let mut highlight_map = highlighter.highlight_document(
                     &scored_doc.document,
                     &query_words,
                     &searchable_paths,
                 );
+
+                // Replace matchedWords with original query terms (Algolia compatibility)
+                // This implements replaceSynonymsInHighlight=false behavior
+                highlight_map = highlight_map
+                    .into_iter()
+                    .map(|(k, v)| (k, replace_matched_words_with_original(v, &original_query_words)))
+                    .collect();
+
                 let highlight_json = highlight_value_map_to_json(&highlight_map);
                 doc_map.insert("_highlightResult".to_string(), highlight_json);
             }

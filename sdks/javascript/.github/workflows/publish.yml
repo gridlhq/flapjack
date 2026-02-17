@@ -1,0 +1,81 @@
+name: Manual publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'npm dist-tag (e.g., beta, latest)'
+        required: true
+        default: 'beta'
+        type: choice
+        options:
+          - beta
+          - latest
+
+permissions:
+  id-token: write # Required for OIDC Trusted Publishing
+  contents: read
+
+jobs:
+  publish:
+    name: Build & Publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Upgrade npm for OIDC support
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: yarn install
+
+      - name: Build
+        run: yarn build
+
+      - name: Test
+        run: yarn test
+
+      - name: Publish packages
+        run: |
+          for pkg in packages/*/; do
+            if [ -f "$pkg/package.json" ]; then
+              is_private=$(node -p "require('./$pkg/package.json').private || false")
+              if [ "$is_private" = "false" ]; then
+                pkg_name=$(node -p "require('./$pkg/package.json').name")
+                pkg_ver=$(node -p "require('./$pkg/package.json').version")
+                echo "Publishing $pkg_name@$pkg_ver with tag ${{ inputs.tag }}..."
+                cd "$pkg"
+                npm publish --tag ${{ inputs.tag }} --access public || echo "SKIP: $pkg_name already published"
+                cd ../..
+              fi
+            fi
+          done
+        env:
+          # OIDC is used automatically when id-token: write is set
+          # NPM_AUTH_TOKEN is a fallback if Trusted Publishing isn't configured yet
+          NPM_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+
+      - name: Verify published packages
+        run: |
+          echo "Waiting 10s for registry to propagate..."
+          sleep 10
+          for pkg in packages/*/; do
+            if [ -f "$pkg/package.json" ]; then
+              is_private=$(node -p "require('./$pkg/package.json').private || false")
+              if [ "$is_private" = "false" ]; then
+                pkg_name=$(node -p "require('./$pkg/package.json').name")
+                pkg_ver=$(node -p "require('./$pkg/package.json').version")
+                echo -n "$pkg_name@$pkg_ver: "
+                npm view "$pkg_name@$pkg_ver" version 2>/dev/null && echo "OK" || echo "NOT FOUND"
+              fi
+            fi
+          done

@@ -1,0 +1,49 @@
+package com.flapjackhq.internal.interceptors;
+
+import java.io.IOException;
+import javax.annotation.Nonnull;
+import okhttp3.Headers;
+import okhttp3.Interceptor;
+import okhttp3.Response;
+
+public final class AuthInterceptor implements Interceptor {
+
+  private static final String HEADER_APPLICATION_ID = "x-algolia-application-id";
+  private static final String HEADER_API_KEY = "x-algolia-api-key";
+
+  private final String applicationId;
+  private String apiKey;
+
+  public AuthInterceptor(String applicationId, String apiKey) {
+    this.applicationId = applicationId;
+    this.apiKey = apiKey;
+  }
+
+  public void setApiKey(String apiKey) {
+    this.apiKey = apiKey;
+  }
+
+  public String getApiKey() {
+    return this.apiKey;
+  }
+
+  public String getApplicationId() {
+    return this.applicationId;
+  }
+
+  @Nonnull
+  @Override
+  public Response intercept(Chain chain) throws IOException {
+    okhttp3.Request originalRequest = chain.request();
+    okhttp3.Request.Builder builder = originalRequest.newBuilder();
+    Headers headers = originalRequest.headers();
+    if (headers.get(HEADER_APPLICATION_ID) == null) {
+      builder.header(HEADER_APPLICATION_ID, applicationId);
+    }
+    if (headers.get(HEADER_API_KEY) == null) {
+      builder.header(HEADER_API_KEY, apiKey);
+    }
+    okhttp3.Request newRequest = builder.build();
+    return chain.proceed(newRequest);
+  }
+}

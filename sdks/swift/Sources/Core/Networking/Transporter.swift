@@ -1,0 +1,154 @@
+// Transporter.swift
+//
+// Created by Flapjack on 08/01/2024
+//
+
+import Foundation
+
+#if canImport(FoundationNetworking)
+    import FoundationNetworking
+#endif
+
+// MARK: - Transporter
+
+open class Transporter {
+    var configuration: BaseConfiguration
+    let retryStrategy: RetryStrategy
+    let requestBuilder: RequestBuilder
+    let exposeIntermediateErrors: Bool
+
+    public init(
+        configuration: BaseConfiguration,
+        retryStrategy: RetryStrategy? = nil,
+        requestBuilder: RequestBuilder? = nil,
+        exposeIntermediateErrors: Bool = false
+    ) {
+        self.configuration = configuration
+        self.retryStrategy = retryStrategy ?? FlapjackRetryStrategy(configuration: configuration)
+        self.exposeIntermediateErrors = exposeIntermediateErrors
+
+        guard let requestBuilder else {
+            let sessionConfiguration: URLSessionConfiguration = .default
+
+            sessionConfiguration.timeoutIntervalForRequest = configuration.readTimeout
+            sessionConfiguration.timeoutIntervalForResource = configuration.writeTimeout
+
+            self.requestBuilder = URLSessionRequestBuilder(
+                sessionConfiguration: sessionConfiguration
+            )
+
+            return
+        }
+
+        self.requestBuilder = requestBuilder
+    }
+
+    public func setClientApiKey(apiKey: String) {
+        self.configuration.defaultHeaders?.updateValue(apiKey, forKey: "X-Algolia-API-Key")
+    }
+
+    public func send<T: Decodable>(
+        method: String, path: String, data: Codable?, requestOptions: RequestOptions? = nil,
+        useReadTransporter: Bool = false
+    ) async throws -> Response<T> {
+        let httpMethod = HTTPMethod(rawValue: method)
+
+        guard let httpMethod else {
+            throw FlapjackError.requestError(GenericError(description: "Unknown HTTP method"))
+        }
+
+        let callType: CallType = useReadTransporter ? CallType.read : httpMethod.toCallType()
+        let hostIterator: HostIterator = self.retryStrategy.retryableHosts(for: callType)
+        let headers: [String: String] = requestOptions?.headers ?? [:]
+        var body: Data? = nil
+        var urlComponents = URLComponents()
+        var intermediateErrors: [Error] = []
+
+        if let requestOptionsData = requestOptions?.body {
+            body = try JSONSerialization.data(withJSONObject: requestOptionsData as Any, options: [])
+        } else if let data {
+            body = try CodableHelper.jsonEncoder.encode(data)
+        }
+
+        if httpMethod == .get {
+            body = nil
+        } else if body == nil, httpMethod != .delete {
+            body = "{}".data(using: .utf8)
+        }
+
+        urlComponents.percentEncodedPath = path
+
+        if let percentEncodedQueryItems = APIHelper.mapValuesToQueryItems(requestOptions?.queryParameters) {
+            urlComponents.percentEncodedQueryItems = percentEncodedQueryItems
+        }
+
+        while let host = hostIterator.next() {
+            let rawTimeout =
+                requestOptions?.timeout(for: callType) ?? self.configuration.timeout(for: callType)
+            let timeout = TimeInterval(host.retryCount + 1) * rawTimeout
+
+            guard let url = urlComponents.url(relativeTo: host.url) else {
+                throw FlapjackError.requestError(GenericError(description: "Malformed URL"))
+            }
+
+            var request = URLRequest(url: url)
+
+            request.httpMethod = httpMethod.rawValue
+            request.timeoutInterval = timeout
+
+            for (key, value) in self.configuration.defaultHeaders ?? [:] {
+                request.setValue(value, forHTTPHeaderField: key.capitalized)
+            }
+            request.setValue(
+                UserAgentController.httpHeaderValue, forHTTPHeaderField: "User-Agent".capitalized
+            )
+            if self.configuration.compression == .gzip {
+                request.setValue("gzip", forHTTPHeaderField: "Accept-Encoding".capitalized)
+
+                if let bodyData = body {
+                    request.setValue("gzip", forHTTPHeaderField: "Content-Encoding".capitalized)
+
+                    body = try bodyData.gzip()
+                }
+            }
+            for (key, value) in headers {
+                request.setValue(value, forHTTPHeaderField: key.capitalized)
+            }
+
+            if callType == CallType.write {
+                guard let contentType = request.allHTTPHeaderFields?["Content-Type"],
+                      contentType.hasPrefix("application/json")
+                else {
+                    throw FlapjackError.requestError(
+                        GenericError(description: "Unsupported Content-Type")
+                    )
+                }
+            }
+
+            request.httpBody = body
+
+            do {
+                let response: Response<T> = try await requestBuilder.execute(
+                    urlRequest: request, timeout: timeout
+                )
+                self.retryStrategy.notify(host: host, error: nil)
+                return response
+            } catch let cancellationError as CancellationError {
+                throw cancellationError
+            } catch {
+                self.retryStrategy.notify(host: host, error: error)
+
+                guard self.retryStrategy.canRetry(inCaseOf: error) else {
+                    throw error
+                }
+
+                intermediateErrors.append(error)
+            }
+        }
+
+        throw FlapjackError.noReachableHosts(
+            intermediateErrors: intermediateErrors,
+            exposeIntermediateErrors: self.exposeIntermediateErrors
+        )
+    }
+}

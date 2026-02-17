@@ -1,0 +1,26 @@
+{
+  "name": "flapjack-search-wordpress",
+  "private": true,
+  "type": "module",
+  "description": "Build tooling for Flapjack Search WordPress plugin",
+  "scripts": {
+    "build:vendor": "node scripts/vendor-deps.js",
+    "build": "npm run build:vendor",
+    "wp-env": "wp-env",
+    "wp-env:start": "wp-env start",
+    "wp-env:stop": "wp-env stop",
+    "wp-env:destroy": "wp-env destroy",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:debug": "playwright test --debug",
+    "test:e2e:report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@wordpress/env": "^10.39.0",
+    "dotenv": "^17.2.4",
+    "instantsearch.css": "^8.5.1",
+    "instantsearch.js": "^4.75.0"
+  }
+}

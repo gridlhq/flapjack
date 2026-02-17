@@ -1,0 +1,61 @@
+{
+  "name": "@flapjack-search/requester-testing",
+  "version": "0.1.0-beta.1",
+  "private": true,
+  "description": "A package that contains the echo requester of the flapjack-search JavaScript requesters, for testing purposes",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/flapjackhq/flapjack-search-javascript.git"
+  },
+  "homepage": "https://github.com/flapjackhq/flapjack-search-javascript#readme",
+  "license": "MIT",
+  "author": "Algolia",
+  "type": "module",
+  "files": [
+    "dist",
+    "index.d.ts",
+    "index.js"
+  ],
+  "exports": {
+    ".": {
+      "node": {
+        "types": {
+          "import": "./dist/node.d.ts",
+          "module": "./dist/node.d.ts",
+          "require": "./dist/node.d.cts"
+        },
+        "import": "./dist/node.js",
+        "module": "./dist/node.js",
+        "require": "./dist/node.cjs"
+      },
+      "default": {
+        "types": "./dist/browser.d.ts",
+        "module": "./dist/browser.js",
+        "import": "./dist/browser.js",
+        "default": "./dist/browser.js"
+      }
+    },
+    "./src/*": "./src/*.ts"
+  },
+  "scripts": {
+    "build": "yarn clean && yarn tsup",
+    "clean": "rm -rf ./dist || true",
+    "test:bundle": "publint . && attw --pack ."
+  },
+  "dependencies": {
+    "@flapjack-search/client-common": "^0.1.0-beta.1"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.2",
+    "@types/node": "24.10.9",
+    "publint": "0.3.17",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">= 14.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

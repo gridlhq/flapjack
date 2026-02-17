@@ -1,0 +1,55 @@
+{
+    "$schema": "https://schemas.wp.org/trunk/block.json",
+    "apiVersion": 3,
+    "name": "flapjack/search",
+    "version": "0.1.0",
+    "title": "Flapjack Search",
+    "category": "widgets",
+    "icon": "search",
+    "description": "A search block powered by Flapjack with autocomplete and instant results.",
+    "keywords": [ "search", "flapjack", "instant", "autocomplete" ],
+    "supports": {
+        "html": false,
+        "align": [ "wide", "full" ],
+        "color": {
+            "text": true,
+            "background": true
+        },
+        "typography": {
+            "fontSize": true,
+            "lineHeight": true
+        },
+        "spacing": {
+            "margin": true,
+            "padding": true
+        }
+    },
+    "attributes": {
+        "placeholder": {
+            "type": "string",
+            "default": "Search..."
+        },
+        "showButton": {
+            "type": "boolean",
+            "default": true
+        },
+        "buttonText": {
+            "type": "string",
+            "default": "Search"
+        },
+        "showAutocomplete": {
+            "type": "boolean",
+            "default": true
+        },
+        "maxSuggestions": {
+            "type": "number",
+            "default": 5
+        }
+    },
+    "textdomain": "flapjack-search",
+    "editorScript": "file:./index.js",
+    "editorStyle": "file:./editor.css",
+    "style": "file:./style.css",
+    "render": "file:./render.php",
+    "viewScript": "file:./view.js"
+}

@@ -1,0 +1,114 @@
+/**
+ * Flapjack Search Block — Frontend Styles
+ */
+
+.wp-block-flapjack-search {
+    position: relative;
+}
+
+.wp-block-flapjack-search .flapjack-search-form {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+}
+
+.wp-block-flapjack-search .flapjack-search-input {
+    flex: 1;
+    padding: 8px 12px;
+    font-size: 16px;
+    border: 1px solid #8c8f94;
+    border-radius: 4px 0 0 4px;
+    line-height: 1.5;
+    outline: none;
+    background: #fff;
+    color: #1e1e1e;
+}
+
+.wp-block-flapjack-search .flapjack-search-input:focus {
+    border-color: #3858e9;
+    box-shadow: 0 0 0 1px #3858e9;
+}
+
+.wp-block-flapjack-search .flapjack-search-button {
+    padding: 8px 16px;
+    font-size: 16px;
+    line-height: 1.5;
+    border: 1px solid #3858e9;
+    border-left: 0;
+    border-radius: 0 4px 4px 0;
+    background: #3858e9;
+    color: #fff;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.wp-block-flapjack-search .flapjack-search-button:hover {
+    background: #1d35b4;
+}
+
+/* When no button, round the input fully */
+.wp-block-flapjack-search .flapjack-search-input:only-child {
+    border-radius: 4px;
+}
+
+/* Autocomplete dropdown */
+.wp-block-flapjack-search .flapjack-autocomplete-dropdown {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 100%;
+    z-index: 9999;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-top: 0;
+    border-radius: 0 0 4px 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.wp-block-flapjack-search .flapjack-autocomplete-item {
+    display: block;
+    padding: 10px 12px;
+    text-decoration: none;
+    color: #1e1e1e;
+    border-bottom: 1px solid #f0f0f0;
+    transition: background 0.15s;
+}
+
+.wp-block-flapjack-search .flapjack-autocomplete-item:last-child {
+    border-bottom: 0;
+}
+
+.wp-block-flapjack-search .flapjack-autocomplete-item:hover,
+.wp-block-flapjack-search .flapjack-autocomplete-item.active {
+    background: #f0f0f1;
+}
+
+.wp-block-flapjack-search .flapjack-autocomplete-item .title {
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.wp-block-flapjack-search .flapjack-autocomplete-item .excerpt {
+    font-size: 12px;
+    color: #757575;
+    margin-top: 2px;
+}
+
+.wp-block-flapjack-search .flapjack-autocomplete-item .type-badge {
+    display: inline-block;
+    font-size: 11px;
+    color: #757575;
+    background: #f0f0f1;
+    padding: 1px 6px;
+    border-radius: 3px;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+
+.wp-block-flapjack-search .flapjack-autocomplete-item em {
+    font-style: normal;
+    font-weight: 700;
+    background: #fff3cd;
+}

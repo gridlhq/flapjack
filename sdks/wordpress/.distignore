@@ -1,0 +1,23 @@
+# Directories
+/.git
+/.github
+/bin
+/node_modules
+/tests
+/vendor/phpunit
+/vendor/yoast
+
+# Files
+/.distignore
+/.gitignore
+/.php-cs-fixer.cache
+/.phpunit.result.cache
+/composer.json
+/composer.lock
+/package.json
+/package-lock.json
+/phpunit.xml
+/phpstan.neon
+
+# Build scripts (vendor deps are pre-built in assets/vendor/)
+/scripts

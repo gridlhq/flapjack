@@ -1,0 +1,58 @@
+name: Release packages
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: write # Required for OIDC Trusted Publishing
+  contents: read
+
+jobs:
+  release:
+    name: Publish
+    runs-on: ubuntu-latest
+    if: "startsWith(github.event.head_commit.message, 'chore: release')"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Upgrade npm for OIDC support
+        run: npm install -g npm@latest
+
+      - name: Verify OIDC is available
+        run: |
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL}" ]; then
+            echo "WARNING: OIDC token not available, falling back to NPM_AUTH_TOKEN"
+          else
+            echo "OIDC token endpoint available — using Trusted Publishing"
+          fi
+
+      - name: Install JavaScript dependencies
+        shell: bash
+        run: yarn install
+
+      - name: Build clients
+        shell: bash
+        run: yarn build
+
+      - name: Run tests
+        shell: bash
+        run: yarn test
+
+      - name: Publish to npm
+        shell: bash
+        run: yarn release:publish
+        env:
+          # OIDC is used automatically when id-token: write is set
+          # NPM_AUTH_TOKEN is a fallback if Trusted Publishing isn't configured yet
+          NPM_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}

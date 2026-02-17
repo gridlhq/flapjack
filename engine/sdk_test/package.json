@@ -1,0 +1,14 @@
+{
+  "name": "flapjack-algolia-sdk-validation",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "node test.js",
+    "test:migration": "node test_algolia_migration.js",
+    "test:migration:verbose": "node test_algolia_migration.js --verbose"
+  },
+  "dependencies": {
+    "algoliasearch": "^5.0.0",
+    "dotenv": "^17.2.3"
+  }
+}

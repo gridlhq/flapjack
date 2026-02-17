@@ -1,0 +1,94 @@
+## [1.44.0](https://github.com/flapjackhq/flapjacksearch-client-dart/compare/1.43.3...1.44.0)
+
+- [b39e3e013](https://github.com/flapjackhq/api-clients-automation/commit/b39e3e013) feat(specs): `conditions` is not required anymore in composition rules ([#5853](https://github.com/flapjackhq/api-clients-automation/pull/5853)) by [@ClaraMuller](https://github.com/ClaraMuller/)
+- [6a3e60802](https://github.com/flapjackhq/api-clients-automation/commit/6a3e60802) fix(specs): BREAKING CHANGE – remove baseRecommendRequest from trendingFacets [CR-10264] ([#5858](https://github.com/flapjackhq/api-clients-automation/pull/5858)) by [@raed667](https://github.com/raed667/)
+  - The `TrendingFacets` model has been updated to reflect the API response.
+- [2925f56d1](https://github.com/flapjackhq/api-clients-automation/commit/2925f56d1) fix(specs): BREAKING CHANGE – more accurate composition behavior typing ([#5892](https://github.com/flapjackhq/api-clients-automation/pull/5892)) by [@gavinwade12](https://github.com/gavinwade12/)
+  - The `CompositionBehavior` model is now a union type for better accuracy.
+- [d4d385654](https://github.com/flapjackhq/api-clients-automation/commit/d4d385654) chore(deps): dependencies 2026-02-02 ([#5898](https://github.com/flapjackhq/api-clients-automation/pull/5898)) by [@algolia-bot](https://github.com/flapjackhq-bot/)
+
+## [1.43.3](https://github.com/flapjackhq/flapjacksearch-client-dart/compare/1.43.2...1.43.3)
+
+- [f02ab6fa0](https://github.com/flapjackhq/api-clients-automation/commit/f02ab6fa0) chore: agentic config prep ([#5825](https://github.com/flapjackhq/api-clients-automation/pull/5825)) by [@Fluf22](https://github.com/Fluf22/)
+
+## [1.43.2](https://github.com/flapjackhq/flapjacksearch-client-dart/compare/1.43.1...1.43.2)
+
+- [cd7a174b4](https://github.com/flapjackhq/api-clients-automation/commit/cd7a174b4) fix(specs): BREAKING CHANGE — remove fields requirement from run response in CompAPI client ([#5809](https://github.com/flapjackhq/api-clients-automation/pull/5809)) by [@ClaraMuller](https://github.com/ClaraMuller/)\
+Some fields from the Composition Run search response were marked as required while they were optional on the API side. This has been fixed, but might impact the client types.
+
+## [1.43.1](https://github.com/flapjackhq/flapjacksearch-client-dart/compare/1.43.0...1.43.1)
+
+- [54606b3b2](https://github.com/flapjackhq/api-clients-automation/commit/54606b3b2) refactor(specs): extract `results` field in a dedicated directory ([#5739](https://github.com/flapjackhq/api-clients-automation/pull/5739)) by [@ClaraMuller](https://github.com/ClaraMuller/)
+- [3296a5033](https://github.com/flapjackhq/api-clients-automation/commit/3296a5033) chore(deps): dependencies 2025-11-24 ([#5653](https://github.com/flapjackhq/api-clients-automation/pull/5653)) by [@algolia-bot](https://github.com/flapjackhq-bot/)
+- [5dabdc540](https://github.com/flapjackhq/api-clients-automation/commit/5dabdc540) refactor(specs): re-organise response for Composition API ([#5744](https://github.com/flapjackhq/api-clients-automation/pull/5744)) by [@ClaraMuller](https://github.com/ClaraMuller/)
+- [3d86676b0](https://github.com/flapjackhq/api-clients-automation/commit/3d86676b0) fix(specs): update list with NLU permissions ([#5769](https://github.com/flapjackhq/api-clients-automation/pull/5769)) by [@MarioAlexandruDan](https://github.com/MarioAlexandruDan/)
+
+## [1.43.0](https://github.com/flapjackhq/flapjacksearch-client-dart/compare/1.42.0...1.43.0)
+
+- [5335918a5](https://github.com/flapjackhq/api-clients-automation/commit/5335918a5) chore(scripts): update the jira action ([#5678](https://github.com/flapjackhq/api-clients-automation/pull/5678)) by [@millotp](https://github.com/millotp/)
+- [d6bde0f0c](https://github.com/flapjackhq/api-clients-automation/commit/d6bde0f0c) chore(scripts): remove component from jira ticket ([#5680](https://github.com/flapjackhq/api-clients-automation/pull/5680)) by [@millotp](https://github.com/millotp/)
+- [fe6e82c11](https://github.com/flapjackhq/api-clients-automation/commit/fe6e82c11) feat(specs): add sortBy query param and sortingStrategy ([#5686](https://github.com/flapjackhq/api-clients-automation/pull/5686)) by [@ben-kalmus](https://github.com/ben-kalmus/)
+- [cccfa9c86](https://github.com/flapjackhq/api-clients-automation/commit/cccfa9c86) feat(specs): add `sortBy` trigger on Composition Rules ([#5707](https://github.com/flapjackhq/api-clients-automation/pull/5707)) by [@ClaraMuller](https://github.com/ClaraMuller/)
+
+## [1.42.0](https://github.com/flapjackhq/flapjacksearch-client-dart/compare/1.41.1...1.42.0)
+
+- [6a48ef151a](https://github.com/flapjackhq/api-clients-automation/commit/6a48ef151a) feat(specs): allow `enablePersonalization` query parameter at run time for Composition API ([#5651](https://github.com/flapjackhq/api-clients-automation/pull/5651)) by [@ClaraMuller](https://github.com/ClaraMuller/)
+
+## [1.41.1](https://github.com/flapjackhq/flapjacksearch-client-dart/compare/1.41.0...1.41.1)
+
+- [ee5542a32](https://github.com/flapjackhq/api-clients-automation/commit/ee5542a32) fix(specs): Add title values to key oneOfs ([#5581](https://github.com/flapjackhq/api-clients-automation/pull/5581)) by [@gazconroy](https://github.com/gazconroy/)
+- [ae9ac597f](https://github.com/flapjackhq/api-clients-automation/commit/ae9ac597f) fix(specs): add tags and scope to rules ([#5625](https://github.com/flapjackhq/api-clients-automation/pull/5625)) by [@millotp](https://github.com/millotp/)
+
+## [1.41.0](https://github.com/flapjackhq/flapjacksearch-client-dart/compare/1.40.0...1.41.0)
+
+- [ecfea56dc](https://github.com/flapjackhq/api-clients-automation/commit/ecfea56dc) feat(clients): remove schedule capabilities ([#5552](https://github.com/flapjackhq/api-clients-automation/pull/5552)) by [@cdhawke](https://github.com/cdhawke/)
+- [ff4b8f02c](https://github.com/flapjackhq/api-clients-automation/commit/ff4b8f02c) feat(specs): add fallbackParameters to Frequently bought together [RECO-2443] ([#5579](https://github.com/flapjackhq/api-clients-automation/pull/5579)) by [@raed667](https://github.com/raed667/)
+
+## [1.40.0](https://github.com/flapjackhq/flapjacksearch-client-dart/compare/1.39.0...1.40.0)
+
+- [d9b21b4b1](https://github.com/flapjackhq/api-clients-automation/commit/d9b21b4b1) feat(specs): add `renderingContent` query parameter in Composition API main injection ([#5549](https://github.com/flapjackhq/api-clients-automation/pull/5549)) by [@ClaraMuller](https://github.com/ClaraMuller/)
+- [1eee2a5f7](https://github.com/flapjackhq/api-clients-automation/commit/1eee2a5f7) fix(specs): add ACL to missing endpoints ([#5529](https://github.com/flapjackhq/api-clients-automation/pull/5529)) by [@millotp](https://github.com/millotp/)
+- [38ae444d7](https://github.com/flapjackhq/api-clients-automation/commit/38ae444d7) feat(specs): add specific documentation for `facets` query parameter in Composition API ([#5477](https://github.com/flapjackhq/api-clients-automation/pull/5477)) by [@ClaraMuller](https://github.com/ClaraMuller/)
+
+## [1.39.0](https://github.com/flapjackhq/flapjacksearch-client-dart/compare/1.38.1...1.39.0)
+
+- [7287faaa7](https://github.com/flapjackhq/api-clients-automation/commit/7287faaa7) feat(specs): add `facets` query parameter available at run time ([#5486](https://github.com/flapjackhq/api-clients-automation/pull/5486)) by [@ClaraMuller](https://github.com/ClaraMuller/)
+
+## [1.38.1](https://github.com/flapjackhq/flapjacksearch-client-dart/compare/1.38.0...1.38.1)
+
+- [9a92b3269](https://github.com/flapjackhq/api-clients-automation/commit/9a92b3269) chore(deps): dependencies 2025-10-13 ([#5453](https://github.com/flapjackhq/api-clients-automation/pull/5453)) by [@algolia-bot](https://github.com/flapjackhq-bot/)
+- [02b6a90ae](https://github.com/flapjackhq/api-clients-automation/commit/02b6a90ae) fix(clients): upgrade linter ([#5476](https://github.com/flapjackhq/api-clients-automation/pull/5476)) by [@millotp](https://github.com/millotp/)
+- [3fc252bec](https://github.com/flapjackhq/api-clients-automation/commit/3fc252bec) chore: remove dead links ([#5472](https://github.com/flapjackhq/api-clients-automation/pull/5472)) by [@millotp](https://github.com/millotp/)
+
+## [1.38.0](https://github.com/flapjackhq/flapjacksearch-client-dart/compare/1.37.0...1.38.0)
+
+- [7de94353f](https://github.com/flapjackhq/api-clients-automation/commit/7de94353f) feat(specs): add compositions deduplication setting ([#5418](https://github.com/flapjackhq/api-clients-automation/pull/5418)) by [@ben-kalmus](https://github.com/ben-kalmus/)
+- [8bee10f1a](https://github.com/flapjackhq/api-clients-automation/commit/8bee10f1a) fix(clients): add a default idleConnTimeout ([#5442](https://github.com/flapjackhq/api-clients-automation/pull/5442)) by [@millotp](https://github.com/millotp/)
+- [01261eceb](https://github.com/flapjackhq/api-clients-automation/commit/01261eceb) chore(deps): dependencies 2025-09-29 ([#5393](https://github.com/flapjackhq/api-clients-automation/pull/5393)) by [@algolia-bot](https://github.com/flapjackhq-bot/)
+
+## [1.37.0](https://github.com/flapjackhq/flapjacksearch-client-dart/compare/1.36.1...1.37.0)
+
+- [ca25c44e2](https://github.com/flapjackhq/api-clients-automation/commit/ca25c44e2) chore(deps): dependencies 2025-09-08 ([#5310](https://github.com/flapjackhq/api-clients-automation/pull/5310)) by [@algolia-bot](https://github.com/flapjackhq-bot/)
+- [323e06d6f](https://github.com/flapjackhq/api-clients-automation/commit/323e06d6f) chore(deps): dependencies 2025-09-15 ([#5341](https://github.com/flapjackhq/api-clients-automation/pull/5341)) by [@algolia-bot](https://github.com/flapjackhq-bot/)
+- [9884be690](https://github.com/flapjackhq/api-clients-automation/commit/9884be690) feat(specs): merge `composition` & `composition-full` ([#5333](https://github.com/flapjackhq/api-clients-automation/pull/5333)) by [@ClaraMuller](https://github.com/ClaraMuller/)
+
+## [1.36.1](https://github.com/flapjackhq/flapjacksearch-client-dart/compare/1.36.0...1.36.1)
+
+- [8f4abf3a1](https://github.com/flapjackhq/api-clients-automation/commit/8f4abf3a1) fix(specs): Cross-reference filerPromotes to relevant guide ([#5279](https://github.com/flapjackhq/api-clients-automation/pull/5279)) by [@gazconroy](https://github.com/gazconroy/)
+- [08e9d1888](https://github.com/flapjackhq/api-clients-automation/commit/08e9d1888) fix(specs): add getVersion parameter to getSettings ([#5254](https://github.com/flapjackhq/api-clients-automation/pull/5254)) by [@millotp](https://github.com/millotp/)
+- [716aa852f](https://github.com/flapjackhq/api-clients-automation/commit/716aa852f) chore(deps): dependencies 2025-09-01 ([#5285](https://github.com/flapjackhq/api-clients-automation/pull/5285)) by [@algolia-bot](https://github.com/flapjackhq-bot/)
+- [f4eee1c4a](https://github.com/flapjackhq/api-clients-automation/commit/f4eee1c4a) chore(website): exclude schema from generated variables file ([#5306](https://github.com/flapjackhq/api-clients-automation/pull/5306)) by [@Fluf22](https://github.com/Fluf22/)
+- [2fa0389f8](https://github.com/flapjackhq/api-clients-automation/commit/2fa0389f8) fix(clients): link to support/help center on unreachable hosts ([#5305](https://github.com/flapjackhq/api-clients-automation/pull/5305)) by [@shortcuts](https://github.com/shortcuts/)
+
+## [1.36.0](https://github.com/flapjackhq/flapjacksearch-client-dart/compare/1.35.0...1.36.0)
+
+- [48672036c1](https://github.com/flapjackhq/api-clients-automation/commit/48672036c1) refactor(specs): mutualise code between Search API & Comp API for search query parameters ([#5125](https://github.com/flapjackhq/api-clients-automation/pull/5125)) by [@ClaraMuller](https://github.com/ClaraMuller/)
+- [ca6f3ca016](https://github.com/flapjackhq/api-clients-automation/commit/ca6f3ca016) fix(specs): define batch actions ([#5242](https://github.com/flapjackhq/api-clients-automation/pull/5242)) by [@kai687](https://github.com/kai687/)
+- [99f8174c7d](https://github.com/flapjackhq/api-clients-automation/commit/99f8174c7d) feat(specs): add fields for metadata in composition injectedItems ([#5241](https://github.com/flapjackhq/api-clients-automation/pull/5241)) by [@gavinwade12](https://github.com/gavinwade12/)
+- [ff178d8118](https://github.com/flapjackhq/api-clients-automation/commit/ff178d8118) feat(specs): abtests stopped at ([#5275](https://github.com/flapjackhq/api-clients-automation/pull/5275)) by [@stevenMevans](https://github.com/stevenMevans/)
+
+## [1.35.0](https://github.com/flapjackhq/flapjacksearch-client-dart/compare/1.34.2...1.35.0)
+
+- [050aacef17](https://github.com/flapjackhq/api-clients-automation/commit/050aacef17) chore(deps): dependencies 2025-07-28 ([#5161](https://github.com/flapjackhq/api-clients-automation/pull/5161)) by [@algolia-bot](https://github.com/flapjackhq-bot/)
+- [66bc4eee9e](https://github.com/flapjackhq/api-clients-automation/commit/66bc4eee9e) feat(clients): add new abtesting-v3 package to clients + stabilize alpha js package ([#5157](https://github.com/flapjackhq/api-clients-automation/pull/5157)) by [@leonardogavaudan](https://github.com/leonardogavaudan/)
+

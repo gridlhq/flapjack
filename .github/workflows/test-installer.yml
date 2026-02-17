@@ -1,0 +1,31 @@
+name: Installer Tests
+
+# Runs after a release completes, or manually, or on install script changes.
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+  push:
+    branches: [main]
+    paths:
+      - 'engine/install.sh'
+      - 'engine/tests/test_install.sh'
+      - '.github/workflows/test-installer.yml'
+
+jobs:
+  installer:
+    # Skip if triggered by a failed release
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    name: Installer (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run installer tests
+        run: sh engine/tests/test_install.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

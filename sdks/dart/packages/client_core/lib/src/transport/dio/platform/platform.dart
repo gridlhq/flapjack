@@ -1,0 +1,17 @@
+import 'package:flapjack_client_core/flapjack_client_core.dart';
+import 'package:dio/dio.dart' as dio;
+
+import 'platform_stub.dart'
+    if (dart.library.html) 'platform_web.dart'
+    if (dart.library.io) 'platform_io.dart';
+
+final class Platform {
+  /// Get [AgentSegment]s for the current platform.
+  static Iterable<AgentSegment> agentSegments() => platformAgentSegments();
+
+  /// Set Flapjack Agent as User-Agent or as query param depending on the platform.
+  static void flapjackAgent(dio.RequestOptions options, String agent) =>
+      platformFlapjackAgent(options, agent);
+
+  Platform._();
+}

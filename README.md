@@ -1,7 +1,5 @@
 # 🥞 Flapjack
 
-Self-hosted search engine with an Algolia-compatible API. Single binary, no dependencies.
-
 [![CI](https://github.com/gridlhq/flapjack/actions/workflows/ci.yml/badge.svg)](https://github.com/gridlhq/flapjack/actions/workflows/ci.yml)
 [![Release](https://github.com/gridlhq/flapjack/actions/workflows/release.yml/badge.svg)](https://github.com/gridlhq/flapjack/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)

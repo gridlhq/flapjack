@@ -10,8 +10,9 @@ fn get_search_key(store: &KeyStore) -> String {
         .iter()
         .find(|k| k.description == "Default Search API Key")
         .unwrap()
-        .value
+        .hmac_key
         .clone()
+        .unwrap()
 }
 
 async fn http_post(
@@ -146,8 +147,10 @@ async fn test_e2e_secured_key_parent_index_scope_enforced() -> Result<()> {
     let (addr, tmp) = common::spawn_server_with_key(Some(admin_key)).await;
     let store = KeyStore::load_or_create(tmp.path(), admin_key);
 
-    let scoped = store.create_key(flapjack_http::auth::ApiKey {
-        value: String::new(),
+    let (_scoped, scoped_plaintext) = store.create_key(flapjack_http::auth::ApiKey {
+        hash: String::new(),
+        salt: String::new(),
+        hmac_key: None,
         created_at: 0,
         acl: vec!["search".to_string()],
         description: "scoped".to_string(),
@@ -159,7 +162,7 @@ async fn test_e2e_secured_key_parent_index_scope_enforced() -> Result<()> {
         validity: 0,
     });
 
-    let secured = generate_secured_api_key(&scoped.value, "validUntil=9999999999");
+    let secured = generate_secured_api_key(&scoped_plaintext, "validUntil=9999999999");
     let resp = http_post(
         &addr,
         "/1/indexes/products/query",

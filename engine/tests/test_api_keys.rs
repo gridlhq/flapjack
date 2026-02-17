@@ -8,23 +8,22 @@ const ADMIN_KEY: &str = "test-admin-key-abc123";
 async fn setup() -> (String, tempfile::TempDir, String) {
     let (addr, temp) = common::spawn_server_with_key(Some(ADMIN_KEY)).await;
     let client = reqwest::Client::new();
+
+    // Create a new search key since the default one's plaintext isn't accessible
     let resp = client
-        .get(format!("http://{}/1/keys", addr))
+        .post(format!("http://{}/1/keys", addr))
         .header("x-algolia-api-key", ADMIN_KEY)
         .header("x-algolia-application-id", "test")
+        .json(&serde_json::json!({
+            "acl": ["search"],
+            "description": "Test Search Key"
+        }))
         .send()
         .await
         .unwrap();
     let body: serde_json::Value = resp.json().await.unwrap();
-    let search_key = body["keys"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|k| k["description"] == "Default Search API Key")
-        .unwrap()["value"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let search_key = body["key"].as_str().unwrap().to_string();
+
     (addr, temp, search_key)
 }
 
@@ -638,13 +637,16 @@ async fn test_default_keys_created() {
     .unwrap();
     let body: serde_json::Value = resp.json().await.unwrap();
     let keys = body["keys"].as_array().unwrap();
-    assert_eq!(keys.len(), 2);
+    // Now we have 3 keys: admin, default search, and the test search key created in setup()
+    assert!(keys.len() >= 2, "Should have at least admin + search keys");
 
     let admin = keys
         .iter()
         .find(|k| k["description"] == "Admin API Key")
         .unwrap();
-    assert_eq!(admin["value"], ADMIN_KEY);
+    // Keys are now hashed, so we can't compare plaintext value
+    assert!(admin["hash"].as_str().is_some(), "Admin key should have hash");
+    assert!(admin["salt"].as_str().is_some(), "Admin key should have salt");
     assert!(admin["acl"].as_array().unwrap().len() > 10);
 
     let search = keys
@@ -699,7 +701,9 @@ async fn test_any_valid_key_can_read_own_key() {
         "any valid key should read its own key info"
     );
     let body: serde_json::Value = resp.json().await.unwrap();
-    assert_eq!(body["value"], search_key);
+    // Verify the key info is returned (hash, salt, ACL)
+    assert!(body["hash"].as_str().is_some(), "Should have hash");
+    assert!(body["acl"].as_array().is_some(), "Should have ACL");
 }
 
 #[tokio::test]

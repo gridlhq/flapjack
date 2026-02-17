@@ -105,7 +105,7 @@ impl Highlighter {
         }
     }
 
-    fn highlight_text(&self, text: &str, query_words: &[String]) -> HighlightResult {
+    pub fn highlight_text(&self, text: &str, query_words: &[String]) -> HighlightResult {
         let text_lower = text.to_lowercase();
         let mut matched_words = Vec::new();
         let mut match_positions = Vec::new();

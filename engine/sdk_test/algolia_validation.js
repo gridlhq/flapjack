@@ -173,7 +173,7 @@ async function ensureServer() {
 
   console.log('Release server not running. Starting it...');
   const repoRoot = join(__dirname, '..');
-  execSync('./s/dev-server.sh --release restart', { cwd: repoRoot, stdio: 'inherit' });
+  execSync('./_dev/s/dev-server.sh --release restart', { cwd: repoRoot, stdio: 'inherit' });
 }
 
 async function main() {

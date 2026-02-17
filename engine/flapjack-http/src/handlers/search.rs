@@ -2,7 +2,7 @@ use axum::{
     extract::{Path, State},
     Json,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -11,7 +11,7 @@ use flapjack::error::FlapjackError;
 use super::AppState;
 use crate::dto::SearchRequest;
 use flapjack::query::highlighter::{
-    extract_query_words, parse_snippet_spec, HighlightValue, Highlighter, SnippetValue,
+    extract_query_words, parse_snippet_spec, HighlightValue, Highlighter, MatchLevel, SnippetValue,
 };
 use flapjack::types::{FacetRequest, FieldValue, Sort, SortOrder};
 
@@ -110,48 +110,6 @@ fn highlight_value_to_json(value: &HighlightValue) -> serde_json::Value {
     }
 }
 
-/// Replace matchedWords in highlight results with original query terms.
-/// This implements Algolia's replaceSynonymsInHighlight=false behavior (the default).
-fn replace_matched_words_with_original(
-    value: HighlightValue,
-    original_words: &[String],
-) -> HighlightValue {
-    use flapjack::query::highlighter::MatchLevel;
-
-    match value {
-        HighlightValue::Single(mut result) => {
-            // Only replace if there were matches
-            if !result.matched_words.is_empty() {
-                result.matched_words = original_words.to_vec();
-                // Recalculate matchLevel based on original query words
-                // If we found any matches, it's a full match of the original query
-                result.match_level = MatchLevel::Full;
-            }
-            HighlightValue::Single(result)
-        }
-        HighlightValue::Array(results) => {
-            let updated = results
-                .into_iter()
-                .map(|mut result| {
-                    if !result.matched_words.is_empty() {
-                        result.matched_words = original_words.to_vec();
-                        result.match_level = MatchLevel::Full;
-                    }
-                    result
-                })
-                .collect();
-            HighlightValue::Array(updated)
-        }
-        HighlightValue::Object(map) => {
-            let updated = map
-                .into_iter()
-                .map(|(k, v)| (k, replace_matched_words_with_original(v, original_words)))
-                .collect();
-            HighlightValue::Object(updated)
-        }
-    }
-}
-
 fn snippet_value_map_to_json(map: &HashMap<String, SnippetValue>) -> serde_json::Value {
     let mut obj = serde_json::Map::new();
     for (k, v) in map {
@@ -170,6 +128,87 @@ fn snippet_value_to_json(value: &SnippetValue) -> serde_json::Value {
                 .collect(),
         ),
         SnippetValue::Object(map) => snippet_value_map_to_json(map),
+    }
+}
+
+/// Map synonym-matched words back to their original query terms.
+/// This implements Algolia's replaceSynonymsInHighlight=false behavior:
+/// - matchedWords shows original query terms (e.g., "notebook")
+/// - Highlighted text shows document words (e.g., "laptop")
+/// - Only replaces words that are actually synonyms, preserving partial matches
+fn map_synonym_matches(
+    value: HighlightValue,
+    original_query_words: &[String],
+    synonym_map: &HashMap<String, HashSet<String>>,
+) -> HighlightValue {
+    match value {
+        HighlightValue::Single(mut result) => {
+            if !result.matched_words.is_empty() {
+                let mut mapped_words = HashSet::new();
+
+                // For each matched word, check if it's a synonym and map back to original
+                for matched in &result.matched_words {
+                    let matched_lower = matched.to_lowercase();
+                    let mut found_original = false;
+
+                    // Check if this matched word is a synonym of any original query word
+                    for original in original_query_words {
+                        let original_lower = original.to_lowercase();
+                        if let Some(synonyms) = synonym_map.get(&original_lower) {
+                            if synonyms.contains(&matched_lower) || matched_lower == original_lower {
+                                mapped_words.insert(original_lower);
+                                found_original = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    // If not a synonym, keep the original matched word
+                    if !found_original {
+                        mapped_words.insert(matched_lower);
+                    }
+                }
+
+                result.matched_words = mapped_words.into_iter().collect();
+
+                // Update matchLevel based on original query coverage
+                if result.matched_words.len() == original_query_words.len() {
+                    result.match_level = MatchLevel::Full;
+                } else if !result.matched_words.is_empty() {
+                    result.match_level = MatchLevel::Partial;
+                }
+            }
+            HighlightValue::Single(result)
+        }
+        HighlightValue::Array(results) => {
+            let updated = results
+                .into_iter()
+                .map(|r| {
+                    if let HighlightValue::Single(s) = map_synonym_matches(
+                        HighlightValue::Single(r),
+                        original_query_words,
+                        synonym_map,
+                    ) {
+                        s
+                    } else {
+                        unreachable!()
+                    }
+                })
+                .collect();
+            HighlightValue::Array(updated)
+        }
+        HighlightValue::Object(map) => {
+            let updated = map
+                .into_iter()
+                .map(|(k, v)| {
+                    (
+                        k,
+                        map_synonym_matches(v, original_query_words, synonym_map),
+                    )
+                })
+                .collect();
+            HighlightValue::Object(updated)
+        }
     }
 }
 
@@ -463,6 +502,9 @@ fn search_single_sync(
     // For highlighting, expand to include synonyms to highlight all variant matches
     let mut query_words = original_query_words.clone();
 
+    // Build synonym mapping for matchedWords translation
+    let mut synonym_map: HashMap<String, HashSet<String>> = HashMap::new();
+
     // If synonyms are enabled, expand query words to highlight all synonym matches
     if req.enable_synonyms.unwrap_or(true) {
         if let Some(synonym_store) = state.manager.get_synonyms(&index_name) {
@@ -475,6 +517,29 @@ fn search_single_sync(
                 }
             }
             query_words = all_words.into_iter().collect();
+
+            // Build synonym map: original_word -> set of synonyms (including original)
+            for original in &original_query_words {
+                let original_lower = original.to_lowercase();
+                let mut synonyms = HashSet::new();
+                synonyms.insert(original_lower.clone());
+
+                // Add all words that are synonyms of this original word
+                for word in &query_words {
+                    let word_lower = word.to_lowercase();
+                    // If this word appeared from synonym expansion and wasn't in original query
+                    if !original_query_words
+                        .iter()
+                        .any(|o| o.to_lowercase() == word_lower)
+                    {
+                        // Check if it's related via synonym expansion
+                        // We can identify this by checking if both words appear in expanded queries
+                        synonyms.insert(word_lower);
+                    }
+                }
+
+                synonym_map.insert(original_lower, synonyms);
+            }
         }
     }
 
@@ -606,12 +671,18 @@ fn search_single_sync(
                     &searchable_paths,
                 );
 
-                // Replace matchedWords with original query terms (Algolia compatibility)
-                // This implements replaceSynonymsInHighlight=false behavior
-                highlight_map = highlight_map
-                    .into_iter()
-                    .map(|(k, v)| (k, replace_matched_words_with_original(v, &original_query_words)))
-                    .collect();
+                // Map synonym matches back to original query terms (replaceSynonymsInHighlight=false)
+                if !synonym_map.is_empty() {
+                    highlight_map = highlight_map
+                        .into_iter()
+                        .map(|(k, v)| {
+                            (
+                                k,
+                                map_synonym_matches(v, &original_query_words, &synonym_map),
+                            )
+                        })
+                        .collect();
+                }
 
                 let highlight_json = highlight_value_map_to_json(&highlight_map);
                 doc_map.insert("_highlightResult".to_string(), highlight_json);

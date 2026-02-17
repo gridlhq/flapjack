@@ -16,7 +16,16 @@ use std::sync::RwLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiKey {
-    pub value: String,
+    /// SHA-256 hash of the key value (for authentication)
+    pub hash: String,
+    /// Unique salt for this key (hex-encoded)
+    pub salt: String,
+    /// HMAC verification key (for secured API key validation)
+    /// NOTE: Stored in plaintext to enable HMAC verification of secured keys.
+    /// This is a security tradeoff - secured keys require the parent key for HMAC validation.
+    /// Admin keys should not be used as parents for secured keys and won't have this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hmac_key: Option<String>,
     #[serde(rename = "createdAt")]
     pub created_at: i64,
     pub acl: Vec<String>,
@@ -71,15 +80,19 @@ impl KeyStore {
         };
 
         // Ensure the admin entry in keys.json matches the provided admin_key.
-        // This handles key rotation via FLAPJACK_ADMIN_KEY env var: without this,
-        // the old key stays in keys.json and the new key can't authenticate.
+        // This handles key rotation via FLAPJACK_ADMIN_KEY env var.
         if let Some(admin_entry) = data
             .keys
             .iter_mut()
             .find(|k| k.description == "Admin API Key")
         {
-            if admin_entry.value != admin_key {
-                admin_entry.value = admin_key.to_string();
+            // Rehash the admin key if it changed
+            if !verify_key(admin_key, &admin_entry.hash, &admin_entry.salt) {
+                let new_salt = generate_salt();
+                let new_hash = hash_key(admin_key, &new_salt);
+                admin_entry.hash = new_hash;
+                admin_entry.salt = new_salt;
+                tracing::info!("Admin key rotated");
             }
         }
 
@@ -112,8 +125,13 @@ impl KeyStore {
             "personalization".into(),
         ];
 
+        let admin_salt = generate_salt();
+        let admin_hash = hash_key(admin_key, &admin_salt);
+
         let admin = ApiKey {
-            value: admin_key.to_string(),
+            hash: admin_hash,
+            salt: admin_salt,
+            hmac_key: None, // Admin keys should not be used for secured key generation
             created_at: now,
             acl: all_acls,
             description: "Admin API Key".into(),
@@ -125,8 +143,14 @@ impl KeyStore {
             validity: 0,
         };
 
+        let search_key_value = format!("fj_search_{}", generate_hex_key());
+        let search_salt = generate_salt();
+        let search_hash = hash_key(&search_key_value, &search_salt);
+
         let search_key = ApiKey {
-            value: format!("fj_search_{}", generate_hex_key()),
+            hash: search_hash,
+            salt: search_salt,
+            hmac_key: Some(search_key_value.clone()), // Store for HMAC verification of secured keys
             created_at: now,
             acl: vec!["search".into()],
             description: "Default Search API Key".into(),
@@ -162,7 +186,10 @@ impl KeyStore {
 
     pub fn lookup(&self, key_value: &str) -> Option<ApiKey> {
         let data = self.data.read().unwrap();
-        data.keys.iter().find(|k| k.value == key_value).cloned()
+        data.keys
+            .iter()
+            .find(|k| verify_key(key_value, &k.hash, &k.salt))
+            .cloned()
     }
 
     pub fn list_all(&self) -> Vec<ApiKey> {
@@ -170,20 +197,37 @@ impl KeyStore {
         data.keys.clone()
     }
 
-    pub fn create_key(&self, mut key: ApiKey) -> ApiKey {
-        key.value = format!("fj_search_{}", generate_hex_key());
+    /// Creates a new key and returns the plaintext value (only time it's visible)
+    /// The key is hashed before storage
+    pub fn create_key(&self, mut key: ApiKey) -> (ApiKey, String) {
+        let plaintext_value = format!("fj_search_{}", generate_hex_key());
+        let salt = generate_salt();
+        let hash = hash_key(&plaintext_value, &salt);
+
+        key.hash = hash;
+        key.salt = salt;
         key.created_at = Utc::now().timestamp_millis();
+        // Store hmac_key for secured key support (except for admin-like keys)
+        key.hmac_key = Some(plaintext_value.clone());
+
         let mut data = self.data.write().unwrap();
         data.keys.push(key.clone());
         drop(data);
         self.save();
-        key
+
+        (key, plaintext_value)
     }
 
     pub fn update_key(&self, key_value: &str, mut updated: ApiKey) -> Option<ApiKey> {
         let mut data = self.data.write().unwrap();
-        if let Some(existing) = data.keys.iter_mut().find(|k| k.value == key_value) {
-            updated.value = existing.value.clone();
+        if let Some(existing) = data
+            .keys
+            .iter_mut()
+            .find(|k| verify_key(key_value, &k.hash, &k.salt))
+        {
+            // Preserve hash, salt, and creation time
+            updated.hash = existing.hash.clone();
+            updated.salt = existing.salt.clone();
             updated.created_at = existing.created_at;
             *existing = updated.clone();
             drop(data);
@@ -195,11 +239,25 @@ impl KeyStore {
     }
 
     pub fn delete_key(&self, key_value: &str) -> bool {
-        if key_value == self.admin_key_value {
-            return false;
-        }
         let mut data = self.data.write().unwrap();
-        if let Some(pos) = data.keys.iter().position(|k| k.value == key_value) {
+
+        // Check if this is the admin key and prevent deletion
+        if let Some(admin) = data
+            .keys
+            .iter()
+            .find(|k| k.description == "Admin API Key")
+        {
+            if verify_key(key_value, &admin.hash, &admin.salt) {
+                return false;
+            }
+        }
+
+        // Find and delete the key
+        if let Some(pos) = data
+            .keys
+            .iter()
+            .position(|k| verify_key(key_value, &k.hash, &k.salt))
+        {
             let removed = data.keys.remove(pos);
             data.deleted_keys.push(removed);
             drop(data);
@@ -212,7 +270,11 @@ impl KeyStore {
 
     pub fn restore_key(&self, key_value: &str) -> Option<ApiKey> {
         let mut data = self.data.write().unwrap();
-        if let Some(pos) = data.deleted_keys.iter().position(|k| k.value == key_value) {
+        if let Some(pos) = data
+            .deleted_keys
+            .iter()
+            .position(|k| verify_key(key_value, &k.hash, &k.salt))
+        {
             let restored = data.deleted_keys.remove(pos);
             data.keys.push(restored.clone());
             drop(data);
@@ -303,16 +365,20 @@ pub fn validate_secured_key(
 
     let data = key_store.data.read().unwrap();
     for key in &data.keys {
-        if key_store.is_admin(&key.value) {
-            continue;
-        }
+        // Skip keys without hmac_key (admin keys, or keys that don't support secured key generation)
+        let hmac_key_value = match &key.hmac_key {
+            Some(v) => v,
+            None => continue,
+        };
+
         type HmacSha256 = Hmac<Sha256>;
         let hmac_bytes = match hex::decode(hmac_hex) {
             Ok(b) => b,
             Err(_) => return None,
         };
         let mut mac =
-            HmacSha256::new_from_slice(key.value.as_bytes()).expect("HMAC accepts any key length");
+            HmacSha256::new_from_slice(hmac_key_value.as_bytes())
+                .expect("HMAC accepts any key length");
         mac.update(params.as_bytes());
         if mac.verify_slice(&hmac_bytes).is_ok() {
             let restrictions = SecuredKeyRestrictions::from_params(params);
@@ -335,23 +401,51 @@ pub fn generate_hex_key() -> String {
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
+/// Generate a random salt for key hashing
+fn generate_salt() -> String {
+    let mut rng = rand::thread_rng();
+    let bytes: [u8; 32] = rng.gen();
+    hex::encode(bytes)
+}
+
+/// Hash a key value with a salt using SHA-256
+fn hash_key(key_value: &str, salt: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(salt.as_bytes());
+    hasher.update(key_value.as_bytes());
+    hex::encode(hasher.finalize())
+}
+
+/// Verify a key value against a stored hash and salt using constant-time comparison
+fn verify_key(key_value: &str, stored_hash: &str, salt: &str) -> bool {
+    let computed_hash = hash_key(key_value, salt);
+    // Constant-time comparison to prevent timing attacks
+    if computed_hash.len() != stored_hash.len() {
+        return false;
+    }
+    let mut result = 0u8;
+    for (a, b) in computed_hash.bytes().zip(stored_hash.bytes()) {
+        result |= a ^ b;
+    }
+    result == 0
+}
+
 /// Generate a prefixed admin key (fj_admin_ + 32 hex chars).
 pub fn generate_admin_key() -> String {
     format!("fj_admin_{}", generate_hex_key())
 }
 
 /// Read the admin key from an existing keys.json, if one exists.
-pub fn read_existing_admin_key(data_dir: &Path) -> Option<String> {
-    let file_path = data_dir.join("keys.json");
-    let contents = std::fs::read_to_string(&file_path).ok()?;
-    let data: KeyStoreData = serde_json::from_str(&contents).ok()?;
-    data.keys
-        .iter()
-        .find(|k| k.description == "Admin API Key")
-        .map(|k| k.value.clone())
+/// NOTE: With hashed keys, this can no longer return the plaintext value.
+/// This function is deprecated and always returns None.
+/// The admin key must be provided via FLAPJACK_ADMIN_KEY env var.
+#[deprecated(note = "Admin keys are now hashed at rest. Use FLAPJACK_ADMIN_KEY env var.")]
+pub fn read_existing_admin_key(_data_dir: &Path) -> Option<String> {
+    None
 }
 
-/// Generate a new admin key and update keys.json. Returns the new key.
+/// Generate a new admin key and update both .admin_key file and keys.json. Returns the new key.
 pub fn reset_admin_key(data_dir: &Path) -> Result<String, String> {
     let file_path = data_dir.join("keys.json");
     if !file_path.exists() {
@@ -364,13 +458,16 @@ pub fn reset_admin_key(data_dir: &Path) -> Result<String, String> {
         serde_json::from_str(&contents).map_err(|e| format!("Failed to parse keys.json: {}", e))?;
 
     let new_key = generate_admin_key();
+    let new_salt = generate_salt();
+    let new_hash = hash_key(&new_key, &new_salt);
 
     if let Some(admin) = data
         .keys
         .iter_mut()
         .find(|k| k.description == "Admin API Key")
     {
-        admin.value = new_key.clone();
+        admin.hash = new_hash;
+        admin.salt = new_salt;
     } else {
         return Err("No admin key found in keys.json.".into());
     }
@@ -379,10 +476,20 @@ pub fn reset_admin_key(data_dir: &Path) -> Result<String, String> {
         .map_err(|e| format!("Failed to serialize keys.json: {}", e))?;
     std::fs::write(&file_path, json).map_err(|e| format!("Failed to write keys.json: {}", e))?;
 
-    // Remove the .admin_key_shown flag so the new key will be displayed
-    let flag_file = data_dir.join(".admin_key_shown");
-    if flag_file.exists() {
-        let _ = std::fs::remove_file(&flag_file);
+    // Update the .admin_key file with the new plaintext key
+    let admin_key_file = data_dir.join(".admin_key");
+    std::fs::write(&admin_key_file, &new_key)
+        .map_err(|e| format!("Failed to write .admin_key: {}", e))?;
+
+    // Set restrictive permissions (Unix only)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Err(e) =
+            std::fs::set_permissions(&admin_key_file, std::fs::Permissions::from_mode(0o600))
+        {
+            tracing::warn!("Failed to set .admin_key permissions: {}", e);
+        }
     }
 
     Ok(new_key)

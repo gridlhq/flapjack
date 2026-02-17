@@ -47,7 +47,9 @@ pub async fn create_key(
     Json(body): Json<CreateKeyRequest>,
 ) -> impl IntoResponse {
     let key = crate::auth::ApiKey {
-        value: String::new(),
+        hash: String::new(),
+        salt: String::new(),
+        hmac_key: None,
         created_at: 0,
         acl: body.acl,
         description: body.description.unwrap_or_default(),
@@ -59,11 +61,11 @@ pub async fn create_key(
         validity: body.validity.unwrap_or(0),
     };
 
-    let created = key_store.create_key(key);
+    let (_created, plaintext_value) = key_store.create_key(key);
     // Only show the full key value at creation time (like Stripe API keys)
     // After this, the key is hashed and the full value is never shown again
     let response = serde_json::json!({
-        "key": created.value,
+        "key": plaintext_value,
         "createdAt": Utc::now().to_rfc3339(),
     });
 
@@ -140,7 +142,9 @@ pub async fn update_key(
     Json(body): Json<CreateKeyRequest>,
 ) -> impl IntoResponse {
     let updated = crate::auth::ApiKey {
-        value: String::new(),
+        hash: String::new(),
+        salt: String::new(),
+        hmac_key: None,
         created_at: 0,
         acl: body.acl,
         description: body.description.unwrap_or_default(),
@@ -281,17 +285,23 @@ pub async fn generate_secured_key(
     State(key_store): State<Arc<KeyStore>>,
     Json(body): Json<GenerateSecuredKeyRequest>,
 ) -> impl IntoResponse {
-    if key_store.is_admin(&body.parent_api_key) {
+    // Look up the parent key
+    let parent_key = match key_store.lookup(&body.parent_api_key) {
+        Some(k) => k,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"message": "Parent key not found", "status": 404})),
+            )
+                .into_response()
+        }
+    };
+
+    // Admin keys cannot be used as parents for secured keys
+    if parent_key.hmac_key.is_none() {
         return (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({"message": "Cannot generate secured key from admin key", "status": 400})),
-        ).into_response();
-    }
-
-    if key_store.lookup(&body.parent_api_key).is_none() {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({"message": "Parent key not found", "status": 404})),
         )
             .into_response();
     }
@@ -317,6 +327,7 @@ pub async fn generate_secured_key(
         params.push(format!("hitsPerPage={}", hpp));
     }
     let params_str = params.join("&");
+    // Use the hmac_key for secured key generation
     let secured_key = crate::auth::generate_secured_api_key(&body.parent_api_key, &params_str);
 
     Json(serde_json::json!({

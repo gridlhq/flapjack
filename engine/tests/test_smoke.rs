@@ -250,14 +250,14 @@ fn smoke_auth() {
 
     // Generate secured key, validate it
     let secured = auth::generate_secured_api_key(
-        &search_key.value,
+        &search_key.hmac_key.as_ref().unwrap(),
         "filters=category%3AElectronics&validUntil=9999999999",
     );
     let result = auth::validate_secured_key(&secured, &store);
     assert!(result.is_some(), "auth: secured key should validate");
 
     // Expired key rejected
-    let expired = auth::generate_secured_api_key(&search_key.value, "validUntil=1000000000");
+    let expired = auth::generate_secured_api_key(&search_key.hmac_key.as_ref().unwrap(), "validUntil=1000000000");
     assert!(
         auth::validate_secured_key(&expired, &store).is_none(),
         "auth: expired key should be rejected"

@@ -278,9 +278,9 @@ cargo nextest run
 ## Roadmap
 
 **Security**
-- [ ] Hash API keys at rest (salted SHA-256)
-- [ ] Admin key on first boot only
-- [ ] Key type prefixes (`fj_admin_`, `fj_search_`)
+- [x] Hash API keys at rest (salted SHA-256) ✅
+- [x] Admin key on first boot only ✅
+- [x] Key type prefixes (`fj_admin_`, `fj_search_`) ✅
 
 **Infrastructure**
 - [ ] High availability — multi-node replication

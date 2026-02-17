@@ -8,6 +8,7 @@ node_modules/
 /.vscode
 /.env
 /.secret
+.admin_key
 /dev-data
 /data
 /tmp

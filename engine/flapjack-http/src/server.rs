@@ -11,10 +11,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::auth::{
-    authenticate_and_authorize, generate_admin_key, generate_hex_key, read_existing_admin_key,
-    KeyStore,
-};
+use crate::auth::{authenticate_and_authorize, generate_admin_key, generate_hex_key, KeyStore};
 use crate::handlers::dashboard::dashboard_handler;
 use crate::handlers::snapshot;
 use crate::handlers::{
@@ -88,24 +85,50 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
 
     // Determine effective admin key:
     //   1. --no-auth → no key
-    //   2. FLAPJACK_ADMIN_KEY env var → use it
-    //   3. Existing admin key in keys.json → use it (auto-migrate to fj_ prefix)
-    //   4. Otherwise → auto-generate a new key (with fj_ prefix)
+    //   2. FLAPJACK_ADMIN_KEY env var → use it (production, key rotation)
+    //   3. Otherwise → use/create .admin_key file (local dev convenience)
+    let admin_key_file = Path::new(&data_dir).join(".admin_key");
+
     let (admin_key, key_is_new) = if no_auth {
         (None, false)
     } else if let Some(key) = admin_key_env {
+        // Env var takes precedence - save to file for subsequent boots
+        if let Err(e) = std::fs::write(&admin_key_file, &key) {
+            tracing::warn!("Failed to save admin key to .admin_key: {}", e);
+        }
         (Some(key), false)
-    } else if let Some(key) = read_existing_admin_key(Path::new(&data_dir)) {
-        // Auto-migrate old keys that don't have the fj_ prefix
-        if key.starts_with("fj_") {
-            (Some(key), false)
-        } else {
-            let migrated = format!("fj_{}", key);
-            tracing::info!("Migrating admin key to fj_ prefix format");
-            (Some(migrated), false)
+    } else if admin_key_file.exists() {
+        // Read from file (local dev mode)
+        match std::fs::read_to_string(&admin_key_file) {
+            Ok(key) => (Some(key.trim().to_string()), false),
+            Err(e) => {
+                eprintln!("❌ Error: Failed to read .admin_key file: {}", e);
+                eprintln!("   Run: flapjack reset-admin-key");
+                std::process::exit(1);
+            }
         }
     } else {
+        // First boot: auto-generate admin key and save to file
         let key = generate_admin_key();
+        // Ensure data directory exists
+        if let Some(parent) = admin_key_file.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                eprintln!("❌ Error: Failed to create data directory: {}", e);
+                std::process::exit(1);
+            }
+        }
+        if let Err(e) = std::fs::write(&admin_key_file, &key) {
+            eprintln!("❌ Error: Failed to save admin key: {}", e);
+            std::process::exit(1);
+        }
+        // Set restrictive permissions (Unix only)
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Err(e) = std::fs::set_permissions(&admin_key_file, std::fs::Permissions::from_mode(0o600)) {
+                tracing::warn!("Failed to set .admin_key permissions: {}", e);
+            }
+        }
         (Some(key), true)
     };
 
@@ -578,34 +601,18 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
 
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
 
-    // Check if admin key has been shown before
-    let admin_key_shown_flag = Path::new(&data_dir).join(".admin_key_shown");
-    let should_show_key = !admin_key_shown_flag.exists();
-
+    // Determine auth status for banner display
     let auth_status = if no_auth {
         AuthStatus::Disabled
     } else if key_is_new {
-        // New keys are always shown, and we create the flag file
-        if let Err(e) = std::fs::write(&admin_key_shown_flag, "") {
-            tracing::warn!("Failed to create .admin_key_shown flag: {}", e);
-        }
+        // First boot - show the generated key prominently
         AuthStatus::NewKey(admin_key.clone().unwrap())
-    } else if let Some(ref key) = admin_key {
-        if should_show_key {
-            // First time showing existing key after restart - show it once
-            if let Err(e) = std::fs::write(&admin_key_shown_flag, "") {
-                tracing::warn!("Failed to create .admin_key_shown flag: {}", e);
-            }
-            AuthStatus::ExistingKey(key.clone())
-        } else {
-            // Key has been shown before - don't show it again
-            AuthStatus::ExistingKeyHidden
-        }
     } else {
-        AuthStatus::Disabled
+        // Subsequent boots - don't show the key (it's in .admin_key file)
+        AuthStatus::KeyInFile
     };
 
-    print_startup_banner(&bind_addr, auth_status, startup_start.elapsed().as_millis());
+    print_startup_banner(&bind_addr, auth_status, startup_start.elapsed().as_millis(), &data_dir);
 
     axum::serve(listener, app).await?;
 
@@ -614,12 +621,11 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
 
 enum AuthStatus {
     NewKey(String),
-    ExistingKey(String),
-    ExistingKeyHidden,
+    KeyInFile,
     Disabled,
 }
 
-fn print_startup_banner(bind_addr: &str, auth: AuthStatus, startup_ms: u128) {
+fn print_startup_banner(bind_addr: &str, auth: AuthStatus, startup_ms: u128, data_dir: &str) {
     use colored::Colorize;
 
     let url = format!("http://{}", bind_addr);
@@ -643,93 +649,68 @@ fn print_startup_banner(bind_addr: &str, auth: AuthStatus, startup_ms: u128) {
     match auth {
         AuthStatus::NewKey(ref key) => {
             println!();
-            println!(
-                "  {}  Admin API Key:  {}",
-                "🔑".bold(),
-                key.as_str().cyan().bold()
-            );
-            println!("     {}", "(auto-generated on first start)".dimmed());
+            println!("{}", "  ╔══════════════════════════════════════════════════════════════════════╗".yellow().bold());
+            println!("{}", "  ║                                                                      ║".yellow().bold());
+            println!("{}", "  ║  ⚠️  IMPORTANT: Save this API key - it won't be shown again!  ⚠️     ║".yellow().bold());
+            println!("{}", "  ║                                                                      ║".yellow().bold());
+            println!("{}", "  ╚══════════════════════════════════════════════════════════════════════╝".yellow().bold());
             println!();
-            println!("  {}  Quick Start:", "📖".bold());
             println!(
-                "     {}  {}",
-                "curl".bold(),
+                "  {}  Your Admin API Key:  {}",
+                "🔑".bold(),
+                key.as_str().cyan().bold().on_black()
+            );
+            println!();
+            println!("  {}  What to do:", "📋".bold());
+            println!("     {} Copy this key to a safe place (password manager, secrets vault)", "1.".cyan().bold());
+            println!("     {} Use it to authenticate API requests:", "2.".cyan().bold());
+            println!(
+                "        {}",
                 format!(
-                    "-H 'x-algolia-api-key: {}' -H 'x-algolia-application-id: flapjack' {}/1/indexes",
-                    key, url
+                    "curl -H 'X-Algolia-API-Key: {}' \\", key
+                ).dimmed()
+            );
+            println!(
+                "        {}",
+                format!(
+                    "     -H 'X-Algolia-Application-ID: flapjack' \\").dimmed()
+            );
+            println!(
+                "        {}",
+                format!(
+                    "     {}/1/indexes", url
                 ).dimmed()
             );
             println!();
-            println!("  {}  Useful Commands:", "⚡".bold());
-            println!(
-                "     {}  {}",
-                "Set your own key:".dimmed(),
-                "FLAPJACK_ADMIN_KEY=<key> flapjack".cyan()
-            );
-            println!(
-                "     {}  {}",
-                "Reset admin key: ".dimmed(),
-                "flapjack reset-admin-key".cyan()
-            );
-            println!(
-                "     {}  {}",
-                "Disable auth:    ".dimmed(),
-                "flapjack --no-auth".cyan()
-            );
+            println!("  {}  Key Storage:", "💾".bold());
+            println!("     • Stored securely in: {}", format!("{}/.admin_key", data_dir).cyan());
+            println!("     • For production: Set {} env var", "FLAPJACK_ADMIN_KEY".cyan());
+            println!("     • If lost: Run {}", "flapjack reset-admin-key".cyan());
+            println!();
+            println!("  {}  Security Notes:", "🔒".bold());
+            println!("     • Keys are hashed at rest (SHA-256 + unique salt)");
+            println!("     • Never commit {} to version control", ".admin_key".cyan());
+            println!("     • For local dev: Key auto-loads from file");
+            println!("     • For production: Always use {} env var", "FLAPJACK_ADMIN_KEY".cyan());
         }
-        AuthStatus::ExistingKey(ref key) => {
+        AuthStatus::KeyInFile => {
+            let key_file = format!("{}/.admin_key", data_dir);
             println!();
-            println!(
-                "  {}  Admin API Key:  {}",
-                "🔑".bold(),
-                key.as_str().cyan().bold()
-            );
-            println!("     {}", "(shown once for security)".dimmed());
+            println!("  {}  Auth:  {} (keys hashed at rest)", "🔒".bold().green(), "Enabled".green().bold());
             println!();
-            println!("  {}  Useful Commands:", "⚡".bold());
-            println!(
-                "     {}  {}",
-                "Reset admin key: ".dimmed(),
-                "flapjack reset-admin-key".cyan()
-            );
-            println!(
-                "     {}  {}",
-                "Disable auth:    ".dimmed(),
-                "flapjack --no-auth".cyan()
-            );
-        }
-        AuthStatus::ExistingKeyHidden => {
-            println!();
-            println!(
-                "  {}  Admin API Key:  {}",
-                "🔑".bold(),
-                "****** (hidden for security)".dimmed()
-            );
-            println!();
-            println!("  {}  Useful Commands:", "⚡".bold());
-            println!(
-                "     {}  {}",
-                "Reset admin key: ".dimmed(),
-                "flapjack reset-admin-key".cyan()
-            );
-            println!(
-                "     {}  {}",
-                "Show current key:".dimmed(),
-                "rm .data/.admin_key_shown && flapjack".cyan()
-            );
-            println!(
-                "     {}  {}",
-                "Disable auth:    ".dimmed(),
-                "flapjack --no-auth".cyan()
-            );
+            println!("  {}  API Key Location:", "🔑".bold());
+            println!("     • Loaded from: {}", key_file.cyan());
+            println!("     • View key: {}", format!("cat {}", key_file).cyan());
+            println!("     • Reset key: {}", "flapjack reset-admin-key".cyan());
+            println!("     • For production: Set {} env var", "FLAPJACK_ADMIN_KEY".cyan());
         }
         AuthStatus::Disabled => {
             println!();
-            println!(
-                "  {}  {}",
-                "⚠".yellow(),
-                "Auth disabled (--no-auth) — all routes are unprotected".yellow(),
-            );
+            println!("{}", "  ╔══════════════════════════════════════════════════════════════════════╗".yellow());
+            println!("{}", "  ║  ⚠️  WARNING: Authentication is DISABLED                            ║".yellow());
+            println!("{}", "  ║      All API routes are publicly accessible without auth            ║".yellow());
+            println!("{}", "  ║      Only use --no-auth for local development/testing               ║".yellow());
+            println!("{}", "  ╚══════════════════════════════════════════════════════════════════════╝".yellow());
         }
     }
     println!();

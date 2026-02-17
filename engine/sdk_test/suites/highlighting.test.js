@@ -339,20 +339,20 @@ export default [
     category: 'highlighting',
     async run(clients, fixtures) {
       const indexName = testIndexName('highlighting', 5);
-      
+
       const [[algoliaTask]] = await Promise.all([
         clients.algolia.saveObjects({ indexName, objects: fixtures.slice(0, 10) }),
         clients.flapjack.saveObjects({ indexName, objects: fixtures.slice(0, 10) })
       ]);
-      
+
       await clients.algolia.waitForTask({ indexName, taskID: algoliaTask.taskID });
       await waitForFlapjackIndexing(clients.flapjack, indexName, 10);
-      
+
       const [algolia, flapjack] = await Promise.all([
         clients.algolia.search({ requests: [{ indexName, query: 'essence mascara' }] }),
         clients.flapjack.search({ requests: [{ indexName, query: 'essence mascara' }] })
       ]);
-      
+
       return {
         algolia: algolia.results[0],
         flapjack: flapjack.results[0]
@@ -360,6 +360,138 @@ export default [
     },
     validate(algolia, flapjack, verbose) {
       const diffs = deepCompare(algolia, flapjack);
+      if (diffs.length > 0) {
+        throw { diffs };
+      }
+    }
+  },
+
+  {
+    name: 'Synonym highlighting (replaceSynonymsInHighlight=false default)',
+    category: 'highlighting',
+    async run(clients, fixtures) {
+      const indexName = testIndexName('highlighting', 9);
+
+      const synonymData = [
+        { objectID: '1', title: 'Gaming Laptop', description: 'Powerful laptop for gaming' },
+        { objectID: '2', title: 'Notebook Stand', description: 'Stand for your notebook' },
+        { objectID: '3', title: 'Computer Mouse', description: 'Wireless mouse' }
+      ];
+
+      await clients.flapjack.setSettings({
+        indexName,
+        indexSettings: {
+          searchableAttributes: ['title', 'description']
+        }
+      });
+
+      await clients.flapjack.setSettings({
+        indexName,
+        indexSettings: {
+          searchableAttributes: ['title', 'description']
+        }
+      });
+
+      await clients.algolia.setSettings({
+        indexName,
+        indexSettings: {
+          searchableAttributes: ['title', 'description']
+        }
+      });
+
+      const [[algoliaIndexTask]] = await Promise.all([
+        clients.algolia.saveObjects({ indexName, objects: synonymData }),
+        clients.flapjack.saveObjects({ indexName, objects: synonymData })
+      ]);
+
+      await clients.algolia.waitForTask({ indexName, taskID: algoliaIndexTask.taskID });
+      await waitForFlapjackIndexing(clients.flapjack, indexName, 3);
+
+      const synonyms = [{
+        objectID: 'notebook-laptop-synonym',
+        type: 'synonym',
+        synonyms: ['notebook', 'laptop', 'computer']
+      }];
+
+      const algoliaSynonymTask = await clients.algolia.saveSynonyms({ indexName, synonymHit: synonyms });
+      await clients.flapjack.saveSynonyms({ indexName, synonymHit: synonyms });
+
+      await clients.algolia.waitForTask({ indexName, taskID: algoliaSynonymTask.taskID });
+
+      // Small delay to ensure synonyms are fully indexed
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      const [algolia, flapjack] = await Promise.all([
+        clients.algolia.search({ requests: [{ indexName, query: 'notebook' }] }),
+        clients.flapjack.search({ requests: [{ indexName, query: 'notebook' }] })
+      ]);
+
+      return {
+        algolia: algolia.results[0],
+        flapjack: flapjack.results[0]
+      };
+    },
+    validate(algolia, flapjack, verbose) {
+      if (flapjack.nbHits !== 3) {
+        throw { diffs: [{
+          path: 'nbHits',
+          issue: 'synonym_count_mismatch',
+          expected: 3,
+          flapjack: flapjack.nbHits,
+          message: 'Should match all 3 documents via synonyms (notebook=laptop=computer)'
+        }] };
+      }
+
+      for (const hit of flapjack.hits) {
+        const titleResult = hit._highlightResult?.title;
+        const descResult = hit._highlightResult?.description;
+
+        if (titleResult && titleResult.matchLevel === 'full') {
+          if (!titleResult.matchedWords || !titleResult.matchedWords.includes('notebook')) {
+            throw { diffs: [{
+              path: `hits[${hit.objectID}]._highlightResult.title.matchedWords`,
+              issue: 'synonym_matched_words_wrong',
+              expected: ['notebook'],
+              flapjack: titleResult.matchedWords,
+              message: 'matchedWords should show original query term "notebook", not matched synonym'
+            }] };
+          }
+
+          if (titleResult.matchLevel !== 'full') {
+            throw { diffs: [{
+              path: `hits[${hit.objectID}]._highlightResult.title.matchLevel`,
+              issue: 'synonym_match_level_wrong',
+              expected: 'full',
+              flapjack: titleResult.matchLevel,
+              message: 'Synonym matches should have matchLevel "full" not "partial"'
+            }] };
+          }
+        }
+
+        if (descResult && descResult.matchLevel === 'full') {
+          if (!descResult.matchedWords || !descResult.matchedWords.includes('notebook')) {
+            throw { diffs: [{
+              path: `hits[${hit.objectID}]._highlightResult.description.matchedWords`,
+              issue: 'synonym_matched_words_wrong',
+              expected: ['notebook'],
+              flapjack: descResult.matchedWords,
+              message: 'matchedWords should show original query term "notebook", not matched synonym'
+            }] };
+          }
+        }
+      }
+
+      // Sort hits by objectID for order-independent comparison
+      const algoliaSorted = {
+        ...algolia,
+        hits: [...algolia.hits].sort((a, b) => a.objectID.localeCompare(b.objectID))
+      };
+      const flapjackSorted = {
+        ...flapjack,
+        hits: [...flapjack.hits].sort((a, b) => a.objectID.localeCompare(b.objectID))
+      };
+
+      const diffs = deepCompare(algoliaSorted, flapjackSorted);
       if (diffs.length > 0) {
         throw { diffs };
       }

@@ -10,13 +10,13 @@ fn setup_key_store() -> (TempDir, KeyStore) {
 }
 
 fn get_search_key(store: &KeyStore) -> String {
+    // The default search key's plaintext value is stored in hmac_key
     store
         .list_all()
         .iter()
         .find(|k| k.description == "Default Search API Key")
-        .unwrap()
-        .value
-        .clone()
+        .and_then(|k| k.hmac_key.clone())
+        .expect("Default search key should have hmac_key with plaintext value")
 }
 
 #[test]
@@ -30,7 +30,8 @@ fn test_generate_and_validate_basic() {
     let result = validate_secured_key(&secured, &store);
     assert!(result.is_some(), "should validate secured key");
     let (parent, restrictions) = result.unwrap();
-    assert_eq!(parent.value, search_key);
+    // Verify parent key is the search key (by checking description)
+    assert_eq!(parent.description, "Default Search API Key");
     assert_eq!(restrictions.filters, Some("category:phones".to_string()));
     assert_eq!(restrictions.valid_until, Some(9999999999));
 }
@@ -362,8 +363,10 @@ fn test_parent_index_restriction_enforced() {
     let (_dir, store) = setup_key_store();
     let _search_key_value = get_search_key(&store);
 
-    let scoped_key = store.create_key(flapjack_http::auth::ApiKey {
-        value: String::new(),
+    let (_scoped_key, scoped_key_plaintext) = store.create_key(flapjack_http::auth::ApiKey {
+        hash: String::new(),
+        salt: String::new(),
+        hmac_key: None,
         created_at: 0,
         acl: vec!["search".to_string()],
         description: "Scoped to products only".to_string(),
@@ -376,7 +379,7 @@ fn test_parent_index_restriction_enforced() {
     });
 
     let params = "restrictIndices=%5B%22users%22%5D&validUntil=9999999999";
-    let secured = generate_secured_api_key(&scoped_key.value, params);
+    let secured = generate_secured_api_key(&scoped_key_plaintext, params);
     let result = validate_secured_key(&secured, &store);
     assert!(result.is_some(), "HMAC should still validate");
     let (parent, restrictions) = result.unwrap();

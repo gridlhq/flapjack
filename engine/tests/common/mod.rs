@@ -17,10 +17,13 @@ pub async fn spawn_server_with_key(admin_key: Option<&str>) -> (String, TempDir)
     let manager = flapjack::IndexManager::new(temp_dir.path());
 
     let key_store = admin_key.map(|k| {
-        Arc::new(flapjack_http::auth::KeyStore::load_or_create(
+        let ks = Arc::new(flapjack_http::auth::KeyStore::load_or_create(
             temp_dir.path(),
             k,
-        ))
+        ));
+        // Write admin key to .admin_key file for consistency
+        std::fs::write(temp_dir.path().join(".admin_key"), k).ok();
+        ks
     });
 
     let state = Arc::new(flapjack_http::handlers::AppState {

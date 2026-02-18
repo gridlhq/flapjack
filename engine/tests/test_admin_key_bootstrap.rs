@@ -284,10 +284,7 @@ fn test_admin_key_with_leading_trailing_whitespace() {
     );
 
     // Verify the file content is trimmed (server.rs writes trimmed key)
-    assert_eq!(
-        file_content, trimmed_key,
-        "File should contain trimmed key"
-    );
+    assert_eq!(file_content, trimmed_key, "File should contain trimmed key");
     assert!(
         !file_content.starts_with(' ') && !file_content.ends_with(' '),
         "File should not have leading/trailing whitespace"

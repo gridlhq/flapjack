@@ -93,10 +93,11 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         (None, false)
     } else if let Some(key) = admin_key_env {
         // Env var takes precedence - save to file for subsequent boots
-        if let Err(e) = std::fs::write(&admin_key_file, &key) {
+        let trimmed_key = key.trim();
+        if let Err(e) = std::fs::write(&admin_key_file, trimmed_key) {
             tracing::warn!("Failed to save admin key to .admin_key: {}", e);
         }
-        (Some(key), false)
+        (Some(trimmed_key.to_string()), false)
     } else if admin_key_file.exists() {
         // Read from file (local dev mode)
         match std::fs::read_to_string(&admin_key_file) {

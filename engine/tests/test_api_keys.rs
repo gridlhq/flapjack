@@ -844,3 +844,195 @@ async fn test_search_key_cannot_escalate_via_settings() {
     .unwrap();
     assert_eq!(resp.status(), 403, "search key should block clear index");
 }
+
+#[tokio::test]
+async fn test_acl_case_sensitivity() {
+    let (addr, _temp, _) = setup().await;
+    let client = reqwest::Client::new();
+
+    create_index(&client, &addr, "test", ADMIN_KEY).await;
+
+    // Try creating key with uppercase ACL
+    let resp = authed(&client, "POST", &format!("http://{}/1/keys", addr), ADMIN_KEY)
+        .json(&json!({"acl": ["Search"], "description": "Case test uppercase"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201);
+    let uppercase_key = resp.json::<serde_json::Value>().await.unwrap()["key"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Try to search with uppercase ACL key - should FAIL (ACLs are case-sensitive)
+    let search_resp = authed(
+        &client,
+        "POST",
+        &format!("http://{}/1/indexes/test/query", addr),
+        &uppercase_key,
+    )
+    .json(&json!({"query": "test"}))
+    .send()
+    .await
+    .unwrap();
+
+    assert_eq!(
+        search_resp.status(),
+        403,
+        "ACL 'Search' (uppercase) should not match 'search' permission - ACLs are case-sensitive"
+    );
+
+    // Create a properly cased key
+    let resp = authed(&client, "POST", &format!("http://{}/1/keys", addr), ADMIN_KEY)
+        .json(&json!({"acl": ["search"], "description": "Case test lowercase"}))
+        .send()
+        .await
+        .unwrap();
+    let lowercase_key = resp.json::<serde_json::Value>().await.unwrap()["key"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Lowercase should work
+    let search_resp = authed(
+        &client,
+        "POST",
+        &format!("http://{}/1/indexes/test/query", addr),
+        &lowercase_key,
+    )
+    .json(&json!({"query": "test"}))
+    .send()
+    .await
+    .unwrap();
+
+    assert_eq!(
+        search_resp.status(),
+        200,
+        "ACL 'search' (lowercase) should work"
+    );
+}
+
+#[tokio::test]
+async fn test_concurrent_key_creation() {
+    let (addr, _temp, _) = setup().await;
+    let client = reqwest::Client::new();
+
+    // Get initial key count
+    let resp = authed(&client, "GET", &format!("http://{}/1/keys", addr), ADMIN_KEY)
+        .send()
+        .await
+        .unwrap();
+    let initial_keys = resp.json::<serde_json::Value>().await.unwrap();
+    let initial_count = initial_keys["keys"].as_array().unwrap().len();
+
+    // Create 10 keys concurrently
+    let mut handles = vec![];
+    for i in 0..10 {
+        let client_clone = client.clone();
+        let addr_clone = addr.clone();
+        handles.push(tokio::spawn(async move {
+            authed(
+                &client_clone,
+                "POST",
+                &format!("http://{}/1/keys", addr_clone),
+                ADMIN_KEY,
+            )
+            .json(&json!({"acl": ["search"], "description": format!("Concurrent key {}", i)}))
+            .send()
+            .await
+            .unwrap()
+        }));
+    }
+
+    // Wait for all to complete
+    let mut created_keys = vec![];
+    for handle in handles {
+        let resp = handle.await.unwrap();
+        assert_eq!(resp.status(), 201, "Concurrent key creation should succeed");
+        let body: serde_json::Value = resp.json().await.unwrap();
+        created_keys.push(body["key"].as_str().unwrap().to_string());
+    }
+
+    // Verify all keys were created
+    assert_eq!(created_keys.len(), 10, "Should create exactly 10 keys");
+
+    // Verify final count
+    let resp = authed(&client, "GET", &format!("http://{}/1/keys", addr), ADMIN_KEY)
+        .send()
+        .await
+        .unwrap();
+    let final_keys = resp.json::<serde_json::Value>().await.unwrap();
+    let final_count = final_keys["keys"].as_array().unwrap().len();
+
+    assert_eq!(
+        final_count,
+        initial_count + 10,
+        "Should have 10 more keys after concurrent creation"
+    );
+
+    // Test concurrent delete + restore operations
+    let test_key = &created_keys[0];
+
+    // Spawn concurrent delete and restore (race condition test)
+    let delete_handle = {
+        let client_clone = client.clone();
+        let addr_clone = addr.clone();
+        let key_clone = test_key.clone();
+        tokio::spawn(async move {
+            authed(
+                &client_clone,
+                "DELETE",
+                &format!("http://{}/1/keys/{}", addr_clone, key_clone),
+                ADMIN_KEY,
+            )
+            .send()
+            .await
+            .unwrap()
+        })
+    };
+
+    // Small delay to ensure delete happens first
+    tokio::time::sleep(Duration::from_millis(10)).await;
+
+    let restore_handle = {
+        let client_clone = client.clone();
+        let addr_clone = addr.clone();
+        let key_clone = test_key.clone();
+        tokio::spawn(async move {
+            authed(
+                &client_clone,
+                "POST",
+                &format!("http://{}/1/keys/{}/restore", addr_clone, key_clone),
+                ADMIN_KEY,
+            )
+            .send()
+            .await
+            .unwrap()
+        })
+    };
+
+    let delete_resp = delete_handle.await.unwrap();
+    let restore_resp = restore_handle.await.unwrap();
+
+    assert_eq!(delete_resp.status(), 200, "Delete should succeed");
+    assert_eq!(restore_resp.status(), 200, "Restore should succeed");
+
+    // Verify key is usable after restore
+    create_index(&client, &addr, "concurrent_test", ADMIN_KEY).await;
+    let search_resp = authed(
+        &client,
+        "POST",
+        &format!("http://{}/1/indexes/concurrent_test/query", addr),
+        test_key,
+    )
+    .json(&json!({"query": "test"}))
+    .send()
+    .await
+    .unwrap();
+
+    assert_eq!(
+        search_resp.status(),
+        200,
+        "Restored key should work after concurrent delete/restore"
+    );
+}

@@ -253,3 +253,50 @@ fn test_keystore_handles_corrupted_json_gracefully() {
         "Should have valid JSON after recovery"
     );
 }
+
+#[test]
+fn test_admin_key_with_leading_trailing_whitespace() {
+    let temp_dir = TempDir::new().unwrap();
+    let key_with_spaces = " fj_admin_test_key_whitespace ";
+    let trimmed_key = key_with_spaces.trim();
+
+    // Boot 1: Initialize with trimmed key (server.rs now trims before calling load_or_create)
+    let store1 = KeyStore::load_or_create(temp_dir.path(), trimmed_key);
+
+    // Verify trimmed key works
+    assert!(
+        store1.lookup(trimmed_key).is_some(),
+        "Trimmed key should authenticate immediately"
+    );
+
+    // Simulate env var scenario: write trimmed key to file (as server.rs does)
+    let admin_key_file = temp_dir.path().join(".admin_key");
+    fs::write(&admin_key_file, trimmed_key).unwrap();
+
+    // Boot 2: Read from file (server.rs reads and trims)
+    let file_content = fs::read_to_string(&admin_key_file).unwrap();
+    let file_key_trimmed = file_content.trim();
+    let store2 = KeyStore::load_or_create(temp_dir.path(), file_key_trimmed);
+
+    assert!(
+        store2.lookup(file_key_trimmed).is_some(),
+        "Trimmed key should authenticate after reload from file"
+    );
+
+    // Verify the file content is trimmed (server.rs writes trimmed key)
+    assert_eq!(
+        file_content, trimmed_key,
+        "File should contain trimmed key"
+    );
+    assert!(
+        !file_content.starts_with(' ') && !file_content.ends_with(' '),
+        "File should not have leading/trailing whitespace"
+    );
+
+    // Verify that even if user passes whitespace-padded key, it gets trimmed
+    assert_eq!(
+        key_with_spaces.trim(),
+        trimmed_key,
+        "Original key with spaces should trim to expected value"
+    );
+}

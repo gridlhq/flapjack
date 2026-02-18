@@ -1711,6 +1711,7 @@ dependencies = [
  "hmac",
  "mime_guess",
  "nom",
+ "once_cell",
  "rand 0.8.5",
  "reqwest",
  "rust-embed",

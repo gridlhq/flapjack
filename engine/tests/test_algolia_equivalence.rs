@@ -680,7 +680,10 @@ async fn test_synonym_highlighting_default_matches_algolia() {
     let algolia_nb_hits = fixture.expected_response["nbHits"].as_u64().unwrap();
 
     println!("\n=== FLAPJACK RESPONSE ===");
-    println!("{}", serde_json::to_string_pretty(&flapjack_response).unwrap());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&flapjack_response).unwrap()
+    );
     println!("\n=== ALGOLIA RESPONSE ===");
     println!(
         "{}",
@@ -712,7 +715,10 @@ async fn test_synonym_highlighting_default_matches_algolia() {
     for fj_hit in flapjack_hits.iter() {
         let object_id = fj_hit["objectID"].as_str().unwrap();
         let alg_hit = algolia_map.get(object_id).unwrap_or_else(|| {
-            panic!("Flapjack returned objectID {} but Algolia didn't", object_id)
+            panic!(
+                "Flapjack returned objectID {} but Algolia didn't",
+                object_id
+            )
         });
 
         // Compare _highlightResult

@@ -13,7 +13,10 @@ fn test_multi_word_highlighting() {
     eprintln!("value: {}", result.value);
 
     assert_eq!(result.matched_words, vec!["essence"]);
-    assert!(matches!(result.match_level, flapjack::query::highlighter::MatchLevel::Partial));
+    assert!(matches!(
+        result.match_level,
+        flapjack::query::highlighter::MatchLevel::Partial
+    ));
 
     // Test tags[1] field: "mascara" - should only match "mascara"
     let result2 = highlighter.highlight_text("mascara", &query_words);
@@ -23,7 +26,10 @@ fn test_multi_word_highlighting() {
     eprintln!("value: {}", result2.value);
 
     assert_eq!(result2.matched_words, vec!["mascara"]);
-    assert!(matches!(result2.match_level, flapjack::query::highlighter::MatchLevel::Partial));
+    assert!(matches!(
+        result2.match_level,
+        flapjack::query::highlighter::MatchLevel::Partial
+    ));
 
     // Test name field: "Essence Mascara..." - should match both
     let result3 = highlighter.highlight_text("Essence Mascara Lash Princess", &query_words);
@@ -33,5 +39,8 @@ fn test_multi_word_highlighting() {
     eprintln!("value: {}", result3.value);
 
     assert_eq!(result3.matched_words, vec!["essence", "mascara"]);
-    assert!(matches!(result3.match_level, flapjack::query::highlighter::MatchLevel::Full));
+    assert!(matches!(
+        result3.match_level,
+        flapjack::query::highlighter::MatchLevel::Full
+    ));
 }

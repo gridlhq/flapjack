@@ -126,7 +126,9 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            if let Err(e) = std::fs::set_permissions(&admin_key_file, std::fs::Permissions::from_mode(0o600)) {
+            if let Err(e) =
+                std::fs::set_permissions(&admin_key_file, std::fs::Permissions::from_mode(0o600))
+            {
                 tracing::warn!("Failed to set .admin_key permissions: {}", e);
             }
         }
@@ -152,6 +154,12 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
 
     // Use bind_addr from node.json, falling back to env var
     let bind_addr = node_config.bind_addr.clone();
+
+    // Initialize analytics cluster client (for HA analytics fan-out)
+    if let Some(cluster_client) = crate::analytics_cluster::AnalyticsClusterClient::new(&node_config) {
+        crate::analytics_cluster::set_global_cluster(cluster_client);
+        tracing::info!("[HA-analytics] Cluster analytics enabled: fan-out to {} peers", node_config.peers.len());
+    }
 
     let replication_manager = if !node_config.peers.is_empty() {
         tracing::info!("Replication enabled: {} peers", node_config.peers.len());
@@ -613,7 +621,12 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         AuthStatus::KeyInFile
     };
 
-    print_startup_banner(&bind_addr, auth_status, startup_start.elapsed().as_millis(), &data_dir);
+    print_startup_banner(
+        &bind_addr,
+        auth_status,
+        startup_start.elapsed().as_millis(),
+        &data_dir,
+    );
 
     axum::serve(listener, app).await?;
 
@@ -650,11 +663,36 @@ fn print_startup_banner(bind_addr: &str, auth: AuthStatus, startup_ms: u128, dat
     match auth {
         AuthStatus::NewKey(ref key) => {
             println!();
-            println!("{}", "  ╔══════════════════════════════════════════════════════════════════════╗".yellow().bold());
-            println!("{}", "  ║                                                                      ║".yellow().bold());
-            println!("{}", "  ║  ⚠️  IMPORTANT: Save this API key - it won't be shown again!  ⚠️     ║".yellow().bold());
-            println!("{}", "  ║                                                                      ║".yellow().bold());
-            println!("{}", "  ╚══════════════════════════════════════════════════════════════════════╝".yellow().bold());
+            println!(
+                "{}",
+                "  ╔══════════════════════════════════════════════════════════════════════╗"
+                    .yellow()
+                    .bold()
+            );
+            println!(
+                "{}",
+                "  ║                                                                      ║"
+                    .yellow()
+                    .bold()
+            );
+            println!(
+                "{}",
+                "  ║  ⚠️  IMPORTANT: Save this API key - it won't be shown again!  ⚠️     ║"
+                    .yellow()
+                    .bold()
+            );
+            println!(
+                "{}",
+                "  ║                                                                      ║"
+                    .yellow()
+                    .bold()
+            );
+            println!(
+                "{}",
+                "  ╚══════════════════════════════════════════════════════════════════════╝"
+                    .yellow()
+                    .bold()
+            );
             println!();
             println!(
                 "  {}  Your Admin API Key:  {}",
@@ -663,55 +701,92 @@ fn print_startup_banner(bind_addr: &str, auth: AuthStatus, startup_ms: u128, dat
             );
             println!();
             println!("  {}  What to do:", "📋".bold());
-            println!("     {} Copy this key to a safe place (password manager, secrets vault)", "1.".cyan().bold());
-            println!("     {} Use it to authenticate API requests:", "2.".cyan().bold());
             println!(
-                "        {}",
-                format!(
-                    "curl -H 'X-Algolia-API-Key: {}' \\", key
-                ).dimmed()
+                "     {} Copy this key to a safe place (password manager, secrets vault)",
+                "1.".cyan().bold()
+            );
+            println!(
+                "     {} Use it to authenticate API requests:",
+                "2.".cyan().bold()
             );
             println!(
                 "        {}",
-                format!(
-                    "     -H 'X-Algolia-Application-ID: flapjack' \\").dimmed()
+                format!("curl -H 'X-Algolia-API-Key: {}' \\", key).dimmed()
             );
             println!(
                 "        {}",
-                format!(
-                    "     {}/1/indexes", url
-                ).dimmed()
+                "     -H 'X-Algolia-Application-ID: flapjack' \\".dimmed()
             );
+            println!("        {}", format!("     {}/1/indexes", url).dimmed());
             println!();
             println!("  {}  Key Storage:", "💾".bold());
-            println!("     • Stored securely in: {}", format!("{}/.admin_key", data_dir).cyan());
-            println!("     • For production: Set {} env var", "FLAPJACK_ADMIN_KEY".cyan());
+            println!(
+                "     • Stored securely in: {}",
+                format!("{}/.admin_key", data_dir).cyan()
+            );
+            println!(
+                "     • For production: Set {} env var",
+                "FLAPJACK_ADMIN_KEY".cyan()
+            );
             println!("     • If lost: Run {}", "flapjack reset-admin-key".cyan());
             println!();
             println!("  {}  Security Notes:", "🔒".bold());
             println!("     • Keys are hashed at rest (SHA-256 + unique salt)");
-            println!("     • Never commit {} to version control", ".admin_key".cyan());
+            println!(
+                "     • Never commit {} to version control",
+                ".admin_key".cyan()
+            );
             println!("     • For local dev: Key auto-loads from file");
-            println!("     • For production: Always use {} env var", "FLAPJACK_ADMIN_KEY".cyan());
+            println!(
+                "     • For production: Always use {} env var",
+                "FLAPJACK_ADMIN_KEY".cyan()
+            );
         }
         AuthStatus::KeyInFile => {
             let key_file = format!("{}/.admin_key", data_dir);
             println!();
-            println!("  {}  Auth:  {} (keys hashed at rest)", "🔒".bold().green(), "Enabled".green().bold());
+            println!(
+                "  {}  Auth:  {} (keys hashed at rest)",
+                "🔒".bold().green(),
+                "Enabled".green().bold()
+            );
             println!();
             println!("  {}  API Key Location:", "🔑".bold());
             println!("     • Loaded from: {}", key_file.cyan());
             println!("     • View key: {}", format!("cat {}", key_file).cyan());
             println!("     • Reset key: {}", "flapjack reset-admin-key".cyan());
-            println!("     • For production: Set {} env var", "FLAPJACK_ADMIN_KEY".cyan());
+            println!(
+                "     • For production: Set {} env var",
+                "FLAPJACK_ADMIN_KEY".cyan()
+            );
         }
         AuthStatus::Disabled => {
             println!();
-            println!("{}", "  ╔══════════════════════════════════════════════════════════════════════╗".yellow());
-            println!("{}", "  ║  ⚠️  WARNING: Authentication is DISABLED                            ║".yellow());
-            println!("{}", "  ║      All API routes are publicly accessible without auth            ║".yellow());
-            println!("{}", "  ║      Only use --no-auth for local development/testing               ║".yellow());
-            println!("{}", "  ╚══════════════════════════════════════════════════════════════════════╝".yellow());
+            println!(
+                "{}",
+                "  ╔══════════════════════════════════════════════════════════════════════╗"
+                    .yellow()
+            );
+            println!(
+                "{}",
+                "  ║  ⚠️  WARNING: Authentication is DISABLED                            ║"
+                    .yellow()
+            );
+            println!(
+                "{}",
+                "  ║      All API routes are publicly accessible without auth            ║"
+                    .yellow()
+            );
+            println!(
+                "{}",
+                "  ║      Only use --no-auth for local development/testing               ║"
+                    .yellow()
+            );
+            println!(
+                "{}",
+                "  ╚══════════════════════════════════════════════════════════════════════╝"
+                    .yellow()
+            );
         }
     }
     println!();

@@ -645,8 +645,14 @@ async fn test_default_keys_created() {
         .find(|k| k["description"] == "Admin API Key")
         .unwrap();
     // Keys are now hashed, so we can't compare plaintext value
-    assert!(admin["hash"].as_str().is_some(), "Admin key should have hash");
-    assert!(admin["salt"].as_str().is_some(), "Admin key should have salt");
+    assert!(
+        admin["hash"].as_str().is_some(),
+        "Admin key should have hash"
+    );
+    assert!(
+        admin["salt"].as_str().is_some(),
+        "Admin key should have salt"
+    );
     assert!(admin["acl"].as_array().unwrap().len() > 10);
 
     let search = keys
@@ -853,11 +859,16 @@ async fn test_acl_case_sensitivity() {
     create_index(&client, &addr, "test", ADMIN_KEY).await;
 
     // Try creating key with uppercase ACL
-    let resp = authed(&client, "POST", &format!("http://{}/1/keys", addr), ADMIN_KEY)
-        .json(&json!({"acl": ["Search"], "description": "Case test uppercase"}))
-        .send()
-        .await
-        .unwrap();
+    let resp = authed(
+        &client,
+        "POST",
+        &format!("http://{}/1/keys", addr),
+        ADMIN_KEY,
+    )
+    .json(&json!({"acl": ["Search"], "description": "Case test uppercase"}))
+    .send()
+    .await
+    .unwrap();
     assert_eq!(resp.status(), 201);
     let uppercase_key = resp.json::<serde_json::Value>().await.unwrap()["key"]
         .as_str()
@@ -883,11 +894,16 @@ async fn test_acl_case_sensitivity() {
     );
 
     // Create a properly cased key
-    let resp = authed(&client, "POST", &format!("http://{}/1/keys", addr), ADMIN_KEY)
-        .json(&json!({"acl": ["search"], "description": "Case test lowercase"}))
-        .send()
-        .await
-        .unwrap();
+    let resp = authed(
+        &client,
+        "POST",
+        &format!("http://{}/1/keys", addr),
+        ADMIN_KEY,
+    )
+    .json(&json!({"acl": ["search"], "description": "Case test lowercase"}))
+    .send()
+    .await
+    .unwrap();
     let lowercase_key = resp.json::<serde_json::Value>().await.unwrap()["key"]
         .as_str()
         .unwrap()
@@ -918,10 +934,15 @@ async fn test_concurrent_key_creation() {
     let client = reqwest::Client::new();
 
     // Get initial key count
-    let resp = authed(&client, "GET", &format!("http://{}/1/keys", addr), ADMIN_KEY)
-        .send()
-        .await
-        .unwrap();
+    let resp = authed(
+        &client,
+        "GET",
+        &format!("http://{}/1/keys", addr),
+        ADMIN_KEY,
+    )
+    .send()
+    .await
+    .unwrap();
     let initial_keys = resp.json::<serde_json::Value>().await.unwrap();
     let initial_count = initial_keys["keys"].as_array().unwrap().len();
 
@@ -957,10 +978,15 @@ async fn test_concurrent_key_creation() {
     assert_eq!(created_keys.len(), 10, "Should create exactly 10 keys");
 
     // Verify final count
-    let resp = authed(&client, "GET", &format!("http://{}/1/keys", addr), ADMIN_KEY)
-        .send()
-        .await
-        .unwrap();
+    let resp = authed(
+        &client,
+        "GET",
+        &format!("http://{}/1/keys", addr),
+        ADMIN_KEY,
+    )
+    .send()
+    .await
+    .unwrap();
     let final_keys = resp.json::<serde_json::Value>().await.unwrap();
     let final_count = final_keys["keys"].as_array().unwrap().len();
 

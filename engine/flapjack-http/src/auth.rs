@@ -242,11 +242,7 @@ impl KeyStore {
         let mut data = self.data.write().unwrap();
 
         // Check if this is the admin key and prevent deletion
-        if let Some(admin) = data
-            .keys
-            .iter()
-            .find(|k| k.description == "Admin API Key")
-        {
+        if let Some(admin) = data.keys.iter().find(|k| k.description == "Admin API Key") {
             if verify_key(key_value, &admin.hash, &admin.salt) {
                 return false;
             }
@@ -376,9 +372,8 @@ pub fn validate_secured_key(
             Ok(b) => b,
             Err(_) => return None,
         };
-        let mut mac =
-            HmacSha256::new_from_slice(hmac_key_value.as_bytes())
-                .expect("HMAC accepts any key length");
+        let mut mac = HmacSha256::new_from_slice(hmac_key_value.as_bytes())
+            .expect("HMAC accepts any key length");
         mac.update(params.as_bytes());
         if mac.verify_slice(&hmac_bytes).is_ok() {
             let restrictions = SecuredKeyRestrictions::from_params(params);

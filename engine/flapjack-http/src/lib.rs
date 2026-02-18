@@ -1,3 +1,4 @@
+pub mod analytics_cluster;
 pub mod auth;
 pub mod dto;
 pub mod filter_parser;

@@ -7,10 +7,13 @@
 pub mod aggregation;
 pub mod collector;
 pub mod config;
+pub mod hll;
+pub mod merge;
 pub mod query;
 pub mod retention;
 pub mod schema;
 pub mod seed;
+pub mod types;
 pub mod writer;
 
 pub use collector::AnalyticsCollector;

@@ -155,7 +155,8 @@ fn map_synonym_matches(
                     for original in original_query_words {
                         let original_lower = original.to_lowercase();
                         if let Some(synonyms) = synonym_map.get(&original_lower) {
-                            if synonyms.contains(&matched_lower) || matched_lower == original_lower {
+                            if synonyms.contains(&matched_lower) || matched_lower == original_lower
+                            {
                                 mapped_words.insert(original_lower);
                                 found_original = true;
                                 break;
@@ -200,12 +201,7 @@ fn map_synonym_matches(
         HighlightValue::Object(map) => {
             let updated = map
                 .into_iter()
-                .map(|(k, v)| {
-                    (
-                        k,
-                        map_synonym_matches(v, original_query_words, synonym_map),
-                    )
-                })
+                .map(|(k, v)| (k, map_synonym_matches(v, original_query_words, synonym_map)))
                 .collect();
             HighlightValue::Object(updated)
         }
@@ -510,7 +506,8 @@ fn search_single_sync(
         if let Some(synonym_store) = state.manager.get_synonyms(&index_name) {
             let expanded_queries = synonym_store.expand_query(&req.query);
             // Extract words from all expanded queries and add to query_words
-            let mut all_words: std::collections::HashSet<String> = query_words.iter().cloned().collect();
+            let mut all_words: std::collections::HashSet<String> =
+                query_words.iter().cloned().collect();
             for expanded in &expanded_queries {
                 for word in extract_query_words(expanded) {
                     all_words.insert(word);

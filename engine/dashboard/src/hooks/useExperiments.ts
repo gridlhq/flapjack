@@ -138,6 +138,18 @@ export interface ExperimentResultsResponse {
   outlierUsersExcluded: number;
   noStableIdQueries: number;
   recommendation: string | null;
+  interleaving: InterleavingResultsResponse | null;
+}
+
+export interface InterleavingResultsResponse {
+  deltaAB: number;
+  winsControl: number;
+  winsVariant: number;
+  ties: number;
+  pValue: number;
+  significant: boolean;
+  totalQueries: number;
+  dataQualityOk: boolean;
 }
 
 export interface GuardRailAlertResponse {

@@ -133,6 +133,9 @@ struct EventRow {
 pub struct InterleavingMetrics {
     pub preference: stats::PreferenceResult,
     pub total_queries: u32,
+    /// Fraction of queries where Team A was first (for data quality check).
+    /// Should be roughly 0.5 — values outside 0.45..0.55 indicate a bug.
+    pub first_team_a_ratio: f64,
 }
 
 /// Per-query interleaving click counts for preference scoring.
@@ -141,6 +144,8 @@ struct InterleavingClickCounts {
     per_query: Vec<(u32, u32)>,
     /// Total queries with interleaving click data.
     total_queries: u32,
+    /// Unique query IDs (for first-team distribution quality check).
+    query_ids: Vec<String>,
 }
 
 /// Aggregate click events with team attribution into per-query click counts.
@@ -168,11 +173,13 @@ fn aggregate_interleaving_clicks(events: &[EventRow]) -> InterleavingClickCounts
         }
     }
 
+    let query_ids: Vec<String> = by_query.keys().map(|k| k.to_string()).collect();
     let per_query: Vec<(u32, u32)> = by_query.into_values().collect();
     let total_queries = per_query.len() as u32;
     InterleavingClickCounts {
         per_query,
         total_queries,
+        query_ids,
     }
 }
 
@@ -180,12 +187,33 @@ fn aggregate_interleaving_clicks(events: &[EventRow]) -> InterleavingClickCounts
 ///
 /// This is the pure computation path — aggregates click events by query,
 /// then feeds per-query counts to `compute_preference_score`.
-fn compute_interleaving_metrics(events: &[EventRow]) -> InterleavingMetrics {
+/// Also computes the first-team distribution quality check by re-hashing
+/// each unique query_id with the experiment_id.
+fn compute_interleaving_metrics(events: &[EventRow], experiment_id: &str) -> InterleavingMetrics {
     let counts = aggregate_interleaving_clicks(events);
     let preference = stats::compute_preference_score(&counts.per_query);
+
+    // Compute first-team distribution from unique query IDs.
+    // Re-derive the first-team coin flip using the same hash as team_draft_interleave.
+    let first_team_a_ratio = if counts.query_ids.is_empty() {
+        0.5 // neutral default when no data
+    } else {
+        let team_a_first_count = counts
+            .query_ids
+            .iter()
+            .filter(|qid| {
+                let key = format!("{}:{}", experiment_id, qid);
+                let (h1, _) = super::assignment::murmurhash3_128(key.as_bytes(), 0);
+                h1 & 1 == 0 // same logic as team_draft_interleave
+            })
+            .count();
+        team_a_first_count as f64 / counts.query_ids.len() as f64
+    };
+
     InterleavingMetrics {
         preference,
         total_queries: counts.total_queries,
+        first_team_a_ratio,
     }
 }
 
@@ -663,6 +691,7 @@ pub async fn get_experiment_metrics(
 pub async fn get_interleaving_metrics(
     index_names: &[&str],
     analytics_data_dir: &Path,
+    experiment_id: &str,
 ) -> Result<Option<InterleavingMetrics>, String> {
     use datafusion::prelude::*;
 
@@ -677,7 +706,7 @@ pub async fn get_interleaving_metrics(
         }
     }
 
-    let metrics = compute_interleaving_metrics(&all_events);
+    let metrics = compute_interleaving_metrics(&all_events, experiment_id);
     if metrics.total_queries == 0 {
         Ok(None)
     } else {
@@ -1981,5 +2010,37 @@ mod tests {
         let result = aggregate_interleaving_clicks(&events);
         assert_eq!(result.total_queries, 1);
         assert_eq!(result.per_query[0], (1, 0));
+    }
+
+    // ── Interleaving data quality (first-team distribution) ─────
+
+    #[test]
+    fn compute_interleaving_metrics_includes_first_team_ratio() {
+        // Generate 100 queries with deterministic first-team via murmurhash3.
+        // The ratio should be roughly 50/50 (within 45-55% for data quality).
+        let mut events = Vec::new();
+        for i in 0..100 {
+            let qid = format!("q{}", i);
+            events.push(interleaving_click(&qid, "control"));
+            events.push(interleaving_click(&qid, "variant"));
+        }
+
+        let result = compute_interleaving_metrics(&events, "exp-quality-test");
+
+        assert_eq!(result.total_queries, 100);
+        // The hash-based first-team should be roughly balanced
+        assert!(
+            result.first_team_a_ratio >= 0.35 && result.first_team_a_ratio <= 0.65,
+            "first_team_a_ratio {} should be roughly balanced",
+            result.first_team_a_ratio
+        );
+    }
+
+    #[test]
+    fn compute_interleaving_metrics_zero_queries_gives_half_ratio() {
+        let events: Vec<EventRow> = vec![];
+        let result = compute_interleaving_metrics(&events, "exp-empty");
+        assert_eq!(result.total_queries, 0);
+        assert!((result.first_team_a_ratio - 0.5).abs() < f64::EPSILON);
     }
 }

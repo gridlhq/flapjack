@@ -601,7 +601,7 @@ pub async fn get_experiment_results(
     // Fetch interleaving preference metrics when experiment uses interleaving
     let interleaving_metrics = if experiment.interleaving == Some(true) {
         if let Some(ref data_dir) = analytics_data_dir {
-            match metrics::get_interleaving_metrics(&index_names, data_dir).await {
+            match metrics::get_interleaving_metrics(&index_names, data_dir, &experiment.id).await {
                 Ok(m) => m,
                 Err(e) => {
                     tracing::warn!("Failed to fetch interleaving metrics: {}", e);
@@ -1015,8 +1015,7 @@ fn build_results_response(
             p_value: m.preference.p_value,
             significant: m.preference.p_value < 0.05,
             total_queries: m.total_queries,
-            // TODO(stage9/E2.5): derive from first-team distribution quality metric.
-            data_quality_ok: true,
+            data_quality_ok: m.first_team_a_ratio >= 0.45 && m.first_team_a_ratio <= 0.55,
         })
     } else {
         None
@@ -3227,6 +3226,7 @@ mod tests {
                 p_value: 0.03,
             },
             total_queries: 25,
+            first_team_a_ratio: 0.48,
         };
 
         let response = build_results_response(&experiment, None, None, Some(&interleaving_metrics));
@@ -3241,7 +3241,7 @@ mod tests {
         assert!((interleaving.p_value - 0.03).abs() < f64::EPSILON);
         assert!(interleaving.significant);
         assert_eq!(interleaving.total_queries, 25);
-        assert!(interleaving.data_quality_ok);
+        assert!(interleaving.data_quality_ok); // 0.48 is within 0.45..0.55
     }
 
     #[test]
@@ -3283,6 +3283,7 @@ mod tests {
                 p_value: 0.04,
             },
             total_queries: 22,
+            first_team_a_ratio: 0.5,
         };
 
         let response = build_results_response(&experiment, None, None, Some(&interleaving_metrics));
@@ -3290,6 +3291,97 @@ mod tests {
             response.interleaving.is_none(),
             "standard experiments must not include interleaving preference data"
         );
+    }
+
+    #[test]
+    fn results_interleaving_data_quality_check() {
+        let now = chrono::Utc::now().timestamp_millis();
+        let started_at = now - (3 * 24 * 60 * 60 * 1000);
+        let experiment = Experiment {
+            id: "exp-quality-check-1".to_string(),
+            name: "Quality check".to_string(),
+            index_name: "products".to_string(),
+            status: ExperimentStatus::Running,
+            traffic_split: 0.5,
+            control: ExperimentArm {
+                name: "control".to_string(),
+                query_overrides: None,
+                index_name: Some("products_control".to_string()),
+            },
+            variant: ExperimentArm {
+                name: "variant".to_string(),
+                query_overrides: None,
+                index_name: Some("products_variant".to_string()),
+            },
+            primary_metric: PrimaryMetric::Ctr,
+            created_at: started_at - 1_000,
+            started_at: Some(started_at),
+            ended_at: None,
+            minimum_days: 1,
+            winsorization_cap: None,
+            conclusion: None,
+            interleaving: Some(true),
+        };
+
+        // Balanced first-team distribution (0.50) → data_quality_ok = true
+        let balanced_metrics = metrics::InterleavingMetrics {
+            preference: stats::PreferenceResult {
+                delta_ab: 0.0,
+                wins_a: 50,
+                wins_b: 50,
+                ties: 10,
+                p_value: 1.0,
+            },
+            total_queries: 110,
+            first_team_a_ratio: 0.50,
+        };
+        let resp = build_results_response(&experiment, None, None, Some(&balanced_metrics));
+        assert!(resp.interleaving.as_ref().unwrap().data_quality_ok);
+
+        // Skewed first-team distribution (0.60) → data_quality_ok = false
+        let skewed_metrics = metrics::InterleavingMetrics {
+            preference: stats::PreferenceResult {
+                delta_ab: 0.1,
+                wins_a: 55,
+                wins_b: 45,
+                ties: 10,
+                p_value: 0.3,
+            },
+            total_queries: 110,
+            first_team_a_ratio: 0.60,
+        };
+        let resp = build_results_response(&experiment, None, None, Some(&skewed_metrics));
+        assert!(!resp.interleaving.as_ref().unwrap().data_quality_ok);
+
+        // Edge: 0.45 → data_quality_ok = true (boundary)
+        let edge_metrics = metrics::InterleavingMetrics {
+            preference: stats::PreferenceResult {
+                delta_ab: 0.0,
+                wins_a: 50,
+                wins_b: 50,
+                ties: 0,
+                p_value: 1.0,
+            },
+            total_queries: 100,
+            first_team_a_ratio: 0.45,
+        };
+        let resp = build_results_response(&experiment, None, None, Some(&edge_metrics));
+        assert!(resp.interleaving.as_ref().unwrap().data_quality_ok);
+
+        // Edge: 0.44 → data_quality_ok = false (just outside)
+        let just_outside = metrics::InterleavingMetrics {
+            preference: stats::PreferenceResult {
+                delta_ab: 0.0,
+                wins_a: 50,
+                wins_b: 50,
+                ties: 0,
+                p_value: 1.0,
+            },
+            total_queries: 100,
+            first_team_a_ratio: 0.44,
+        };
+        let resp = build_results_response(&experiment, None, None, Some(&just_outside));
+        assert!(!resp.interleaving.as_ref().unwrap().data_quality_ok);
     }
 
     #[test]

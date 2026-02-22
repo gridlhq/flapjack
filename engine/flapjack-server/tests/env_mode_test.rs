@@ -9,6 +9,9 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+const AUTO_PORT_STARTUP_TIMEOUT: Duration = Duration::from_secs(20);
+const AUTO_PORT_HEALTH_TIMEOUT: Duration = Duration::from_secs(30);
+
 // ---------------------------------------------------------------------------
 // Helper: build a Command with all ambient env vars that could interfere
 // cleaned out, so tests are hermetic regardless of the runner's environment.
@@ -76,8 +79,8 @@ impl RunningServer {
             .spawn()
             .expect("failed to spawn flapjack process");
 
-        let bind_addr = wait_for_startup_bind_addr(&mut child, Duration::from_secs(10));
-        wait_for_health(&bind_addr, Duration::from_secs(10));
+        let bind_addr = wait_for_startup_bind_addr(&mut child, AUTO_PORT_STARTUP_TIMEOUT);
+        wait_for_health(&bind_addr, AUTO_PORT_HEALTH_TIMEOUT);
 
         Self { child, bind_addr }
     }

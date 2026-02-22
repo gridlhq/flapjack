@@ -123,6 +123,70 @@ struct EventRow {
     /// JSON-encoded positions array from click events (e.g. "[1,3,5]").
     /// 1-indexed per Algolia API convention.
     positions: Option<String>,
+    /// Team attribution for interleaving experiments: "control" or "variant".
+    interleaving_team: Option<String>,
+}
+
+// ── Interleaving click aggregation ───────────────────────────────────
+
+/// Aggregate interleaving preference metrics for an experiment.
+pub struct InterleavingMetrics {
+    pub preference: stats::PreferenceResult,
+    pub total_queries: u32,
+}
+
+/// Per-query interleaving click counts for preference scoring.
+struct InterleavingClickCounts {
+    /// Vec of (control_clicks, variant_clicks) per query.
+    per_query: Vec<(u32, u32)>,
+    /// Total queries with interleaving click data.
+    total_queries: u32,
+}
+
+/// Aggregate click events with team attribution into per-query click counts.
+///
+/// Groups click events by query_id, counts clicks per team ("control" / "variant"),
+/// and returns per-query tuples suitable for `compute_preference_score`.
+/// Only events with `event_type == "click"` and a non-None `interleaving_team` are counted.
+fn aggregate_interleaving_clicks(events: &[EventRow]) -> InterleavingClickCounts {
+    let mut by_query: HashMap<&str, (u32, u32)> = HashMap::new();
+
+    for e in events {
+        if e.event_type != "click" {
+            continue;
+        }
+        let team_is_control = match e.interleaving_team.as_deref() {
+            Some("control") => true,
+            Some("variant") => false,
+            _ => continue, // ignore missing/invalid team values
+        };
+        let entry = by_query.entry(e.query_id.as_str()).or_insert((0, 0));
+        if team_is_control {
+            entry.0 += 1;
+        } else {
+            entry.1 += 1;
+        }
+    }
+
+    let per_query: Vec<(u32, u32)> = by_query.into_values().collect();
+    let total_queries = per_query.len() as u32;
+    InterleavingClickCounts {
+        per_query,
+        total_queries,
+    }
+}
+
+/// Compute interleaving preference metrics from raw event rows.
+///
+/// This is the pure computation path — aggregates click events by query,
+/// then feeds per-query counts to `compute_preference_score`.
+fn compute_interleaving_metrics(events: &[EventRow]) -> InterleavingMetrics {
+    let counts = aggregate_interleaving_clicks(events);
+    let preference = stats::compute_preference_score(&counts.per_query);
+    InterleavingMetrics {
+        preference,
+        total_queries: counts.total_queries,
+    }
 }
 
 // ── Core aggregation (pure logic, no I/O) ───────────────────────────
@@ -592,6 +656,35 @@ pub async fn get_experiment_metrics(
     ))
 }
 
+/// Read interleaving preference metrics from analytics parquet files.
+///
+/// Returns `None` if no interleaving click events are found.
+#[cfg(feature = "analytics")]
+pub async fn get_interleaving_metrics(
+    index_names: &[&str],
+    analytics_data_dir: &Path,
+) -> Result<Option<InterleavingMetrics>, String> {
+    use datafusion::prelude::*;
+
+    let ctx = SessionContext::new();
+    let mut all_events: Vec<EventRow> = Vec::new();
+
+    for index_name in index_names {
+        let events_dir = analytics_data_dir.join(index_name).join("events");
+        if events_dir.exists() && has_parquet_files(&events_dir) {
+            let rows = read_event_rows(&ctx, &events_dir).await?;
+            all_events.extend(rows);
+        }
+    }
+
+    let metrics = compute_interleaving_metrics(&all_events);
+    if metrics.total_queries == 0 {
+        Ok(None)
+    } else {
+        Ok(Some(metrics))
+    }
+}
+
 #[cfg(feature = "analytics")]
 fn has_parquet_files(dir: &Path) -> bool {
     fn check_dir(dir: &Path) -> bool {
@@ -722,27 +815,32 @@ async fn read_event_rows(
         .await
         .map_err(|e| format!("Failed to register events table: {}", e))?;
 
-    // Backward compatibility: older analytics parquet files predate the `positions` column.
-    let has_positions = ctx
+    // Backward compatibility: older analytics parquet files may predate optional columns.
+    let schema_fields: std::collections::HashSet<String> = ctx
         .table(&table_name)
         .await
         .map_err(|e| format!("Failed to inspect events table schema: {}", e))?
         .schema()
         .fields()
         .iter()
-        .any(|field| field.name() == "positions");
+        .map(|field| field.name().clone())
+        .collect();
 
-    let sql = if has_positions {
-        format!(
-            "SELECT query_id, event_type, value, positions FROM {} WHERE query_id IS NOT NULL",
-            table_name
-        )
-    } else {
-        format!(
-            "SELECT query_id, event_type, value FROM {} WHERE query_id IS NOT NULL",
-            table_name
-        )
-    };
+    let has_positions = schema_fields.contains("positions");
+    let has_interleaving_team = schema_fields.contains("interleaving_team");
+
+    let mut columns = vec!["query_id", "event_type", "value"];
+    if has_positions {
+        columns.push("positions");
+    }
+    if has_interleaving_team {
+        columns.push("interleaving_team");
+    }
+    let sql = format!(
+        "SELECT {} FROM {} WHERE query_id IS NOT NULL",
+        columns.join(", "),
+        table_name
+    );
 
     let df = ctx
         .sql(&sql)
@@ -759,6 +857,7 @@ async fn read_event_rows(
         let event_type_col = batch.column_by_name("event_type").unwrap().clone();
         let value_col = batch.column_by_name("value").unwrap().clone();
         let positions_col = batch.column_by_name("positions").cloned();
+        let interleaving_team_col = batch.column_by_name("interleaving_team").cloned();
 
         for i in 0..batch.num_rows() {
             let query_id = match arrow_helpers::get_string(&query_id_col, i) {
@@ -770,6 +869,9 @@ async fn read_event_rows(
                 event_type: arrow_helpers::get_string(&event_type_col, i).unwrap_or_default(),
                 value: arrow_helpers::get_f64_opt(&value_col, i),
                 positions: positions_col
+                    .as_ref()
+                    .and_then(|col| arrow_helpers::get_string(col, i)),
+                interleaving_team: interleaving_team_col
                     .as_ref()
                     .and_then(|col| arrow_helpers::get_string(col, i)),
             });
@@ -926,6 +1028,7 @@ mod tests {
             event_type: "click".to_string(),
             value: None,
             positions: None,
+            interleaving_team: None,
         }
     }
 
@@ -936,6 +1039,18 @@ mod tests {
             event_type: "click".to_string(),
             value: None,
             positions: Some(serde_json::to_string(positions).unwrap()),
+            interleaving_team: None,
+        }
+    }
+
+    /// Helper to build an interleaving click EventRow with team attribution.
+    fn interleaving_click(qid: &str, team: &str) -> EventRow {
+        EventRow {
+            query_id: qid.to_string(),
+            event_type: "click".to_string(),
+            value: None,
+            positions: None,
+            interleaving_team: Some(team.to_string()),
         }
     }
 
@@ -946,6 +1061,7 @@ mod tests {
             event_type: "conversion".to_string(),
             value: Some(value),
             positions: None,
+            interleaving_team: None,
         }
     }
 
@@ -1436,6 +1552,7 @@ mod tests {
             event_type: "click".to_string(),
             value: None,
             positions: Some("[-3, 4, 2]".to_string()),
+            interleaving_team: None,
         }];
 
         let m = aggregate_experiment_metrics(&searches, &events, None);
@@ -1784,5 +1901,85 @@ mod tests {
                 "legacy events should have zero mean_click_rank"
             );
         }
+    }
+
+    // ── Interleaving click aggregation ────────────────────────────
+
+    #[test]
+    fn aggregate_interleaving_clicks_per_query() {
+        let events = vec![
+            interleaving_click("q1", "control"),
+            interleaving_click("q1", "control"),
+            interleaving_click("q1", "variant"),
+            interleaving_click("q2", "variant"),
+            interleaving_click("q2", "variant"),
+            interleaving_click("q3", "control"),
+            interleaving_click("q3", "control"),
+            interleaving_click("q3", "variant"),
+            interleaving_click("q3", "variant"),
+        ];
+
+        let result = aggregate_interleaving_clicks(&events);
+
+        assert_eq!(result.total_queries, 3);
+
+        // Sort for deterministic assertion (HashMap iteration order is random)
+        let mut per_query = result.per_query.clone();
+        per_query.sort();
+
+        // q1: (2,1), q2: (0,2), q3: (2,2) — sorted: (0,2), (2,1), (2,2)
+        assert_eq!(per_query, vec![(0, 2), (2, 1), (2, 2)]);
+    }
+
+    #[test]
+    fn aggregate_interleaving_empty_clicks() {
+        let events: Vec<EventRow> = vec![];
+        let result = aggregate_interleaving_clicks(&events);
+        assert_eq!(result.total_queries, 0);
+        assert!(result.per_query.is_empty());
+    }
+
+    #[test]
+    fn aggregate_interleaving_ignores_non_click_events() {
+        let events = vec![
+            interleaving_click("q1", "control"),
+            // conversion event with interleaving_team — should be ignored
+            EventRow {
+                query_id: "q1".to_string(),
+                event_type: "conversion".to_string(),
+                value: Some(10.0),
+                positions: None,
+                interleaving_team: Some("variant".to_string()),
+            },
+        ];
+
+        let result = aggregate_interleaving_clicks(&events);
+        assert_eq!(result.total_queries, 1);
+        assert_eq!(result.per_query[0], (1, 0)); // only the click counted
+    }
+
+    #[test]
+    fn aggregate_interleaving_ignores_clicks_without_team() {
+        let events = vec![
+            interleaving_click("q1", "control"),
+            click("q1"), // no interleaving_team — should be ignored
+            click("q2"), // no interleaving_team — should be ignored
+        ];
+
+        let result = aggregate_interleaving_clicks(&events);
+        assert_eq!(result.total_queries, 1); // only q1 has interleaving click
+        assert_eq!(result.per_query[0], (1, 0));
+    }
+
+    #[test]
+    fn aggregate_interleaving_ignores_invalid_team_values() {
+        let events = vec![
+            interleaving_click("q1", "control"),
+            interleaving_click("q2", "garbage"), // invalid — should be ignored
+        ];
+
+        let result = aggregate_interleaving_clicks(&events);
+        assert_eq!(result.total_queries, 1);
+        assert_eq!(result.per_query[0], (1, 0));
     }
 }

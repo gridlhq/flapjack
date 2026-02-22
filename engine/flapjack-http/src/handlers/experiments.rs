@@ -97,6 +97,20 @@ pub struct ResultsResponse {
     pub outlier_users_excluded: usize,
     pub no_stable_id_queries: u64,
     pub recommendation: Option<String>,
+    pub interleaving: Option<InterleavingResponse>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InterleavingResponse {
+    pub delta_ab: f64,
+    pub wins_control: u32,
+    pub wins_variant: u32,
+    pub ties: u32,
+    pub p_value: f64,
+    pub significant: bool,
+    pub total_queries: u32,
+    pub data_quality_ok: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -584,11 +598,29 @@ pub async fn get_experiment_results(
         None
     };
 
+    // Fetch interleaving preference metrics when experiment uses interleaving
+    let interleaving_metrics = if experiment.interleaving == Some(true) {
+        if let Some(ref data_dir) = analytics_data_dir {
+            match metrics::get_interleaving_metrics(&index_names, data_dir).await {
+                Ok(m) => m,
+                Err(e) => {
+                    tracing::warn!("Failed to fetch interleaving metrics: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     // Compute gate, stats, and build response
     let response = build_results_response(
         &experiment,
         experiment_metrics.as_ref(),
         covariates.as_ref(),
+        interleaving_metrics.as_ref(),
     );
     Json(response).into_response()
 }
@@ -711,6 +743,7 @@ fn build_results_response(
     experiment: &Experiment,
     metrics: Option<&metrics::ExperimentMetrics>,
     covariates: Option<&HashMap<String, f64>>,
+    interleaving_metrics: Option<&metrics::InterleavingMetrics>,
 ) -> ResultsResponse {
     let (control_arm, variant_arm) = match metrics {
         Some(m) => (arm_to_response(&m.control), arm_to_response(&m.variant)),
@@ -973,6 +1006,22 @@ fn build_results_response(
         Vec::new()
     };
 
+    let interleaving = if experiment.interleaving == Some(true) {
+        interleaving_metrics.map(|m| InterleavingResponse {
+            delta_ab: m.preference.delta_ab,
+            wins_control: m.preference.wins_a,
+            wins_variant: m.preference.wins_b,
+            ties: m.preference.ties,
+            p_value: m.preference.p_value,
+            significant: m.preference.p_value < 0.05,
+            total_queries: m.total_queries,
+            // TODO(stage9/E2.5): derive from first-team distribution quality metric.
+            data_quality_ok: true,
+        })
+    } else {
+        None
+    };
+
     ResultsResponse {
         experiment_id: experiment.id.clone(),
         name: experiment.name.clone(),
@@ -1002,6 +1051,7 @@ fn build_results_response(
         outlier_users_excluded: metrics.map_or(0, |m| m.outlier_users_excluded),
         no_stable_id_queries: metrics.map_or(0, |m| m.no_stable_id_queries),
         recommendation,
+        interleaving,
     }
 }
 
@@ -2150,7 +2200,7 @@ mod tests {
             winsorization_cap_applied: None,
         };
 
-        let response = build_results_response(&experiment, Some(&metrics), None);
+        let response = build_results_response(&experiment, Some(&metrics), None, None);
         assert!(
             !response.gate.ready_to_read,
             "gate should be closed for low-count, short-runtime experiment"
@@ -2242,7 +2292,7 @@ mod tests {
             winsorization_cap_applied: None,
         };
 
-        let response = build_results_response(&experiment, Some(&metrics), None);
+        let response = build_results_response(&experiment, Some(&metrics), None, None);
         assert!(
             !response.gate.ready_to_read,
             "gate should be closed for short-runtime experiment"
@@ -2348,7 +2398,7 @@ mod tests {
             winsorization_cap_applied: None,
         };
 
-        let response = build_results_response(&experiment, Some(&metrics), None);
+        let response = build_results_response(&experiment, Some(&metrics), None, None);
         assert!(
             response.gate.ready_to_read,
             "gate should be ready: per_arm={}, required={}",
@@ -2469,7 +2519,7 @@ mod tests {
             winsorization_cap_applied: None,
         };
 
-        let response = build_results_response(&experiment, Some(&metrics), None);
+        let response = build_results_response(&experiment, Some(&metrics), None, None);
         assert!(response.gate.ready_to_read);
         let sig = response
             .significance
@@ -2568,7 +2618,7 @@ mod tests {
             winsorization_cap_applied: None,
         };
 
-        let response = build_results_response(&experiment, Some(&metrics), None);
+        let response = build_results_response(&experiment, Some(&metrics), None, None);
         let bayesian = response.bayesian.expect("bayesian must be present");
         assert!(
             bayesian.prob_variant_better < 0.01,
@@ -2660,7 +2710,7 @@ mod tests {
             winsorization_cap_applied: None,
         };
 
-        let response = build_results_response(&experiment, Some(&metrics), None);
+        let response = build_results_response(&experiment, Some(&metrics), None, None);
         let bayesian = response.bayesian.expect("bayesian must be present");
         // Variant has LOWER zero-result rate = BETTER. probVariantBetter should be high.
         assert!(
@@ -2762,7 +2812,7 @@ mod tests {
             winsorization_cap_applied: None,
         };
 
-        let response = build_results_response(&experiment, Some(&metrics), None);
+        let response = build_results_response(&experiment, Some(&metrics), None, None);
         assert!(response.gate.ready_to_read);
         let sig = response
             .significance
@@ -2871,7 +2921,7 @@ mod tests {
             winsorization_cap_applied: None,
         };
 
-        let response = build_results_response(&experiment, Some(&metrics), None);
+        let response = build_results_response(&experiment, Some(&metrics), None, None);
         assert!(response.gate.ready_to_read);
         let sig = response
             .significance
@@ -2969,7 +3019,7 @@ mod tests {
             winsorization_cap_applied: None,
         };
 
-        let response = build_results_response(&experiment, Some(&metrics), None);
+        let response = build_results_response(&experiment, Some(&metrics), None, None);
         assert!(!response.gate.ready_to_read);
         // Should have an estimate since we have data flowing
         assert!(
@@ -3070,7 +3120,7 @@ mod tests {
             winsorization_cap_applied: None,
         };
 
-        let response = build_results_response(&experiment, Some(&metrics), None);
+        let response = build_results_response(&experiment, Some(&metrics), None, None);
 
         // Gate: N reached but days not reached → readyToRead should be false
         assert!(
@@ -3139,6 +3189,110 @@ mod tests {
     }
 
     #[test]
+    fn build_results_response_includes_interleaving_preference_for_interleaving_experiment() {
+        let now = chrono::Utc::now().timestamp_millis();
+        let started_at = now - (3 * 24 * 60 * 60 * 1000);
+        let experiment = Experiment {
+            id: "exp-interleaving-results-1".to_string(),
+            name: "Interleaving results".to_string(),
+            index_name: "products".to_string(),
+            status: ExperimentStatus::Running,
+            traffic_split: 0.5,
+            control: ExperimentArm {
+                name: "control".to_string(),
+                query_overrides: None,
+                index_name: None,
+            },
+            variant: ExperimentArm {
+                name: "variant".to_string(),
+                query_overrides: Some(Default::default()),
+                index_name: Some("products_v2".to_string()),
+            },
+            primary_metric: PrimaryMetric::Ctr,
+            created_at: started_at - 1_000,
+            started_at: Some(started_at),
+            ended_at: None,
+            minimum_days: 1,
+            winsorization_cap: None,
+            conclusion: None,
+            interleaving: Some(true),
+        };
+
+        let interleaving_metrics = metrics::InterleavingMetrics {
+            preference: stats::PreferenceResult {
+                delta_ab: -0.2,
+                wins_a: 8,
+                wins_b: 12,
+                ties: 5,
+                p_value: 0.03,
+            },
+            total_queries: 25,
+        };
+
+        let response = build_results_response(&experiment, None, None, Some(&interleaving_metrics));
+        let interleaving = response
+            .interleaving
+            .expect("interleaving response must be present for interleaving experiments");
+
+        assert!((interleaving.delta_ab + 0.2).abs() < f64::EPSILON);
+        assert_eq!(interleaving.wins_control, 8);
+        assert_eq!(interleaving.wins_variant, 12);
+        assert_eq!(interleaving.ties, 5);
+        assert!((interleaving.p_value - 0.03).abs() < f64::EPSILON);
+        assert!(interleaving.significant);
+        assert_eq!(interleaving.total_queries, 25);
+        assert!(interleaving.data_quality_ok);
+    }
+
+    #[test]
+    fn build_results_response_omits_interleaving_preference_for_standard_experiment() {
+        let now = chrono::Utc::now().timestamp_millis();
+        let started_at = now - (3 * 24 * 60 * 60 * 1000);
+        let experiment = Experiment {
+            id: "exp-standard-results-1".to_string(),
+            name: "Standard results".to_string(),
+            index_name: "products".to_string(),
+            status: ExperimentStatus::Running,
+            traffic_split: 0.5,
+            control: ExperimentArm {
+                name: "control".to_string(),
+                query_overrides: None,
+                index_name: None,
+            },
+            variant: ExperimentArm {
+                name: "variant".to_string(),
+                query_overrides: Some(Default::default()),
+                index_name: None,
+            },
+            primary_metric: PrimaryMetric::Ctr,
+            created_at: started_at - 1_000,
+            started_at: Some(started_at),
+            ended_at: None,
+            minimum_days: 1,
+            winsorization_cap: None,
+            conclusion: None,
+            interleaving: None,
+        };
+
+        let interleaving_metrics = metrics::InterleavingMetrics {
+            preference: stats::PreferenceResult {
+                delta_ab: 0.15,
+                wins_a: 12,
+                wins_b: 8,
+                ties: 2,
+                p_value: 0.04,
+            },
+            total_queries: 22,
+        };
+
+        let response = build_results_response(&experiment, None, None, Some(&interleaving_metrics));
+        assert!(
+            response.interleaving.is_none(),
+            "standard experiments must not include interleaving preference data"
+        );
+    }
+
+    #[test]
     fn build_results_response_applies_cuped_when_covariates_available() {
         let now = chrono::Utc::now().timestamp_millis();
         let started_at = now - (3 * 24 * 60 * 60 * 1000);
@@ -3201,8 +3355,9 @@ mod tests {
             winsorization_cap_applied: None,
         };
 
-        let raw_response = build_results_response(&experiment, Some(&metrics), None);
-        let cuped_response = build_results_response(&experiment, Some(&metrics), Some(&covariates));
+        let raw_response = build_results_response(&experiment, Some(&metrics), None, None);
+        let cuped_response =
+            build_results_response(&experiment, Some(&metrics), Some(&covariates), None);
 
         let raw_sig = raw_response
             .significance
@@ -3290,9 +3445,9 @@ mod tests {
             winsorization_cap_applied: None,
         };
 
-        let raw_response = build_results_response(&experiment, Some(&metrics), None);
+        let raw_response = build_results_response(&experiment, Some(&metrics), None, None);
         let sparse_cov_response =
-            build_results_response(&experiment, Some(&metrics), Some(&sparse_covariates));
+            build_results_response(&experiment, Some(&metrics), Some(&sparse_covariates), None);
 
         let raw_sig = raw_response
             .significance
@@ -3383,9 +3538,9 @@ mod tests {
             winsorization_cap_applied: None,
         };
 
-        let raw_response = build_results_response(&experiment, Some(&metrics), None);
+        let raw_response = build_results_response(&experiment, Some(&metrics), None, None);
         let partial_cov_response =
-            build_results_response(&experiment, Some(&metrics), Some(&partial_covariates));
+            build_results_response(&experiment, Some(&metrics), Some(&partial_covariates), None);
 
         let raw_sig = raw_response
             .significance
@@ -3790,7 +3945,7 @@ mod tests {
             winsorization_cap_applied: None,
         };
 
-        let response = build_results_response(&experiment, Some(&metrics), None);
+        let response = build_results_response(&experiment, Some(&metrics), None, None);
         assert!(
             !response.guard_rail_alerts.is_empty(),
             "guard rail should trigger when variant drops 50%"
@@ -3884,7 +4039,7 @@ mod tests {
             winsorization_cap_applied: None,
         };
 
-        let response = build_results_response(&experiment, Some(&metrics), None);
+        let response = build_results_response(&experiment, Some(&metrics), None, None);
         assert!(
             response.guard_rail_alerts.is_empty(),
             "no guard rail alert expected when variant is healthy"
@@ -3973,7 +4128,7 @@ mod tests {
             winsorization_cap_applied: None,
         };
 
-        let response = build_results_response(&experiment, Some(&metrics), None);
+        let response = build_results_response(&experiment, Some(&metrics), None, None);
 
         assert!(
             (response.control.mean_click_rank - 3.5).abs() < 0.001,
@@ -4057,8 +4212,9 @@ mod tests {
             winsorization_cap_applied: None,
         };
 
-        let raw_response = build_results_response(&experiment, Some(&metrics), None);
-        let cuped_response = build_results_response(&experiment, Some(&metrics), Some(&covariates));
+        let raw_response = build_results_response(&experiment, Some(&metrics), None, None);
+        let cuped_response =
+            build_results_response(&experiment, Some(&metrics), Some(&covariates), None);
 
         // Safety check should have detected that CUPED doesn't help and fallen back
         assert!(

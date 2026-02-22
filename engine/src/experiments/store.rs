@@ -603,7 +603,11 @@ mod tests {
         }
         let store2 = ExperimentStore::new(tmp.path()).unwrap();
         let loaded = store2.get("e-il").unwrap();
-        assert_eq!(loaded.interleaving, Some(true), "interleaving flag must survive persistence");
+        assert_eq!(
+            loaded.interleaving,
+            Some(true),
+            "interleaving flag must survive persistence"
+        );
     }
 
     #[test]

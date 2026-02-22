@@ -668,6 +668,7 @@ mod oplog_replay {
             .unwrap();
             let r = mgr.search("replay_test", "", None, None, 100).unwrap();
             assert_eq!(r.total, 3);
+            mgr.graceful_shutdown().await;
         }
 
         let cs_path = base.join("replay_test").join("committed_seq");
@@ -788,6 +789,7 @@ mod oplog_replay {
                 .unwrap();
             let r = mgr.search("replay_del", "", None, None, 100).unwrap();
             assert_eq!(r.total, 1);
+            mgr.graceful_shutdown().await;
         }
 
         nuke_and_recreate_index(&base.join("replay_del"));
@@ -802,6 +804,14 @@ mod oplog_replay {
             );
             assert_eq!(r.documents[0].document.id, "2");
         }
+
+        let replay_entries = read_oplog_entries(&base.join("replay_del").join("oplog"));
+        assert!(
+            replay_entries
+                .iter()
+                .any(|entry| entry["op_type"] == "delete"),
+            "delete operation must be present in oplog before replay"
+        );
     }
 
     #[tokio::test]
@@ -821,6 +831,7 @@ mod oplog_replay {
             mgr.add_documents_sync("replay_partial", vec![make_doc("3", "Gamma")])
                 .await
                 .unwrap();
+            mgr.graceful_shutdown().await;
         }
 
         let entries = read_oplog_entries(&base.join("replay_partial").join("oplog"));
@@ -882,6 +893,7 @@ mod oplog_replay {
                 .unwrap();
             let r = mgr.search("replay_upsert", "", None, None, 100).unwrap();
             assert_eq!(r.total, 1);
+            mgr.graceful_shutdown().await;
         }
 
         nuke_and_recreate_index(&base.join("replay_upsert"));
@@ -915,6 +927,7 @@ mod oplog_replay {
             mgr.add_documents_sync("replay_stress", docs).await.unwrap();
             let r = mgr.search("replay_stress", "", None, None, 1).unwrap();
             assert_eq!(r.total, n);
+            mgr.graceful_shutdown().await;
         }
 
         nuke_and_recreate_index(&base.join("replay_stress"));
@@ -1010,6 +1023,7 @@ mod oplog_replay {
             mgr.add_documents_sync("replay_corrupt", vec![make_doc("1", "Good")])
                 .await
                 .unwrap();
+            mgr.graceful_shutdown().await;
         }
 
         let oplog_dir = base.join("replay_corrupt").join("oplog");
@@ -1164,6 +1178,7 @@ mod oplog_replay {
                     "body": {"searchableAttributes": ["name"], "queryType": "prefixAll"}
                 }),
             );
+            mgr.graceful_shutdown().await;
         }
 
         let settings_path = base.join("replay_settings").join("settings.json");
@@ -1204,6 +1219,7 @@ mod oplog_replay {
             }
             let r = mgr.search("replay_compact", "", None, None, 1).unwrap();
             assert_eq!(r.total, 20);
+            mgr.graceful_shutdown().await;
         }
 
         let oplog_dir = base.join("replay_compact").join("oplog");

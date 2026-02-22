@@ -98,3 +98,99 @@ impl<T: TokenStream> TokenStream for EdgeNgramTokenStream<T> {
         &mut self.ngram_token
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tantivy::tokenizer::{SimpleTokenizer, TokenFilter, Tokenizer};
+
+    fn collect_ngrams(text: &str, min: usize, max: usize) -> Vec<String> {
+        let filter = EdgeNgramTokenFilter::new(min, max);
+        let mut tokenizer = filter.transform(SimpleTokenizer::default());
+        let mut stream = tokenizer.token_stream(text);
+        let mut result = Vec::new();
+        while stream.advance() {
+            result.push(stream.token().text.clone());
+        }
+        result
+    }
+
+    #[test]
+    fn ngram_single_word_1_3() {
+        let tokens = collect_ngrams("hello", 1, 3);
+        assert_eq!(tokens, vec!["h", "he", "hel"]);
+    }
+
+    #[test]
+    fn ngram_single_word_2_5() {
+        let tokens = collect_ngrams("hello", 2, 5);
+        assert_eq!(tokens, vec!["he", "hel", "hell", "hello"]);
+    }
+
+    #[test]
+    fn ngram_short_word_below_min() {
+        // "ab" with min_gram=3 → no tokens (word too short)
+        let tokens = collect_ngrams("ab", 3, 5);
+        assert!(tokens.is_empty());
+    }
+
+    #[test]
+    fn ngram_word_at_min() {
+        // "abc" with min_gram=3, max_gram=5 → ["abc"]
+        let tokens = collect_ngrams("abc", 3, 5);
+        assert_eq!(tokens, vec!["abc"]);
+    }
+
+    #[test]
+    fn ngram_multiple_words() {
+        let tokens = collect_ngrams("hello world", 1, 2);
+        assert_eq!(tokens, vec!["h", "he", "w", "wo"]);
+    }
+
+    #[test]
+    fn ngram_max_gram_larger_than_word() {
+        // "hi" with max_gram=10 → only produce up to length 2
+        let tokens = collect_ngrams("hi", 1, 10);
+        assert_eq!(tokens, vec!["h", "hi"]);
+    }
+
+    #[test]
+    fn ngram_empty_text() {
+        let tokens = collect_ngrams("", 1, 3);
+        assert!(tokens.is_empty());
+    }
+
+    #[test]
+    fn ngram_min_equals_max() {
+        let tokens = collect_ngrams("hello", 3, 3);
+        assert_eq!(tokens, vec!["hel"]);
+    }
+
+    #[test]
+    fn ngram_preserves_position() {
+        let filter = EdgeNgramTokenFilter::new(1, 2);
+        let mut tokenizer = filter.transform(SimpleTokenizer::default());
+        let mut stream = tokenizer.token_stream("foo bar");
+        let mut positions = Vec::new();
+        while stream.advance() {
+            positions.push(stream.token().position);
+        }
+        // "f", "fo" share position 0; "b", "ba" share position 1
+        assert_eq!(positions[0], positions[1]);
+        assert_eq!(positions[2], positions[3]);
+        assert_ne!(positions[0], positions[2]);
+    }
+
+    #[test]
+    fn ngram_offsets_correct() {
+        let filter = EdgeNgramTokenFilter::new(1, 3);
+        let mut tokenizer = filter.transform(SimpleTokenizer::default());
+        let mut stream = tokenizer.token_stream("hello");
+        let mut offsets = Vec::new();
+        while stream.advance() {
+            let t = stream.token();
+            offsets.push((t.offset_from, t.offset_to));
+        }
+        assert_eq!(offsets, vec![(0, 1), (0, 2), (0, 3)]);
+    }
+}

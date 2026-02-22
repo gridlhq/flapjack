@@ -465,3 +465,158 @@ impl Ord for SortValue {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::SortValue;
+    use std::cmp::Ordering;
+
+    // --- SortValue::cmp (Ord) ---
+
+    #[test]
+    fn missing_equals_missing() {
+        assert_eq!(SortValue::Missing.cmp(&SortValue::Missing), Ordering::Equal);
+    }
+
+    #[test]
+    fn missing_less_than_anything() {
+        assert_eq!(
+            SortValue::Missing.cmp(&SortValue::Integer(0)),
+            Ordering::Less
+        );
+        assert_eq!(
+            SortValue::Missing.cmp(&SortValue::Float(0.0)),
+            Ordering::Less
+        );
+        assert_eq!(
+            SortValue::Missing.cmp(&SortValue::Text("a".into())),
+            Ordering::Less
+        );
+    }
+
+    #[test]
+    fn anything_greater_than_missing() {
+        assert_eq!(
+            SortValue::Integer(0).cmp(&SortValue::Missing),
+            Ordering::Greater
+        );
+        assert_eq!(
+            SortValue::Float(0.0).cmp(&SortValue::Missing),
+            Ordering::Greater
+        );
+        assert_eq!(
+            SortValue::Text("a".into()).cmp(&SortValue::Missing),
+            Ordering::Greater
+        );
+    }
+
+    #[test]
+    fn integer_ordering() {
+        assert_eq!(
+            SortValue::Integer(1).cmp(&SortValue::Integer(2)),
+            Ordering::Less
+        );
+        assert_eq!(
+            SortValue::Integer(5).cmp(&SortValue::Integer(5)),
+            Ordering::Equal
+        );
+        assert_eq!(
+            SortValue::Integer(10).cmp(&SortValue::Integer(3)),
+            Ordering::Greater
+        );
+        assert_eq!(
+            SortValue::Integer(-1).cmp(&SortValue::Integer(0)),
+            Ordering::Less
+        );
+    }
+
+    #[test]
+    fn float_ordering() {
+        assert_eq!(
+            SortValue::Float(1.0).cmp(&SortValue::Float(2.0)),
+            Ordering::Less
+        );
+        assert_eq!(
+            SortValue::Float(3.14).cmp(&SortValue::Float(3.14)),
+            Ordering::Equal
+        );
+        assert_eq!(
+            SortValue::Float(5.0).cmp(&SortValue::Float(2.0)),
+            Ordering::Greater
+        );
+    }
+
+    #[test]
+    fn text_ordering() {
+        assert_eq!(
+            SortValue::Text("apple".into()).cmp(&SortValue::Text("banana".into())),
+            Ordering::Less
+        );
+        assert_eq!(
+            SortValue::Text("z".into()).cmp(&SortValue::Text("a".into())),
+            Ordering::Greater
+        );
+        assert_eq!(
+            SortValue::Text("same".into()).cmp(&SortValue::Text("same".into())),
+            Ordering::Equal
+        );
+    }
+
+    #[test]
+    fn cross_type_ordering_integer_lt_float_lt_text() {
+        // Integer < Float < Text (from the match arms)
+        assert_eq!(
+            SortValue::Integer(999).cmp(&SortValue::Float(0.0)),
+            Ordering::Less
+        );
+        assert_eq!(
+            SortValue::Integer(999).cmp(&SortValue::Text("a".into())),
+            Ordering::Less
+        );
+        assert_eq!(
+            SortValue::Float(999.0).cmp(&SortValue::Text("a".into())),
+            Ordering::Less
+        );
+
+        assert_eq!(
+            SortValue::Float(0.0).cmp(&SortValue::Integer(999)),
+            Ordering::Greater
+        );
+        assert_eq!(
+            SortValue::Text("a".into()).cmp(&SortValue::Integer(999)),
+            Ordering::Greater
+        );
+        assert_eq!(
+            SortValue::Text("a".into()).cmp(&SortValue::Float(999.0)),
+            Ordering::Greater
+        );
+    }
+
+    #[test]
+    fn sort_value_partial_eq() {
+        assert_eq!(SortValue::Integer(42), SortValue::Integer(42));
+        assert_ne!(SortValue::Integer(42), SortValue::Integer(43));
+        assert_eq!(SortValue::Text("hi".into()), SortValue::Text("hi".into()));
+        assert_eq!(SortValue::Missing, SortValue::Missing);
+    }
+
+    #[test]
+    fn vec_sort_uses_ord() {
+        let mut v = vec![
+            SortValue::Text("b".into()),
+            SortValue::Missing,
+            SortValue::Integer(5),
+            SortValue::Float(1.0),
+        ];
+        v.sort();
+        assert_eq!(
+            v,
+            vec![
+                SortValue::Missing,
+                SortValue::Integer(5),
+                SortValue::Float(1.0),
+                SortValue::Text("b".into()),
+            ]
+        );
+    }
+}

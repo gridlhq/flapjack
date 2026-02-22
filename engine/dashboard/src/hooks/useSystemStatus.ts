@@ -7,12 +7,22 @@ export interface HealthDetail {
   max_concurrent_writers: number;
   facet_cache_entries: number;
   facet_cache_cap: number;
+  tenants_loaded: number;
+  uptime_secs: number;
+  version: string;
+  heap_allocated_mb: number;
+  system_limit_mb: number;
+  pressure_level: string;
+  allocator: string;
+  build_profile: string;
 }
 
 export interface InternalStatus {
   node_id: string;
   replication_enabled: boolean;
   peer_count: number;
+  storage_total_bytes: number;
+  tenant_count: number;
   ssl_renewal?: {
     next_renewal?: string;
     certificate_expiry?: string;
@@ -24,14 +34,7 @@ export function useHealthDetail() {
     queryKey: ['health-detail'],
     queryFn: async () => {
       const { data } = await api.get('/health');
-      // If backend returns empty 200, provide defaults
-      return {
-        status: data?.status || 'ok',
-        active_writers: data?.active_writers ?? 0,
-        max_concurrent_writers: data?.max_concurrent_writers ?? 0,
-        facet_cache_entries: data?.facet_cache_entries ?? 0,
-        facet_cache_cap: data?.facet_cache_cap ?? 0,
-      };
+      return data;
     },
     refetchInterval: 5000,
     retry: 1,

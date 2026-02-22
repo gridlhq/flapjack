@@ -2,7 +2,11 @@
 
 export * from './acl';
 export * from './action';
+export * from './abTest';
+export * from './abTestResults';
+export * from './abTestResponse';
 export * from './addApiKeyResponse';
+export * from './addABTestRequest';
 export * from './advancedSyntaxFeatures';
 export * from './alternativesAsExact';
 export * from './anchoring';
@@ -91,6 +95,7 @@ export * from './indexSettingsAsSearchParams';
 export * from './insideBoundingBox';
 export * from './languages';
 export * from './listApiKeysResponse';
+export * from './listABTestsResponse';
 export * from './listClustersResponse';
 export * from './listIndicesResponse';
 export * from './listUserIdsResponse';

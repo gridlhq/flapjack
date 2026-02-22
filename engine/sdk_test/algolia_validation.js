@@ -19,6 +19,15 @@ dotenv.config({ path: join(__dirname, '..', '.secret', '.env.secret') });
 const ALGOLIA_APP_ID = process.env.ALGOLIA_APP_ID;
 const ALGOLIA_API_KEY = process.env.ALGOLIA_ADMIN_KEY;
 const FLAPJACK_ADMIN_KEY = process.env.FLAPJACK_ADMIN_KEY || 'fj_test_admin_key_for_local_dev';
+const FLAPJACK_URL = process.env.FLAPJACK_URL || 'http://localhost:7700';
+
+function rewriteToFlapjackTarget(rawRequestUrl) {
+  const url = new URL(rawRequestUrl);
+  const target = new URL(FLAPJACK_URL);
+  url.protocol = target.protocol;
+  url.host = target.host;
+  return url;
+}
 
 
 const args = process.argv.slice(2);
@@ -79,9 +88,7 @@ const algoliaClient = algoliasearch(ALGOLIA_APP_ID, ALGOLIA_API_KEY);
 const flapjackClient = algoliasearch('flapjack', FLAPJACK_ADMIN_KEY, {
   requester: {
     async send(request) {
-      const url = new URL(request.url);
-      url.protocol = 'http:';
-      url.host = 'localhost:7700';
+      const url = rewriteToFlapjackTarget(request.url);
       
       if (flags.verbose && request.data) {
         console.log('[FLAPJACK BODY]', request.data.slice(0, 300));
@@ -117,9 +124,7 @@ function createFlapjackClient(verbose) {
   return algoliasearch('flapjack', FLAPJACK_ADMIN_KEY, {
     requester: {
       async send(request) {
-        const url = new URL(request.url);
-        url.protocol = 'http:';
-        url.host = 'localhost:7700';
+        const url = rewriteToFlapjackTarget(request.url);
 
         if (verbose && request.data) {
           console.log('[FLAPJACK BODY]', request.data.slice(0, 300));
@@ -167,7 +172,7 @@ const filters = suiteFilters.map(parseCaseFilter);
 
 async function ensureServer() {
   try {
-    const res = await fetch('http://localhost:7700/health');
+    const res = await fetch(`${FLAPJACK_URL}/health`);
     if (res.ok) return;
   } catch {}
 

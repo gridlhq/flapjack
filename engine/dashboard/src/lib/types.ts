@@ -32,6 +32,8 @@ export interface SearchParams {
   analytics?: boolean;
   clickAnalytics?: boolean;
   analyticsTags?: string[];
+  hybrid?: HybridSearchParams;
+  mode?: IndexMode;
 }
 
 export interface SearchResponse<T = any> {
@@ -54,6 +56,33 @@ export interface Document {
   [key: string]: any;
 }
 
+// Vector search types
+export type EmbedderSource = 'openAi' | 'rest' | 'userProvided' | 'fastEmbed';
+
+export interface EmbedderConfig {
+  source: EmbedderSource;
+  model?: string;
+  apiKey?: string;
+  dimensions?: number;
+  url?: string;
+  request?: Record<string, unknown>;
+  response?: Record<string, unknown>;
+  headers?: Record<string, string>;
+  documentTemplate?: string;
+  documentTemplateMaxBytes?: number;
+}
+
+export type IndexMode = 'neuralSearch' | 'keywordSearch';
+
+export interface SemanticSearchSettings {
+  eventSources?: string[] | null;
+}
+
+export interface HybridSearchParams {
+  semanticRatio?: number;
+  embedder?: string;
+}
+
 // Settings types
 export interface IndexSettings {
   searchableAttributes?: string[];
@@ -74,6 +103,9 @@ export interface IndexSettings {
   minWordSizefor2Typos?: number;
   distinct?: boolean | number;
   attributeForDistinct?: string;
+  embedders?: Record<string, EmbedderConfig>;
+  mode?: IndexMode;
+  semanticSearch?: SemanticSearchSettings;
 }
 
 // API Key types
@@ -174,4 +206,63 @@ export interface RuleSearchResponse {
   nbHits: number;
   page: number;
   nbPages: number;
+}
+
+// Query Suggestions types
+export interface QsSourceIndex {
+  indexName: string;
+  minHits?: number;
+  minLetters?: number;
+  facets?: Array<{ attribute: string; amount: number }>;
+  generate?: string[][];
+  analyticsTags?: string[];
+  replicas?: boolean;
+}
+
+export interface QsConfig {
+  indexName: string;
+  sourceIndices: QsSourceIndex[];
+  languages?: string[];
+  exclude?: string[];
+  allowSpecialCharacters?: boolean;
+  enablePersonalization?: boolean;
+}
+
+export interface QsBuildStatus {
+  indexName: string;
+  isRunning: boolean;
+  lastBuiltAt: string | null;
+  lastSuccessfulBuiltAt: string | null;
+}
+
+export interface QsLogEntry {
+  timestamp: string;
+  level: string;
+  message: string;
+  contextLevel: number;
+}
+
+// Experiments types
+export type ExperimentStatus = 'draft' | 'running' | 'stopped' | 'concluded';
+
+export interface ExperimentArmConfig {
+  name: string;
+  queryOverrides?: Record<string, unknown>;
+  indexName?: string;
+}
+
+export interface Experiment {
+  id: string;
+  name: string;
+  indexName: string;
+  status: ExperimentStatus;
+  trafficSplit: number;
+  control: ExperimentArmConfig;
+  variant: ExperimentArmConfig;
+  primaryMetric: string;
+  createdAt: number;
+  startedAt?: number | null;
+  endedAt?: number | null;
+  minimumDays: number;
+  winsorizationCap?: number | null;
 }

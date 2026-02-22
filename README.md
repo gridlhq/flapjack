@@ -13,48 +13,38 @@ Drop-in replacement for [Algolia](https://algolia.com) — works with [InstantSe
 ## Quickstart
 
 ```bash
-curl -fsSL https://install.flapjack.foo | sh    #install
-
-flapjack                                        #run the server
-
-open http://127.0.0.1:7700/dashboard            #load the dashboard
-
-
-# Add documents
-curl -X POST http://localhost:7700/indexes/movies/documents \
-  -d '[
-    {"objectID":"1","title":"The Matrix","year":1999},
-    {"objectID":"2","title":"Inception","year":2010}
-  ]'
-
-# Search
-curl "http://localhost:7700/indexes/movies/search?q=matrxi"
-
-flapjack uninstall
+curl -fsSL https://install.flapjack.foo | sh    # install
+flapjack                                        # run the server
 ```
 
+On first boot Flapjack generates an admin API key and prints it in the terminal.
+Copy the key — you'll use it in the `X-Algolia-API-Key` header for all API requests.
+The key is also saved to `data/.admin_key`.
 
-<details>
-<summary>Quickstart API</summary>
+Open the dashboard at **http://localhost:7700/dashboard** or use the API directly:
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/indexes` | List all indexes |
-| `GET` | `/indexes/:name/search?q=...` | Search (query params) |
-| `POST` | `/indexes/:name/search` | Search (JSON body) |
-| `POST` | `/indexes/:name/documents` | Add/update documents |
-| `GET` | `/indexes/:name/documents/:id` | Get a document |
-| `DELETE` | `/indexes/:name/documents/:id` | Delete a document |
-| `POST` | `/indexes/:name/documents/delete` | Bulk delete by ID array |
-| `GET` | `/indexes/:name/settings` | Get index settings |
-| `PUT` | `/indexes/:name/settings` | Update index settings |
-| `DELETE` | `/indexes/:name` | Delete an index |
-| `GET` | `/tasks/:taskId` | Check task status |
-| `POST` | `/migrate` | Migrate from Algolia |
+```bash
+API_KEY="your-admin-key"   # printed on first boot
 
-These are convenience endpoints with no auth required in dev mode. The full Algolia-compatible API lives under `/1/` with support for API keys, secured keys, filters, facets, and everything else.
+# Add documents
+curl -X POST http://localhost:7700/1/indexes/movies/batch \
+  -H "X-Algolia-API-Key: $API_KEY" \
+  -H "X-Algolia-Application-Id: flapjack" \
+  -H "Content-Type: application/json" \
+  -d '{"requests":[
+    {"action":"addObject","body":{"objectID":"1","title":"The Matrix","year":1999}},
+    {"action":"addObject","body":{"objectID":"2","title":"Inception","year":2010}}
+  ]}'
 
-</details>
+# Search (typo-tolerant — "matrxi" finds "The Matrix")
+curl -X POST http://localhost:7700/1/indexes/movies/query \
+  -H "X-Algolia-API-Key: $API_KEY" \
+  -H "X-Algolia-Application-Id: flapjack" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"matrxi"}'
+```
+
+These are the same Algolia-compatible `/1/` endpoints your frontend SDK will use — no separate "toy" API.
 
 <details>
 <summary>Note:</summary>
@@ -76,19 +66,63 @@ NO_MODIFY_PATH=1 curl -fsSL https://install.flapjack.foo | sh
 
 ---
 
+## Run Multiple Local Instances
+
+For parallel local development, run each process with an isolated `data_dir`.
+Flapjack now enforces this with a startup lock (`{data_dir}/.process.lock`).
+
+```bash
+# Derived isolated data dir + deterministic port:
+flapjack --instance branch_a --no-auth
+
+# Derived isolated data dir + OS-assigned port:
+flapjack --instance branch_b --auto-port --no-auth
+
+# Fully explicit:
+flapjack --data-dir /tmp/fj/agent_a --bind-addr 127.0.0.1:18110 --no-auth
+flapjack --data-dir /tmp/fj/agent_b --bind-addr 127.0.0.1:18111 --no-auth
+
+# Agent helper scripts (tracked PID/log + explicit instance identity):
+engine/_dev/s/start-multi-instance.sh agent_a --auto-port --no-auth
+engine/_dev/s/start-multi-instance.sh agent_b --auto-port --no-auth
+engine/_dev/s/stop-multi-instance.sh agent_a
+engine/_dev/s/stop-multi-instance.sh agent_b
+```
+
+Never share the same `--data-dir` across concurrent processes.
+`--auto-port` overrides env bind settings (`FLAPJACK_BIND_ADDR` / `FLAPJACK_PORT`) and only conflicts with explicit `--bind-addr` or `--port`.
+
+For parallel local branch development, set per-clone test ports in repo root:
+
+```bash
+cp flapjack.local.conf.example flapjack.local.conf
+# then edit FJ_BACKEND_PORT / FJ_DASHBOARD_PORT per clone
+```
+
+Dashboard Playwright/Vite config and `_dev` test runners read this file, so each clone can run its own isolated backend + dashboard test stack.
+
+---
+
 ## Migrate from Algolia
 
 ```bash
 flapjack
 
-curl -X POST http://localhost:7700/migrate \
+curl -X POST http://localhost:7700/1/migrate-from-algolia \
+  -H "X-Algolia-API-Key: $API_KEY" \
+  -H "X-Algolia-Application-Id: flapjack" \
+  -H "Content-Type: application/json" \
   -d '{"appId":"YOUR_ALGOLIA_APP_ID","apiKey":"YOUR_ALGOLIA_ADMIN_KEY","sourceIndex":"products"}'
 ```
 
 Search:
 
 ```bash
-curl "http://localhost:7700/indexes/products/search?q=widget"
+curl -X POST http://localhost:7700/1/indexes/products/query \
+  -H "X-Algolia-API-Key: $API_KEY" \
+  -H "X-Algolia-Application-Id: flapjack" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"widget"}'
 ```
 
 Then point your frontend at Flapjack instead of Algolia:
@@ -151,7 +185,7 @@ Algolia-compatible REST API under `/1/` — works with InstantSearch.js v5, the 
 | S3 backup/restore | ✅ | N/A | ❌ | ❌ | Snapshots | Snapshots |
 | Dashboard UI | ✅ | ✅ | ✅ | Cloud only | Kibana | Dashboards |
 | Embeddable as library | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| HA / clustering | ❌ | ✅ | Cloud only | ✅ | ✅ | ✅ |
+| HA / clustering | Partial ✅ | ✅ | Cloud only | ✅ | ✅ | ✅ |
 | Multi-language | English only | 60+ | Many | Many | Many | Many |
 | Vector / semantic search | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | AI search (RAG) | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -229,6 +263,60 @@ WantedBy=multi-user.target
 | `FLAPJACK_SNAPSHOT_RETENTION` | — | Retention period (e.g. `30d`) |
 
 Data stored in `FLAPJACK_DATA_DIR`. Mount as a volume in Docker.
+
+---
+
+## HA Analytics (Multi-node)
+
+When multiple Flapjack nodes share the same network, analytics queries fan out to all peers and return unified results. No separate analytics service is needed.
+
+**Setup:** Create `$FLAPJACK_DATA_DIR/node.json` on each node:
+
+```json
+{
+  "node_id": "node-a",
+  "bind_addr": "0.0.0.0:7700",
+  "peers": [
+    {"node_id": "node-b", "addr": "http://10.0.1.2:7700"},
+    {"node_id": "node-c", "addr": "http://10.0.1.3:7700"}
+  ]
+}
+```
+
+Or use environment variables (e.g. via Docker):
+
+```bash
+FLAPJACK_NODE_ID=node-a
+FLAPJACK_PEERS=node-b=http://10.0.1.2:7700,node-c=http://10.0.1.3:7700
+```
+
+**Behaviour:** Any node's `/2/*` analytics endpoints return data merged from all nodes. Search analytics are independent per node (each node records its own traffic) — fan-out is query-time only.
+
+**Response shape** — every analytics response in cluster mode includes a `cluster` field:
+
+```json
+{
+  "count": 18456,
+  "cluster": {
+    "nodes_total": 3,
+    "nodes_responding": 3,
+    "partial": false,
+    "node_details": [
+      {"node_id": "node-a", "status": "Ok", "latency_ms": 1},
+      {"node_id": "node-b", "status": "Ok", "latency_ms": 12},
+      {"node_id": "node-c", "status": "Ok", "latency_ms": 14}
+    ]
+  }
+}
+```
+
+`partial: true` means one or more nodes were unreachable; the response contains data from the responding nodes only.
+
+**Users count** uses HyperLogLog (p=14, ~0.8% error) so shared users across nodes are not double-counted. All other metrics (search counts, rates, click positions, etc.) are exact sums.
+
+**Single-node deployments** are unaffected — fan-out only activates when `peers` are configured.
+
+See [`engine/examples/replication/`](engine/examples/replication/) for a working 2-node Docker Compose example.
 
 ---
 

@@ -35,7 +35,10 @@ libraryDependencies ++= Seq(
   "com.squareup.okhttp3" % "okhttp" % "5.3.2" % "compile",
   "org.json4s" %% "json4s-native" % "4.0.7" % "compile",
   "com.squareup.okhttp3" % "logging-interceptor" % "5.3.2",
-  "org.slf4j" % "slf4j-api" % "2.0.17"
+  "org.slf4j" % "slf4j-api" % "2.0.17",
+  // Test dependencies
+  "org.scalatest" %% "scalatest"       % "3.2.18" % Test,
+  "org.slf4j"      % "slf4j-simple"    % "2.0.17"  % Test
 )
 
 scalacOptions := Seq(

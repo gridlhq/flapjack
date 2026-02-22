@@ -627,6 +627,10 @@ impl AnalyticsQueryEngine {
     }
 
     /// Unique user count with daily breakdown.
+    ///
+    /// In single-node mode this returns a plain count. In cluster mode the
+    /// caller should use `users_count_hll()` instead so the coordinator can
+    /// merge HLL sketches across nodes without double-counting shared users.
     pub async fn users_count(
         &self,
         index_name: &str,
@@ -685,6 +689,91 @@ impl AnalyticsQueryEngine {
             .collect();
 
         Ok(serde_json::json!({"count": count, "dates": dates}))
+    }
+
+    /// Unique user count with HLL sketch included for cluster-mode merging.
+    ///
+    /// Returns `{"count": N, "hll_sketch": "<base64>", "dates": [...],
+    /// "daily_sketches": {"YYYY-MM-DD": "<base64>", ...}}`.
+    ///
+    /// The coordinator calls `merge_user_counts()` which unions the sketches
+    /// across nodes, giving an accurate deduplicated count instead of summing
+    /// raw counts (which would double-count users present on multiple nodes).
+    pub async fn users_count_hll(
+        &self,
+        index_name: &str,
+        start_date: &str,
+        end_date: &str,
+    ) -> Result<serde_json::Value, String> {
+        use super::hll::HllSketch;
+        use std::collections::HashMap;
+
+        let ctx = self.create_session_with_searches(index_name).await?;
+        let start_ms = date_to_start_ms(start_date)?;
+        let end_ms = date_to_end_ms(end_date)?;
+
+        // Fetch all (user_id, day_ms) pairs — we process HLL in Rust, not SQL.
+        let sql = format!(
+            "SELECT COALESCE(user_token, user_ip, 'anonymous') as user_id, \
+             CAST(timestamp_ms / 86400000 * 86400000 AS BIGINT) as day_ms \
+             FROM searches \
+             WHERE timestamp_ms >= {} AND timestamp_ms <= {}",
+            start_ms, end_ms
+        );
+        let df = ctx
+            .sql(&sql)
+            .await
+            .map_err(|e| format!("SQL error: {}", e))?;
+        let batches = df
+            .collect()
+            .await
+            .map_err(|e| format!("Exec error: {}", e))?;
+        let rows = batches_to_json(&batches)?;
+
+        // Build overall sketch and per-day sketches in one pass.
+        let mut overall = HllSketch::new();
+        let mut daily: HashMap<String, HllSketch> = HashMap::new();
+
+        for row in &rows {
+            let user_id = row
+                .get("user_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("anonymous");
+            let day_ms = row.get("day_ms").and_then(|v| v.as_i64()).unwrap_or(0);
+
+            overall.add(user_id);
+            daily
+                .entry(ms_to_date_string(day_ms))
+                .or_insert_with(HllSketch::new)
+                .add(user_id);
+        }
+
+        let count = overall.cardinality() as i64;
+        let hll_sketch = overall.to_base64();
+
+        // Build dates array (sorted) and daily_sketches map.
+        let mut day_keys: Vec<String> = daily.keys().cloned().collect();
+        day_keys.sort();
+
+        let dates: Vec<serde_json::Value> = day_keys
+            .iter()
+            .map(|d| {
+                let c = daily[d].cardinality() as i64;
+                serde_json::json!({"date": d, "count": c})
+            })
+            .collect();
+
+        let daily_sketches: serde_json::Map<String, serde_json::Value> = day_keys
+            .iter()
+            .map(|d| (d.clone(), serde_json::Value::String(daily[d].to_base64())))
+            .collect();
+
+        Ok(serde_json::json!({
+            "count": count,
+            "hll_sketch": hll_sketch,
+            "dates": dates,
+            "daily_sketches": daily_sketches,
+        }))
     }
 
     /// Top filter attributes.
@@ -1962,5 +2051,205 @@ fn arrow_value_at(col: &dyn arrow::array::Array, idx: usize) -> serde_json::Valu
             serde_json::json!(arr.value(idx))
         }
         _ => serde_json::Value::Null,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── date_to_start_ms ──
+
+    #[test]
+    fn date_to_start_ms_valid() {
+        let ms = date_to_start_ms("2024-01-15").unwrap();
+        // 2024-01-15 00:00:00 UTC
+        assert_eq!(ms, 1705276800000);
+    }
+
+    #[test]
+    fn date_to_start_ms_epoch() {
+        let ms = date_to_start_ms("1970-01-01").unwrap();
+        assert_eq!(ms, 0);
+    }
+
+    #[test]
+    fn date_to_start_ms_invalid() {
+        assert!(date_to_start_ms("not-a-date").is_err());
+    }
+
+    #[test]
+    fn date_to_start_ms_wrong_format() {
+        assert!(date_to_start_ms("01/15/2024").is_err());
+    }
+
+    // ── date_to_end_ms ──
+
+    #[test]
+    fn date_to_end_ms_valid() {
+        let ms = date_to_end_ms("2024-01-15").unwrap();
+        // 2024-01-15 23:59:59 UTC
+        assert_eq!(ms, 1705363199000);
+    }
+
+    #[test]
+    fn date_to_end_ms_after_start() {
+        let start = date_to_start_ms("2024-01-15").unwrap();
+        let end = date_to_end_ms("2024-01-15").unwrap();
+        assert!(end > start);
+        // Difference should be 23h59m59s = 86399 seconds
+        assert_eq!(end - start, 86399000);
+    }
+
+    #[test]
+    fn date_to_end_ms_invalid() {
+        assert!(date_to_end_ms("garbage").is_err());
+    }
+
+    // ── ms_to_date_string ──
+
+    #[test]
+    fn ms_to_date_string_epoch() {
+        assert_eq!(ms_to_date_string(0), "1970-01-01");
+    }
+
+    #[test]
+    fn ms_to_date_string_roundtrip() {
+        let ms = date_to_start_ms("2024-06-15").unwrap();
+        assert_eq!(ms_to_date_string(ms), "2024-06-15");
+    }
+
+    #[test]
+    fn ms_to_date_string_mid_day() {
+        // 2024-01-15 12:00:00 UTC = start + 12h
+        let ms = date_to_start_ms("2024-01-15").unwrap() + 12 * 3600 * 1000;
+        assert_eq!(ms_to_date_string(ms), "2024-01-15");
+    }
+
+    // ── find_parquet_files ──
+
+    #[test]
+    fn find_parquet_files_nonexistent_dir() {
+        let files = find_parquet_files(std::path::Path::new("/nonexistent/path")).unwrap();
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn find_parquet_files_empty_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let files = find_parquet_files(dir.path()).unwrap();
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn find_parquet_files_finds_parquet() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("data.parquet"), b"fake").unwrap();
+        std::fs::write(dir.path().join("other.txt"), b"text").unwrap();
+        let files = find_parquet_files(dir.path()).unwrap();
+        assert_eq!(files.len(), 1);
+        assert!(files[0].extension().unwrap() == "parquet");
+    }
+
+    #[test]
+    fn find_parquet_files_nested() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("sub");
+        std::fs::create_dir(&sub).unwrap();
+        std::fs::write(sub.join("nested.parquet"), b"fake").unwrap();
+        std::fs::write(dir.path().join("top.parquet"), b"fake").unwrap();
+        let files = find_parquet_files(dir.path()).unwrap();
+        assert_eq!(files.len(), 2);
+    }
+
+    // ── arrow_value_at ──
+
+    #[test]
+    fn arrow_value_at_int64() {
+        use arrow::array::Int64Array;
+        let arr = Int64Array::from(vec![42, 99]);
+        let val = arrow_value_at(&arr, 0);
+        assert_eq!(val, serde_json::json!(42));
+    }
+
+    #[test]
+    fn arrow_value_at_float64() {
+        use arrow::array::Float64Array;
+        let arr = Float64Array::from(vec![3.14]);
+        let val = arrow_value_at(&arr, 0);
+        assert_eq!(val, serde_json::json!(3.14));
+    }
+
+    #[test]
+    fn arrow_value_at_string() {
+        use arrow::array::StringArray;
+        let arr = StringArray::from(vec!["hello"]);
+        let val = arrow_value_at(&arr, 0);
+        assert_eq!(val, serde_json::json!("hello"));
+    }
+
+    #[test]
+    fn arrow_value_at_bool() {
+        use arrow::array::BooleanArray;
+        let arr = BooleanArray::from(vec![true, false]);
+        assert_eq!(arrow_value_at(&arr, 0), serde_json::json!(true));
+        assert_eq!(arrow_value_at(&arr, 1), serde_json::json!(false));
+    }
+
+    #[test]
+    fn arrow_value_at_null() {
+        use arrow::array::Int64Array;
+        let arr = Int64Array::from(vec![Some(1), None]);
+        assert_eq!(arrow_value_at(&arr, 1), serde_json::Value::Null);
+    }
+
+    #[test]
+    fn arrow_value_at_int32() {
+        use arrow::array::Int32Array;
+        let arr = Int32Array::from(vec![7]);
+        assert_eq!(arrow_value_at(&arr, 0), serde_json::json!(7));
+    }
+
+    #[test]
+    fn arrow_value_at_uint64() {
+        use arrow::array::UInt64Array;
+        let arr = UInt64Array::from(vec![u64::MAX]);
+        assert_eq!(arrow_value_at(&arr, 0), serde_json::json!(u64::MAX));
+    }
+
+    // ── batches_to_json ──
+
+    #[test]
+    fn batches_to_json_empty() {
+        let rows = batches_to_json(&[]).unwrap();
+        assert!(rows.is_empty());
+    }
+
+    #[test]
+    fn batches_to_json_single_batch() {
+        use arrow::array::{Int64Array, StringArray};
+        use arrow::datatypes::{DataType, Field, Schema};
+        use arrow::record_batch::RecordBatch;
+
+        let schema = std::sync::Arc::new(Schema::new(vec![
+            Field::new("name", DataType::Utf8, false),
+            Field::new("count", DataType::Int64, false),
+        ]));
+
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                std::sync::Arc::new(StringArray::from(vec!["alice", "bob"])),
+                std::sync::Arc::new(Int64Array::from(vec![10, 20])),
+            ],
+        )
+        .unwrap();
+
+        let rows = batches_to_json(&[batch]).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["name"], "alice");
+        assert_eq!(rows[0]["count"], 10);
+        assert_eq!(rows[1]["name"], "bob");
+        assert_eq!(rows[1]["count"], 20);
     }
 }

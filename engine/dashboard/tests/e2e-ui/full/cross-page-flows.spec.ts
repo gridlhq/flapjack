@@ -15,6 +15,7 @@
  */
 import { test, expect } from '../../fixtures/auth.fixture';
 import { API_BASE, API_HEADERS, TEST_INDEX } from '../helpers';
+import { deleteIndex, addDocuments, searchIndex, getRules, deleteRule, getSettings, updateSettings } from '../../fixtures/api-helpers';
 
 test.describe('Cross-Page Flows', () => {
 
@@ -31,7 +32,7 @@ test.describe('Cross-Page Flows', () => {
 
     // Search page should load with results panel
     await expect(
-      page.locator('[data-testid="results-panel"]').or(page.getByText(/no results found/i))
+      page.getByTestId('results-panel').or(page.getByText(/no results found/i))
     ).toBeVisible({ timeout: 15_000 });
   });
 
@@ -41,7 +42,7 @@ test.describe('Cross-Page Flows', () => {
     const tempIndex = `e2e-lifecycle-${Date.now()}`;
 
     // Clean up any leftover from previous failed runs
-    await request.delete(`${API_BASE}/1/indexes/${tempIndex}`, { headers: API_HEADERS }).catch(() => {});
+    await deleteIndex(request, tempIndex);
 
     // Step 1: Create index on Overview page
     await page.goto('/overview');
@@ -58,30 +59,20 @@ test.describe('Cross-Page Flows', () => {
     await expect(page.getByText(tempIndex).first()).toBeVisible({ timeout: 10_000 });
 
     // Step 2: Add a document via batch API (the /documents POST may not auto-create)
-    await request.post(
-      `${API_BASE}/1/indexes/${tempIndex}/batch`,
-      {
-        headers: API_HEADERS,
-        data: {
-          requests: [{ action: 'addObject', body: { objectID: 'lifecycle-1', name: 'Lifecycle Test Product', brand: 'TestBrand' } }],
-        },
-      }
-    );
+    await addDocuments(request, tempIndex, [
+      { objectID: 'lifecycle-1', name: 'Lifecycle Test Product', brand: 'TestBrand' },
+    ]);
 
     // Wait for indexing to complete by polling search
     await expect(async () => {
-      const searchRes = await request.post(
-        `${API_BASE}/1/indexes/${tempIndex}/query`,
-        { headers: API_HEADERS, data: { query: '' } }
-      );
-      const body = await searchRes.json();
+      const body = await searchIndex(request, tempIndex, '');
       expect(body.nbHits ?? 0).toBeGreaterThan(0);
     }).toPass({ timeout: 15_000 });
 
     // Step 3: Navigate to search page for the new index
     await page.goto(`/index/${tempIndex}`);
     await expect(
-      page.locator('[data-testid="results-panel"]').or(page.getByText(/no results found/i))
+      page.getByTestId('results-panel').or(page.getByText(/no results found/i))
     ).toBeVisible({ timeout: 15_000 });
 
     // Search for the document we added
@@ -93,7 +84,7 @@ test.describe('Cross-Page Flows', () => {
     await expect(page.getByText('Lifecycle Test Product').first()).toBeVisible({ timeout: 15_000 });
 
     // Step 4: Delete the index via API and verify it's gone from Overview
-    await request.delete(`${API_BASE}/1/indexes/${tempIndex}`, { headers: API_HEADERS });
+    await deleteIndex(request, tempIndex);
 
     await page.goto('/overview');
     await expect(page.getByTestId('stat-card-indexes')).toBeVisible({ timeout: 10_000 });
@@ -117,9 +108,7 @@ test.describe('Cross-Page Flows', () => {
 
     // Pin the first result
     const firstCard = cards.first();
-    const pinBtn = firstCard.locator('button[title*="Pin"]').or(
-      firstCard.getByRole('button', { name: /pin/i })
-    );
+    const pinBtn = firstCard.getByRole('button', { name: /pin/i });
     await pinBtn.first().click();
     await expect(page.getByText(/Pinned #/i).first()).toBeVisible({ timeout: 5_000 });
 
@@ -142,22 +131,10 @@ test.describe('Cross-Page Flows', () => {
     await expect(page.getByText(/tablet/).first()).toBeVisible({ timeout: 10_000 });
 
     // Cleanup: delete merch-created rules via API
-    const rulesRes = await request.get(
-      `${API_BASE}/1/indexes/${TEST_INDEX}/rules`,
-      { headers: API_HEADERS }
-    );
-    if (rulesRes.ok()) {
-      const rules = await rulesRes.json();
-      const items = rules.hits || rules.items || rules;
-      if (Array.isArray(items)) {
-        for (const rule of items) {
-          if (rule.objectID?.startsWith('merch-')) {
-            await request.delete(
-              `${API_BASE}/1/indexes/${TEST_INDEX}/rules/${rule.objectID}`,
-              { headers: API_HEADERS }
-            );
-          }
-        }
+    const { items } = await getRules(request, TEST_INDEX);
+    for (const rule of items) {
+      if (rule.objectID?.startsWith('merch-')) {
+        await deleteRule(request, TEST_INDEX, rule.objectID);
       }
     }
   });
@@ -179,7 +156,7 @@ test.describe('Cross-Page Flows', () => {
 
     // Search page should load
     await expect(
-      page.locator('[data-testid="results-panel"]').or(page.getByText(/no results found/i))
+      page.getByTestId('results-panel').or(page.getByText(/no results found/i))
     ).toBeVisible({ timeout: 15_000 });
   });
 
@@ -187,11 +164,7 @@ test.describe('Cross-Page Flows', () => {
 
   test('settings changes persist after save and page reload', async ({ page, request }) => {
     // Get original settings for restore
-    const originalRes = await request.get(
-      `${API_BASE}/1/indexes/${TEST_INDEX}/settings`,
-      { headers: API_HEADERS }
-    );
-    const originalSettings = await originalRes.json();
+    const originalSettings = await getSettings(request, TEST_INDEX);
 
     // Navigate to Settings page
     await page.goto(`/index/${TEST_INDEX}/settings`);
@@ -204,10 +177,7 @@ test.describe('Cross-Page Flows', () => {
     await expect(page.getByText('brand').first()).toBeVisible();
 
     // Restore original settings to avoid test pollution
-    await request.patch(
-      `${API_BASE}/1/indexes/${TEST_INDEX}/settings`,
-      { headers: API_HEADERS, data: originalSettings }
-    );
+    await updateSettings(request, TEST_INDEX, originalSettings);
   });
 
   // ---------- Search with Analytics → Analytics Page ----------
@@ -232,13 +202,13 @@ test.describe('Cross-Page Flows', () => {
     await expect(analyticsCard).toBeVisible({ timeout: 10_000 });
     await expect(analyticsCard.getByText('Search Analytics')).toBeVisible();
 
-    // If there's a "View All" or similar link, click it
-    const viewLink = analyticsCard.getByRole('link').first();
-    if (await viewLink.isVisible({ timeout: 3_000 }).catch(() => false)) {
-      await viewLink.click();
-      // Should navigate to an analytics-related page
-      await expect(page).toHaveURL(/analytics/);
-    }
+    // The "View Details" link should be present — click it
+    const viewLink = analyticsCard.getByText('View Details');
+    await expect(viewLink).toBeVisible({ timeout: 5_000 });
+    await viewLink.click();
+    // Should navigate to the analytics page
+    await expect(page).toHaveURL(/analytics/);
+    await expect(page.getByTestId('analytics-heading')).toBeVisible({ timeout: 10_000 });
   });
 
   // ---------- Full Navigation Cycle ----------
@@ -253,7 +223,7 @@ test.describe('Cross-Page Flows', () => {
     await page.getByText(TEST_INDEX).first().click();
     await expect(page).toHaveURL(new RegExp(`/index/${TEST_INDEX}`));
     await expect(
-      page.locator('[data-testid="results-panel"]').or(page.getByText(/no results found/i))
+      page.getByTestId('results-panel').or(page.getByText(/no results found/i))
     ).toBeVisible({ timeout: 15_000 });
 
     // Navigate to Settings via nav link

@@ -18,7 +18,11 @@ const MerchandisingStudio = lazy(() => import('./pages/MerchandisingStudio').the
 const ApiKeys = lazy(() => import('./pages/ApiKeys').then(m => ({ default: m.ApiKeys })));
 const SearchLogs = lazy(() => import('./pages/SearchLogs').then(m => ({ default: m.SearchLogs })));
 const System = lazy(() => import('./pages/System').then(m => ({ default: m.System })));
+const Metrics = lazy(() => import('./pages/Metrics').then(m => ({ default: m.Metrics })));
 const Migrate = lazy(() => import('./pages/Migrate').then(m => ({ default: m.Migrate })));
+const QuerySuggestions = lazy(() => import('./pages/QuerySuggestions').then(m => ({ default: m.QuerySuggestions })));
+const Experiments = lazy(() => import('./pages/Experiments').then(m => ({ default: m.Experiments })));
+const ExperimentDetail = lazy(() => import('./pages/ExperimentDetail').then(m => ({ default: m.ExperimentDetail })));
 
 function LazyPage({ children }: { children: React.ReactNode }) {
   return (
@@ -49,7 +53,11 @@ function App() {
           <Route path="keys" element={<LazyPage><ApiKeys /></LazyPage>} />
           <Route path="logs" element={<LazyPage><SearchLogs /></LazyPage>} />
           <Route path="migrate" element={<LazyPage><Migrate /></LazyPage>} />
+          <Route path="metrics" element={<LazyPage><Metrics /></LazyPage>} />
           <Route path="system" element={<LazyPage><System /></LazyPage>} />
+          <Route path="query-suggestions" element={<LazyPage><QuerySuggestions /></LazyPage>} />
+          <Route path="experiments" element={<LazyPage><Experiments /></LazyPage>} />
+          <Route path="experiments/:experimentId" element={<LazyPage><ExperimentDetail /></LazyPage>} />
           <Route path="*" element={<div className="p-6">Page not found</div>} />
         </Route>
       </Routes>

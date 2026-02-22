@@ -1,4 +1,4 @@
-import { createFlapjackClient, FLAPJACK_ADMIN_KEY } from './lib/flapjack-client.js';
+import { createFlapjackClient, FLAPJACK_ADMIN_KEY, FLAPJACK_URL } from './lib/flapjack-client.js';
 
 const client = createFlapjackClient();
 
@@ -11,6 +11,34 @@ async function waitForIndexing(indexName, expectedCount, maxWaitMs = 5000) {
       requests: [{ indexName, query: '', hitsPerPage: 1 }]
     });
     if (search.results[0].nbHits >= expectedCount) {
+      return true;
+    }
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  return false;
+}
+
+async function waitForObject(indexName, objectID, predicate, maxWaitMs = 5000) {
+  const start = Date.now();
+  while (Date.now() - start < maxWaitMs) {
+    try {
+      const obj = await client.getObject({ indexName, objectID });
+      if (predicate(obj)) {
+        return obj;
+      }
+    } catch (e) {
+      // Keep polling until object appears/updates
+    }
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  return null;
+}
+
+async function waitForIndexMissing(indexName, maxWaitMs = 5000) {
+  const start = Date.now();
+  while (Date.now() - start < maxWaitMs) {
+    const list = await client.listIndices();
+    if (Array.isArray(list.items) && !list.items.some((idx) => idx.name === indexName)) {
       return true;
     }
     await new Promise(resolve => setTimeout(resolve, 50));
@@ -56,10 +84,15 @@ test('POST /1/indexes/{indexName}/batch - updateObject', async () => {
     indexName: TEST_INDEX,
     objects: [{ objectID: '1', name: 'Updated Product', price: 150 }]
   });
-  
-  await waitForIndexing(TEST_INDEX, 2);
-  
-  const obj = await client.getObject({ indexName: TEST_INDEX, objectID: '1' });
+
+  const obj = await waitForObject(
+    TEST_INDEX,
+    '1',
+    (candidate) => candidate.name === 'Updated Product' && candidate.price === 150,
+  );
+  if (!obj) {
+    throw new Error('Timed out waiting for updated object state');
+  }
   if (obj.name !== 'Updated Product') {
     throw new Error(`Expected 'Updated Product', got '${obj.name}'`);
   }
@@ -71,9 +104,14 @@ test('POST /1/indexes/{indexName}/batch - partialUpdateObject', async () => {
     objects: [{ objectID: '1', price: 175 }]
   });
   
-  await waitForIndexing(TEST_INDEX, 2);
-  
-  const obj = await client.getObject({ indexName: TEST_INDEX, objectID: '1' });
+  const obj = await waitForObject(
+    TEST_INDEX,
+    '1',
+    (candidate) => candidate.price === 175 && candidate.name === 'Updated Product',
+  );
+  if (!obj) {
+    throw new Error('Timed out waiting for partial update state');
+  }
   if (obj.price !== 175) {
     throw new Error(`Expected price 175, got ${obj.price}`);
   }
@@ -142,7 +180,7 @@ test('GET /1/indexes/{indexName}/{objectID} - 404 for missing object', async () 
 });
 
 test('PUT /1/indexes/{indexName}/{objectID}', async () => {
-  await fetch('http://localhost:7700/1/indexes/' + TEST_INDEX + '/3', {
+  await fetch(`${FLAPJACK_URL}/1/indexes/${TEST_INDEX}/3`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -437,7 +475,7 @@ test('POST /1/indexes/{indexName}/facets/{facetName}/query - facet search', asyn
   await client.setSettings({
     indexName: TEST_INDEX,
     indexSettings: {
-      attributesForFaceting: ['brand']
+      attributesForFaceting: ['searchable(brand)']
     }
   });
   
@@ -452,7 +490,7 @@ test('POST /1/indexes/{indexName}/facets/{facetName}/query - facet search', asyn
   
   await waitForIndexing(TEST_INDEX, 3);
   
-  const response = await fetch('http://localhost:7700/1/indexes/' + TEST_INDEX + '/facets/brand/query', {
+  const response = await fetch(`${FLAPJACK_URL}/1/indexes/${TEST_INDEX}/facets/brand/query`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -461,14 +499,16 @@ test('POST /1/indexes/{indexName}/facets/{facetName}/query - facet search', asyn
     },
     body: JSON.stringify({ facetQuery: 'app' })
   });
-  
-  const result = await response.json();
-  
-  if (!result.facetHits) {
-    throw new Error('Missing facetHits');
+
+  if (!response.ok) {
+    throw new Error(`Facet search request failed (${response.status}): ${await response.text()}`);
   }
-  
-  const hits = result.facetHits;
+
+  const result = await response.json();
+  const hits = result.facetHits || result.hits || [];
+  if (!Array.isArray(hits)) {
+    throw new Error(`Unexpected facet response shape: ${JSON.stringify(result)}`);
+  }
   if (hits.length !== 2) {
     throw new Error(`Expected 2 facet hits for 'app', got ${hits.length}`);
   }
@@ -477,7 +517,7 @@ test('POST /1/indexes/{indexName}/facets/{facetName}/query - facet search', asyn
 test('DELETE /1/indexes/{indexName} - delete index', async () => {
   const tempIndex = 'temp_' + Date.now();
   
-  await fetch('http://localhost:7700/1/indexes/' + tempIndex + '/batch', {
+  const createResponse = await fetch(`${FLAPJACK_URL}/1/indexes/${tempIndex}/batch`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -488,29 +528,27 @@ test('DELETE /1/indexes/{indexName} - delete index', async () => {
       requests: [{ action: 'addObject', body: { objectID: '1', name: 'Test' } }]
     })
   });
+  if (!createResponse.ok) {
+    throw new Error(`Create index failed (${createResponse.status}): ${await createResponse.text()}`);
+  }
   
-  await waitForIndexing(tempIndex, 1);
+  if (!(await waitForIndexing(tempIndex, 1))) {
+    throw new Error('Timed out waiting for temporary index to be searchable');
+  }
   
-  await fetch('http://localhost:7700/1/indexes/' + tempIndex, {
+  const deleteResponse = await fetch(`${FLAPJACK_URL}/1/indexes/${tempIndex}`, {
     method: 'DELETE',
     headers: {
       'x-algolia-api-key': FLAPJACK_ADMIN_KEY,
       'x-algolia-application-id': 'flapjack'
     }
   });
+  if (!deleteResponse.ok) {
+    throw new Error(`Delete index failed (${deleteResponse.status}): ${await deleteResponse.text()}`);
+  }
   
-  await new Promise(resolve => setTimeout(resolve, 100));
-  
-  const response = await fetch('http://localhost:7700/1/indexes/' + tempIndex + '/1', {
-    method: 'GET',
-    headers: {
-      'x-algolia-api-key': FLAPJACK_ADMIN_KEY,
-      'x-algolia-application-id': 'flapjack'
-    }
-  });
-  
-  if (response.status !== 404 && response.status !== 500) {
-    throw new Error(`Expected 404 or 500, got ${response.status}`);
+  if (!(await waitForIndexMissing(tempIndex))) {
+    throw new Error('Timed out waiting for index to disappear from /1/indexes');
   }
 });
 

@@ -21,7 +21,7 @@ test.describe('Connection Health', () => {
     await expect(page.getByText('Connected').first()).toBeVisible({ timeout: 10_000 });
 
     // No disconnected banner should be visible
-    await expect(page.locator('[data-testid="disconnected-banner"]')).not.toBeVisible();
+    await expect(page.getByTestId('disconnected-banner')).not.toBeVisible();
   });
 
   test('BETA badge is always visible in header', async ({ page }) => {
@@ -40,13 +40,13 @@ test.describe('Connection Health', () => {
     await page.route('**/health', (route) => route.abort('connectionrefused'));
 
     // Wait for the health check to fail and banner to appear (3s interval + retry)
-    await expect(page.locator('[data-testid="disconnected-banner"]')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('disconnected-banner')).toBeVisible({ timeout: 15_000 });
 
     // Should show disconnected status
     await expect(page.getByText('Disconnected').first()).toBeVisible();
 
     // Banner should mention the server
-    await expect(page.locator('[data-testid="disconnected-banner"]')).toContainText('Server disconnected');
+    await expect(page.getByTestId('disconnected-banner')).toContainText('Server disconnected');
   });
 
   test('recovers from disconnected state when server comes back', async ({ page }) => {
@@ -55,13 +55,13 @@ test.describe('Connection Health', () => {
 
     // Block health to simulate disconnect
     await page.route('**/health', (route) => route.abort('connectionrefused'));
-    await expect(page.locator('[data-testid="disconnected-banner"]')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('disconnected-banner')).toBeVisible({ timeout: 15_000 });
 
     // Unblock health to simulate recovery
     await page.unrouteAll({ behavior: 'ignoreErrors' });
 
     // Should recover — banner should disappear
-    await expect(page.locator('[data-testid="disconnected-banner"]')).not.toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('disconnected-banner')).not.toBeVisible({ timeout: 15_000 });
     await expect(page.getByText('Connected').first()).toBeVisible({ timeout: 10_000 });
   });
 });

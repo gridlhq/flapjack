@@ -293,3 +293,245 @@ impl TaskInfo {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- Document::from_json ---
+
+    #[test]
+    fn from_json_with_object_id() {
+        let json = serde_json::json!({"objectID": "abc", "title": "Hello"});
+        let doc = Document::from_json(&json).unwrap();
+        assert_eq!(doc.id, "abc");
+        assert_eq!(doc.fields["title"], FieldValue::Text("Hello".to_string()));
+    }
+
+    #[test]
+    fn from_json_with_underscore_id() {
+        let json = serde_json::json!({"_id": "xyz", "name": "Test"});
+        let doc = Document::from_json(&json).unwrap();
+        assert_eq!(doc.id, "xyz");
+    }
+
+    #[test]
+    fn from_json_underscore_id_takes_priority() {
+        // _id is checked before objectID
+        let json = serde_json::json!({"_id": "first", "objectID": "second", "v": 1});
+        let doc = Document::from_json(&json).unwrap();
+        assert_eq!(doc.id, "first");
+    }
+
+    #[test]
+    fn from_json_missing_id_errors() {
+        let json = serde_json::json!({"title": "No ID"});
+        assert!(Document::from_json(&json).is_err());
+    }
+
+    #[test]
+    fn from_json_not_object_errors() {
+        let json = serde_json::json!("just a string");
+        assert!(Document::from_json(&json).is_err());
+    }
+
+    #[test]
+    fn from_json_id_not_in_fields() {
+        let json = serde_json::json!({"objectID": "1", "color": "red"});
+        let doc = Document::from_json(&json).unwrap();
+        assert!(!doc.fields.contains_key("objectID"));
+        assert!(!doc.fields.contains_key("_id"));
+    }
+
+    #[test]
+    fn from_json_numeric_fields() {
+        let json = serde_json::json!({"objectID": "1", "count": 42, "price": 9.99});
+        let doc = Document::from_json(&json).unwrap();
+        assert_eq!(doc.fields["count"], FieldValue::Integer(42));
+        assert_eq!(doc.fields["price"], FieldValue::Float(9.99));
+    }
+
+    #[test]
+    fn from_json_array_field() {
+        let json = serde_json::json!({"objectID": "1", "tags": ["a", "b"]});
+        let doc = Document::from_json(&json).unwrap();
+        assert_eq!(
+            doc.fields["tags"],
+            FieldValue::Array(vec![
+                FieldValue::Text("a".to_string()),
+                FieldValue::Text("b".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn from_json_nested_object() {
+        let json = serde_json::json!({"objectID": "1", "meta": {"color": "red"}});
+        let doc = Document::from_json(&json).unwrap();
+        if let FieldValue::Object(obj) = &doc.fields["meta"] {
+            assert_eq!(obj["color"], FieldValue::Text("red".to_string()));
+        } else {
+            panic!("expected Object");
+        }
+    }
+
+    #[test]
+    fn from_json_null_and_bool_skipped() {
+        let json =
+            serde_json::json!({"objectID": "1", "active": true, "deleted": null, "name": "ok"});
+        let doc = Document::from_json(&json).unwrap();
+        assert!(!doc.fields.contains_key("active"));
+        assert!(!doc.fields.contains_key("deleted"));
+        assert!(doc.fields.contains_key("name"));
+    }
+
+    // --- Document::to_json roundtrip ---
+
+    #[test]
+    fn to_json_roundtrip() {
+        let mut fields = HashMap::new();
+        fields.insert("title".to_string(), FieldValue::Text("Hello".to_string()));
+        fields.insert("count".to_string(), FieldValue::Integer(5));
+        let doc = Document {
+            id: "abc".to_string(),
+            fields,
+        };
+        let json = doc.to_json();
+        assert_eq!(json["_id"], "abc");
+        assert_eq!(json["title"], "Hello");
+        assert_eq!(json["count"], 5);
+    }
+
+    // --- json_value_to_field_value ---
+
+    #[test]
+    fn json_string_to_text() {
+        let v = serde_json::json!("hello");
+        assert_eq!(
+            json_value_to_field_value(&v),
+            Some(FieldValue::Text("hello".to_string()))
+        );
+    }
+
+    #[test]
+    fn json_integer_to_integer() {
+        let v = serde_json::json!(42);
+        assert_eq!(json_value_to_field_value(&v), Some(FieldValue::Integer(42)));
+    }
+
+    #[test]
+    fn json_float_to_float() {
+        let v = serde_json::json!(3.14);
+        assert_eq!(json_value_to_field_value(&v), Some(FieldValue::Float(3.14)));
+    }
+
+    #[test]
+    fn json_null_returns_none() {
+        assert_eq!(json_value_to_field_value(&serde_json::Value::Null), None);
+    }
+
+    #[test]
+    fn json_bool_returns_none() {
+        assert_eq!(json_value_to_field_value(&serde_json::json!(true)), None);
+    }
+
+    #[test]
+    fn json_empty_array_returns_none() {
+        assert_eq!(json_value_to_field_value(&serde_json::json!([])), None);
+    }
+
+    #[test]
+    fn json_empty_object_returns_none() {
+        assert_eq!(json_value_to_field_value(&serde_json::json!({})), None);
+    }
+
+    // --- field_value_to_json_value ---
+
+    #[test]
+    fn text_roundtrip() {
+        let fv = FieldValue::Text("hello".to_string());
+        assert_eq!(field_value_to_json_value(&fv), serde_json::json!("hello"));
+    }
+
+    #[test]
+    fn integer_roundtrip() {
+        let fv = FieldValue::Integer(42);
+        assert_eq!(field_value_to_json_value(&fv), serde_json::json!(42));
+    }
+
+    #[test]
+    fn float_roundtrip() {
+        let fv = FieldValue::Float(3.14);
+        assert_eq!(field_value_to_json_value(&fv), serde_json::json!(3.14));
+    }
+
+    #[test]
+    fn facet_to_string() {
+        let fv = FieldValue::Facet("/electronics/phones".to_string());
+        assert_eq!(
+            field_value_to_json_value(&fv),
+            serde_json::json!("/electronics/phones")
+        );
+    }
+
+    #[test]
+    fn array_roundtrip() {
+        let fv = FieldValue::Array(vec![
+            FieldValue::Text("a".to_string()),
+            FieldValue::Integer(1),
+        ]);
+        assert_eq!(field_value_to_json_value(&fv), serde_json::json!(["a", 1]));
+    }
+
+    // --- FieldValue accessors ---
+
+    #[test]
+    fn as_text_some() {
+        assert_eq!(FieldValue::Text("hi".to_string()).as_text(), Some("hi"));
+    }
+
+    #[test]
+    fn as_text_none_for_integer() {
+        assert_eq!(FieldValue::Integer(1).as_text(), None);
+    }
+
+    #[test]
+    fn as_integer_some() {
+        assert_eq!(FieldValue::Integer(42).as_integer(), Some(42));
+    }
+
+    #[test]
+    fn as_integer_none_for_text() {
+        assert_eq!(FieldValue::Text("x".to_string()).as_integer(), None);
+    }
+
+    #[test]
+    fn as_float_some() {
+        assert_eq!(FieldValue::Float(1.5).as_float(), Some(1.5));
+    }
+
+    #[test]
+    fn as_float_none_for_text() {
+        assert_eq!(FieldValue::Text("x".to_string()).as_float(), None);
+    }
+
+    #[test]
+    fn as_facet_some() {
+        assert_eq!(FieldValue::Facet("/a".to_string()).as_facet(), Some("/a"));
+    }
+
+    #[test]
+    fn as_facet_none_for_integer() {
+        assert_eq!(FieldValue::Integer(1).as_facet(), None);
+    }
+
+    #[test]
+    fn as_date_some() {
+        assert_eq!(FieldValue::Date(1000).as_date(), Some(1000));
+    }
+
+    #[test]
+    fn as_date_none_for_text() {
+        assert_eq!(FieldValue::Text("x".to_string()).as_date(), None);
+    }
+}

@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import api from '@/lib/api';
 import type { IndexSettings } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
@@ -14,6 +15,15 @@ export function useSettings(indexName: string) {
     },
     enabled: !!indexName,
   });
+}
+
+export function useEmbedderNames(indexName: string) {
+  const { data: settings, isLoading } = useSettings(indexName);
+  const embedderNames = useMemo(
+    () => Object.keys(settings?.embedders || {}).sort(),
+    [settings?.embedders]
+  );
+  return { embedderNames, isLoading };
 }
 
 export function useUpdateSettings(indexName: string) {

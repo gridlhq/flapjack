@@ -1,5 +1,6 @@
 import { algoliasearch } from 'algoliasearch';
 import { PRODUCTS, SYNONYMS, RULES, SETTINGS } from './test-data';
+import { API_BASE, TEST_ADMIN_KEY } from './local-instance';
 
 export interface AlgoliaTestContext {
   appId: string;
@@ -72,13 +73,13 @@ export async function deleteAlgoliaIndex(ctx: AlgoliaTestContext): Promise<void>
  */
 export async function deleteFlapjackIndex(
   indexName: string,
-  baseUrl = 'http://localhost:7700',
+  baseUrl = API_BASE,
 ): Promise<void> {
   try {
     await fetch(`${baseUrl}/1/indexes/${indexName}`, {
       method: 'DELETE',
       headers: {
-        'x-algolia-api-key': 'fj_devtestadminkey000000',
+        'x-algolia-api-key': TEST_ADMIN_KEY,
         'x-algolia-application-id': 'flapjack',
       },
     });

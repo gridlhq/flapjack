@@ -9,13 +9,7 @@
  */
 
 import type { APIRequestContext } from '@playwright/test';
-
-const API = 'http://localhost:7700';
-const HEADERS = {
-  'x-algolia-application-id': 'flapjack',
-  'x-algolia-api-key': 'fj_devtestadminkey000000',
-  'Content-Type': 'application/json',
-};
+import { API_BASE as API, API_HEADERS as HEADERS } from './local-instance';
 
 export interface AnalyticsSeedConfig {
   /** Index name to seed */

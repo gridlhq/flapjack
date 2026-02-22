@@ -204,6 +204,17 @@ impl MemoryObserver {
         }
     }
 
+    #[cfg(test)]
+    fn new_with_config(high_watermark_pct: usize, critical_pct: usize, limit_bytes: usize) -> Self {
+        MemoryObserver {
+            high_watermark_pct,
+            critical_pct,
+            limit_bytes,
+            limit_source: "test".to_string(),
+            pressure_override: AtomicU8::new(0),
+        }
+    }
+
     fn detect_memory_limit() -> (usize, String) {
         // Priority 1: explicit env var
         if let Ok(mb) = env::var("FLAPJACK_MEMORY_LIMIT_MB") {
@@ -237,5 +248,90 @@ impl MemoryObserver {
         }
 
         (0, "unknown".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pressure_level_display() {
+        assert_eq!(PressureLevel::Normal.to_string(), "normal");
+        assert_eq!(PressureLevel::Elevated.to_string(), "elevated");
+        assert_eq!(PressureLevel::Critical.to_string(), "critical");
+    }
+
+    #[test]
+    fn pressure_level_equality() {
+        assert_eq!(PressureLevel::Normal, PressureLevel::Normal);
+        assert_ne!(PressureLevel::Normal, PressureLevel::Elevated);
+        assert_ne!(PressureLevel::Elevated, PressureLevel::Critical);
+    }
+
+    #[test]
+    fn override_normal() {
+        let obs = MemoryObserver::new_with_config(80, 90, 1_000_000);
+        obs.set_pressure_override(Some(PressureLevel::Normal));
+        assert_eq!(obs.pressure_level(), PressureLevel::Normal);
+    }
+
+    #[test]
+    fn override_elevated() {
+        let obs = MemoryObserver::new_with_config(80, 90, 1_000_000);
+        obs.set_pressure_override(Some(PressureLevel::Elevated));
+        assert_eq!(obs.pressure_level(), PressureLevel::Elevated);
+    }
+
+    #[test]
+    fn override_critical() {
+        let obs = MemoryObserver::new_with_config(80, 90, 1_000_000);
+        obs.set_pressure_override(Some(PressureLevel::Critical));
+        assert_eq!(obs.pressure_level(), PressureLevel::Critical);
+    }
+
+    #[test]
+    fn override_cleared() {
+        let obs = MemoryObserver::new_with_config(80, 90, 1_000_000);
+        obs.set_pressure_override(Some(PressureLevel::Critical));
+        assert_eq!(obs.pressure_level(), PressureLevel::Critical);
+        obs.set_pressure_override(None);
+        // Without override, depends on actual heap — just verify it doesn't panic
+        let _ = obs.pressure_level();
+    }
+
+    #[test]
+    fn zero_limit_always_normal() {
+        let obs = MemoryObserver::new_with_config(80, 90, 0);
+        // No override, limit=0 → always Normal
+        assert_eq!(obs.pressure_level(), PressureLevel::Normal);
+    }
+
+    #[test]
+    fn allocator_name_returns_string() {
+        let name = MemoryObserver::allocator_name();
+        assert!(
+            name == "jemalloc" || name == "system",
+            "unexpected allocator: {}",
+            name
+        );
+    }
+
+    #[test]
+    fn stats_snapshot() {
+        let obs = MemoryObserver::new_with_config(80, 90, 1_000_000);
+        obs.set_pressure_override(Some(PressureLevel::Normal));
+        let stats = obs.stats();
+        assert_eq!(stats.pressure_level, PressureLevel::Normal);
+        assert_eq!(stats.high_watermark_pct, 80);
+        assert_eq!(stats.critical_pct, 90);
+    }
+
+    #[test]
+    fn default_watermarks() {
+        // MemoryObserver::new reads env vars; test that it doesn't panic
+        let obs = MemoryObserver::new_with_config(80, 90, 0);
+        assert_eq!(obs.high_watermark_pct, 80);
+        assert_eq!(obs.critical_pct, 90);
     }
 }

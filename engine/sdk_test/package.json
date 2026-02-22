@@ -4,8 +4,11 @@
   "type": "module",
   "scripts": {
     "test": "node test.js",
+    "test:contract": "node contract_tests.js",
+    "test:all": "node test.js && node contract_tests.js",
     "test:migration": "node test_algolia_migration.js",
-    "test:migration:verbose": "node test_algolia_migration.js --verbose"
+    "test:migration:verbose": "node test_algolia_migration.js --verbose",
+    "test:validation": "node algolia_validation.js"
   },
   "dependencies": {
     "algoliasearch": "^5.0.0",

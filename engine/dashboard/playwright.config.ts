@@ -1,4 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
+import { getLocalInstanceConfig } from './local-instance-config';
+
+const instance = getLocalInstanceConfig();
 
 /**
  * Playwright configuration for Flapjack dashboard.
@@ -20,7 +23,7 @@ export default defineConfig({
   reporter: 'html',
 
   use: {
-    baseURL: 'http://localhost:5177',
+    baseURL: instance.dashboardBaseUrl,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
@@ -58,7 +61,7 @@ export default defineConfig({
 
   webServer: {
     command: 'npm run dev',
-    url: 'http://localhost:5177',
+    url: instance.dashboardBaseUrl,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },

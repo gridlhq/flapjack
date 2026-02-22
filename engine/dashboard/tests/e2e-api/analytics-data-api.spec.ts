@@ -1,5 +1,6 @@
 import { test, expect } from '../fixtures/auth.fixture';
 import { seedAnalytics, deleteIndex, DEFAULT_ANALYTICS_CONFIG } from '../fixtures/analytics-seed';
+import { API_BASE as API, API_HEADERS as H } from '../fixtures/local-instance';
 
 /**
  * Analytics Data API Tests — PURE API (no browser)
@@ -9,12 +10,6 @@ import { seedAnalytics, deleteIndex, DEFAULT_ANALYTICS_CONFIG } from '../fixture
  * see tests/e2e-ui/full/analytics-deep.spec.ts
  */
 
-const API = 'http://localhost:7700';
-const H = {
-  'x-algolia-application-id': 'flapjack',
-  'x-algolia-api-key': 'fj_devtestadminkey000000',
-  'Content-Type': 'application/json',
-};
 const INDEX = 'test-analytics-api';
 
 const EXPECTED = {

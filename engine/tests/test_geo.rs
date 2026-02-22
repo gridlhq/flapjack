@@ -1,16 +1,14 @@
 use reqwest::Client;
 use serde_json::json;
-use std::time::Duration;
-use tokio::time::sleep;
 
 mod common;
-use common::spawn_server;
+use common::{spawn_server, wait_for_response_task};
 
 fn make_url(addr: &str) -> String {
     format!("http://{}", addr)
 }
 
-async fn setup_geo_index(client: &Client, base_url: &str, index: &str) {
+async fn setup_geo_index(client: &Client, base_url: &str, addr: &str, index: &str) {
     let docs = json!({
         "requests": [
             {"action": "addObject", "body": {"objectID": "nyc", "name": "New York", "_geoloc": {"lat": 40.7128, "lng": -74.0060}}},
@@ -21,7 +19,7 @@ async fn setup_geo_index(client: &Client, base_url: &str, index: &str) {
             {"action": "addObject", "body": {"objectID": "no_geo", "name": "No Location"}}
         ]
     });
-    client
+    let resp = client
         .post(format!("{}/1/indexes/{}/batch", base_url, index))
         .header("x-algolia-api-key", "test-key")
         .header("x-algolia-application-id", "test-app")
@@ -29,7 +27,7 @@ async fn setup_geo_index(client: &Client, base_url: &str, index: &str) {
         .send()
         .await
         .unwrap();
-    sleep(Duration::from_millis(300)).await;
+    wait_for_response_task(client, addr, resp).await;
 }
 
 #[tokio::test]
@@ -38,7 +36,7 @@ async fn test_geo_around_lat_lng_basic() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_geo_around";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     let resp = client
         .post(format!("{}/1/indexes/{}/query", base_url, index))
@@ -65,7 +63,7 @@ async fn test_geo_around_sorts_by_distance() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_geo_dist_sort";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     let resp = client
         .post(format!("{}/1/indexes/{}/query", base_url, index))
@@ -91,7 +89,7 @@ async fn test_geo_bounding_box() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_geo_bbox";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     let resp = client
         .post(format!("{}/1/indexes/{}/query", base_url, index))
@@ -119,7 +117,7 @@ async fn test_geo_bbox_ignores_around() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_geo_bbox_around";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     let resp = client
         .post(format!("{}/1/indexes/{}/query", base_url, index))
@@ -150,7 +148,7 @@ async fn test_geo_polygon() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_geo_poly";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     let resp = client.post(format!("{}/1/indexes/{}/query", base_url, index))
         .header("x-algolia-api-key", "test-key")
@@ -176,7 +174,7 @@ async fn test_geo_with_text_query() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_geo_text";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     let resp = client
         .post(format!("{}/1/indexes/{}/query", base_url, index))
@@ -201,7 +199,7 @@ async fn test_geo_geoloc_in_response() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_geo_resp";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     let resp = client
         .post(format!("{}/1/indexes/{}/query", base_url, index))
@@ -240,7 +238,7 @@ async fn test_geo_multi_location_record() {
             }}
         ]
     });
-    client
+    let batch_resp = client
         .post(format!("{}/1/indexes/{}/batch", base_url, index))
         .header("x-algolia-api-key", "test-key")
         .header("x-algolia-application-id", "test-app")
@@ -248,7 +246,7 @@ async fn test_geo_multi_location_record() {
         .send()
         .await
         .unwrap();
-    sleep(Duration::from_millis(300)).await;
+    wait_for_response_task(&client, &addr, batch_resp).await;
 
     let resp = client
         .post(format!("{}/1/indexes/{}/query", base_url, index))
@@ -298,7 +296,7 @@ async fn test_geo_multi_location_closest_point() {
             }}
         ]
     });
-    client
+    let batch_resp = client
         .post(format!("{}/1/indexes/{}/batch", base_url, index))
         .header("x-algolia-api-key", "test-key")
         .header("x-algolia-application-id", "test-app")
@@ -306,7 +304,7 @@ async fn test_geo_multi_location_closest_point() {
         .send()
         .await
         .unwrap();
-    sleep(Duration::from_millis(300)).await;
+    wait_for_response_task(&client, &addr, batch_resp).await;
 
     let resp = client
         .post(format!("{}/1/indexes/{}/query", base_url, index))
@@ -379,7 +377,7 @@ async fn test_geo_multi_location_bbox_any_point_matches() {
             }}
         ]
     });
-    client
+    let batch_resp = client
         .post(format!("{}/1/indexes/{}/batch", base_url, index))
         .header("x-algolia-api-key", "test-key")
         .header("x-algolia-application-id", "test-app")
@@ -387,7 +385,7 @@ async fn test_geo_multi_location_bbox_any_point_matches() {
         .send()
         .await
         .unwrap();
-    sleep(Duration::from_millis(300)).await;
+    wait_for_response_task(&client, &addr, batch_resp).await;
 
     let resp = client
         .post(format!("{}/1/indexes/{}/query", base_url, index))
@@ -416,7 +414,7 @@ async fn test_geo_params_string_encoding() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_geo_params";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     let resp = client
         .post(format!("{}/1/indexes/*/queries", base_url))
@@ -457,7 +455,7 @@ async fn test_geo_around_full_distance_ordering() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_geo_full_order";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     let resp = client
         .post(format!("{}/1/indexes/{}/query", base_url, index))
@@ -488,7 +486,7 @@ async fn test_geo_around_no_radius_returns_all_sorted() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_geo_no_radius";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     let resp = client
         .post(format!("{}/1/indexes/{}/query", base_url, index))
@@ -527,7 +525,7 @@ async fn test_geo_with_filters() {
             {"action": "addObject", "body": {"objectID": "miami", "name": "Miami", "type": "city", "_geoloc": {"lat": 25.7617, "lng": -80.1918}}}
         ]
     });
-    client
+    let batch_resp = client
         .post(format!("{}/1/indexes/{}/batch", base_url, index))
         .header("x-algolia-api-key", "test-key")
         .header("x-algolia-application-id", "test-app")
@@ -535,9 +533,10 @@ async fn test_geo_with_filters() {
         .send()
         .await
         .unwrap();
+    wait_for_response_task(&client, &addr, batch_resp).await;
 
     let settings = json!({"attributesForFaceting": ["type"]});
-    client
+    let settings_resp = client
         .post(format!("{}/1/indexes/{}/settings", base_url, index))
         .header("x-algolia-api-key", "test-key")
         .header("x-algolia-application-id", "test-app")
@@ -545,7 +544,7 @@ async fn test_geo_with_filters() {
         .send()
         .await
         .unwrap();
-    sleep(Duration::from_millis(300)).await;
+    wait_for_response_task(&client, &addr, settings_resp).await;
 
     let resp = client
         .post(format!("{}/1/indexes/{}/query", base_url, index))
@@ -582,7 +581,7 @@ async fn test_geo_pagination() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_geo_page";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     let resp_p0 = client.post(format!("{}/1/indexes/{}/query", base_url, index))
         .header("x-algolia-api-key", "test-key")
@@ -649,7 +648,7 @@ async fn test_geo_params_string_bounding_box() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_geo_params_bbox";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     let resp = client
         .post(format!("{}/1/indexes/*/queries", base_url))
@@ -682,7 +681,7 @@ async fn test_geo_params_string_polygon() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_geo_params_poly";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     let resp = client.post(format!("{}/1/indexes/*/queries", base_url))
         .header("x-algolia-api-key", "test-key")
@@ -711,7 +710,7 @@ async fn test_geo_irregular_polygon() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_geo_triangle";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     // Triangle: vertices near NYC, Chicago, Miami — SF and LA outside
     let resp = client
@@ -739,7 +738,7 @@ async fn test_geo_params_string_around_radius_numeric() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_geo_params_radius_num";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     let resp = client
         .post(format!("{}/1/indexes/*/queries", base_url))
@@ -771,7 +770,7 @@ async fn test_geo_around_precision_integer() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_geo_precision";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     let resp = client
         .post(format!("{}/1/indexes/{}/query", base_url, index))
@@ -807,7 +806,7 @@ async fn test_geo_around_precision_ranges() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_geo_prec_range";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     let resp = client
         .post(format!("{}/1/indexes/{}/query", base_url, index))
@@ -839,7 +838,7 @@ async fn test_geo_minimum_around_radius() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_geo_min_radius";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     let resp = client
         .post(format!("{}/1/indexes/{}/query", base_url, index))
@@ -882,7 +881,7 @@ async fn test_geo_get_ranking_info() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_geo_ranking";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     let resp = client
         .post(format!("{}/1/indexes/{}/query", base_url, index))
@@ -940,7 +939,7 @@ async fn test_get_ranking_info_no_geo() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_ranking_no_geo";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     let resp = client
         .post(format!("{}/1/indexes/{}/query", base_url, index))
@@ -975,7 +974,7 @@ async fn test_geo_params_string_minimum_around_radius() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_geo_params_min_r";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     let resp = client
         .post(format!("{}/1/indexes/*/queries", base_url))
@@ -1013,7 +1012,7 @@ async fn test_geo_params_string_around_precision() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_geo_params_prec";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     let resp = client.post(format!("{}/1/indexes/*/queries", base_url))
         .header("x-algolia-api-key", "test-key")
@@ -1038,7 +1037,7 @@ async fn test_geo_auto_radius_returns_automatic_radius() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_geo_auto_radius";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     let resp = client
         .post(format!("{}/1/indexes/{}/query", base_url, index))
@@ -1069,7 +1068,7 @@ async fn test_geo_explicit_radius_no_automatic_radius() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_geo_no_auto";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     let resp = client
         .post(format!("{}/1/indexes/{}/query", base_url, index))
@@ -1096,7 +1095,7 @@ async fn test_geo_around_lat_lng_via_ip_no_crash() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_geo_via_ip";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     let resp = client
         .post(format!("{}/1/indexes/{}/query", base_url, index))
@@ -1122,7 +1121,7 @@ async fn test_geo_minimum_around_radius_is_floor_not_replacement() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_geo_min_r_floor";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     let resp = client
         .post(format!("{}/1/indexes/{}/query", base_url, index))
@@ -1193,43 +1192,9 @@ async fn test_geo_minimum_around_radius_is_floor_not_replacement() {
     );
 }
 
-#[tokio::test]
-async fn test_geo_minimum_around_radius_ignored_with_explicit_radius() {
-    let (addr, _dir) = spawn_server().await;
-    let base_url = make_url(&addr);
-    let client = Client::new();
-    let index = "test_geo_min_r_ignored";
-    setup_geo_index(&client, &base_url, index).await;
-
-    let resp = client
-        .post(format!("{}/1/indexes/{}/query", base_url, index))
-        .header("x-algolia-api-key", "test-key")
-        .header("x-algolia-application-id", "test-app")
-        .json(&json!({
-            "query": "",
-            "aroundLatLng": "40.7128, -74.0060",
-            "aroundRadius": 500000,
-            "minimumAroundRadius": 5000000
-        }))
-        .send()
-        .await
-        .unwrap()
-        .json::<serde_json::Value>()
-        .await
-        .unwrap();
-
-    let hits = resp["hits"].as_array().unwrap();
-    let ids: Vec<&str> = hits.iter().filter_map(|h| h["objectID"].as_str()).collect();
-    assert!(ids.contains(&"nyc"), "NYC within 500km explicit radius");
-    assert!(
-        !ids.contains(&"la"),
-        "LA outside 500km — minimumAroundRadius should be ignored"
-    );
-    assert!(
-        resp.get("automaticRadius").is_none(),
-        "No automaticRadius when aroundRadius is explicit"
-    );
-}
+// test_geo_minimum_around_radius_ignored_with_explicit_radius — REMOVED
+// Exact duplicate of the second half of test_geo_minimum_around_radius_is_floor_not_replacement
+// (same params: aroundRadius=500000, minimumAroundRadius=5000000, same 3 assertions).
 
 #[tokio::test]
 async fn test_geo_auto_radius_filters_beyond_computed_radius() {
@@ -1245,7 +1210,7 @@ async fn test_geo_auto_radius_filters_beyond_computed_radius() {
     }
     requests.push(json!({"action": "addObject", "body": {"objectID": "far_away", "name": "Far Away", "_geoloc": {"lat": -33.8688, "lng": 151.2093}}}));
     let docs = json!({"requests": requests});
-    client
+    let batch_resp = client
         .post(format!("{}/1/indexes/{}/batch", base_url, index))
         .header("x-algolia-api-key", "test-key")
         .header("x-algolia-application-id", "test-app")
@@ -1253,7 +1218,7 @@ async fn test_geo_auto_radius_filters_beyond_computed_radius() {
         .send()
         .await
         .unwrap();
-    sleep(Duration::from_millis(300)).await;
+    wait_for_response_task(&client, &addr, batch_resp).await;
 
     let resp = client
         .post(format!("{}/1/indexes/{}/query", base_url, index))
@@ -1282,7 +1247,7 @@ async fn test_geo_auto_radius_respects_minimum_radius_value() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_geo_auto_min_val";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     let resp_no_min = client
         .post(format!("{}/1/indexes/{}/query", base_url, index))
@@ -1328,7 +1293,7 @@ async fn test_geo_params_string_around_lat_lng_via_ip() {
     let base_url = make_url(&addr);
     let client = Client::new();
     let index = "test_geo_params_via_ip";
-    setup_geo_index(&client, &base_url, index).await;
+    setup_geo_index(&client, &base_url, &addr, index).await;
 
     let resp = client
         .post(format!("{}/1/indexes/*/queries", base_url))

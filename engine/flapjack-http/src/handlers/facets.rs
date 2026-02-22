@@ -33,6 +33,9 @@ pub fn parse_facet_params(params_str: &str) -> SearchFacetValuesRequest {
 }
 
 fn highlight_facet_match(value: &str, query: &str) -> String {
+    if query.is_empty() {
+        return value.to_string();
+    }
     let value_lower = value.to_lowercase();
     let query_lower = query.to_lowercase();
     if let Some(pos) = value_lower.find(&query_lower) {
@@ -311,4 +314,104 @@ pub async fn search_facet_values(
         exhaustive_facets_count: true,
         processing_time_ms: start.elapsed().as_millis() as u64,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── highlight_facet_match ──
+
+    #[test]
+    fn highlight_exact_match() {
+        assert_eq!(highlight_facet_match("Nike", "Nike"), "<em>Nike</em>");
+    }
+
+    #[test]
+    fn highlight_prefix_match() {
+        assert_eq!(
+            highlight_facet_match("Nike Air", "Nike"),
+            "<em>Nike</em> Air"
+        );
+    }
+
+    #[test]
+    fn highlight_suffix_match() {
+        assert_eq!(
+            highlight_facet_match("Air Nike", "Nike"),
+            "Air <em>Nike</em>"
+        );
+    }
+
+    #[test]
+    fn highlight_case_insensitive() {
+        assert_eq!(
+            highlight_facet_match("NIKE Shoes", "nike"),
+            "<em>NIKE</em> Shoes"
+        );
+    }
+
+    #[test]
+    fn highlight_no_match() {
+        assert_eq!(highlight_facet_match("Adidas", "Nike"), "Adidas");
+    }
+
+    #[test]
+    fn highlight_empty_query() {
+        assert_eq!(highlight_facet_match("Nike", ""), "Nike");
+    }
+
+    #[test]
+    fn highlight_middle_match() {
+        assert_eq!(
+            highlight_facet_match("Air Nike Max", "Nike"),
+            "Air <em>Nike</em> Max"
+        );
+    }
+
+    // ── parse_facet_params ──
+
+    #[test]
+    fn parse_facet_params_basic() {
+        let req = parse_facet_params("facetQuery=ni&maxFacetHits=5");
+        assert_eq!(req.facet_query, "ni");
+        assert_eq!(req.max_facet_hits, 5);
+        assert!(req.filters.is_none());
+    }
+
+    #[test]
+    fn parse_facet_params_with_filters() {
+        let req = parse_facet_params("facetQuery=test&filters=brand%3ANike");
+        assert_eq!(req.facet_query, "test");
+        assert_eq!(req.filters, Some("brand:Nike".to_string()));
+    }
+
+    #[test]
+    fn parse_facet_params_defaults() {
+        let req = parse_facet_params("");
+        assert_eq!(req.facet_query, "");
+        assert_eq!(req.max_facet_hits, 10);
+        assert!(req.filters.is_none());
+    }
+
+    #[test]
+    fn parse_facet_params_invalid_max() {
+        let req = parse_facet_params("maxFacetHits=abc");
+        assert_eq!(req.max_facet_hits, 10); // falls back to default
+    }
+
+    #[test]
+    fn parse_facet_params_empty_query() {
+        let req = parse_facet_params("facetQuery=&maxFacetHits=10");
+        assert_eq!(req.facet_query, "");
+        assert_eq!(req.max_facet_hits, 10);
+    }
+
+    #[test]
+    fn parse_facet_params_empty_string() {
+        let req = parse_facet_params("");
+        assert_eq!(req.facet_query, "");
+        assert_eq!(req.max_facet_hits, 10);
+        assert!(req.filters.is_none());
+    }
 }

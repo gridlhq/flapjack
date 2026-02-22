@@ -1,3 +1,5 @@
+mod common;
+
 use flapjack::types::Document;
 use flapjack::IndexManager;
 use serde_json::json;
@@ -677,7 +679,6 @@ mod oplog_replay {
             .unwrap();
         assert!(seq >= 3, "committed_seq should be >= 3, got {}", seq);
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
         nuke_and_recreate_index(&base.join("replay_test"));
         std::fs::write(&cs_path, "0").unwrap();
 
@@ -715,9 +716,9 @@ mod oplog_replay {
         let r = mgr.search("replay_nuke", "", None, None, 100).unwrap();
         assert_eq!(r.total, 3);
 
-        // Shutdown write queue before directory manipulation
-        mgr.unload(&"replay_nuke".to_string()).unwrap();
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        // Await all write queue tasks before manipulating the directory.
+        // unload() only drops the sender; graceful_shutdown() also awaits task completion.
+        mgr.graceful_shutdown().await;
 
         let tenant_path = base.join("replay_nuke");
         let oplog_backup: Vec<(String, Vec<u8>)> = {
@@ -737,7 +738,17 @@ mod oplog_replay {
         let settings_data = std::fs::read(tenant_path.join("settings.json")).ok();
         let _cs_data = std::fs::read_to_string(tenant_path.join("committed_seq")).ok();
 
-        std::fs::remove_dir_all(&tenant_path).unwrap();
+        // On macOS, tantivy file handles may linger briefly after unload
+        for attempt in 0..10 {
+            match std::fs::remove_dir_all(&tenant_path) {
+                Ok(()) => break,
+                Err(e) if attempt < 9 => {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    eprintln!("remove_dir_all retry {attempt}: {e}");
+                }
+                Err(e) => panic!("remove_dir_all failed after retries: {e}"),
+            }
+        }
         std::fs::create_dir_all(&tenant_path).unwrap();
         let od = tenant_path.join("oplog");
         std::fs::create_dir_all(&od).unwrap();
@@ -779,7 +790,6 @@ mod oplog_replay {
             assert_eq!(r.total, 1);
         }
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
         nuke_and_recreate_index(&base.join("replay_del"));
         std::fs::write(base.join("replay_del").join("committed_seq"), "0").unwrap();
 
@@ -817,7 +827,6 @@ mod oplog_replay {
         assert!(entries.len() >= 3);
         let mid_seq = entries[0]["seq"].as_u64().unwrap();
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
         nuke_and_recreate_index(&base.join("replay_partial"));
         std::fs::write(
             base.join("replay_partial").join("committed_seq"),
@@ -875,7 +884,6 @@ mod oplog_replay {
             assert_eq!(r.total, 1);
         }
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
         nuke_and_recreate_index(&base.join("replay_upsert"));
         std::fs::write(base.join("replay_upsert").join("committed_seq"), "0").unwrap();
 
@@ -909,7 +917,6 @@ mod oplog_replay {
             assert_eq!(r.total, n);
         }
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
         nuke_and_recreate_index(&base.join("replay_stress"));
         std::fs::write(base.join("replay_stress").join("committed_seq"), "0").unwrap();
 
@@ -953,9 +960,10 @@ mod oplog_replay {
                 .search("replay_interleave", "", None, None, 100)
                 .unwrap();
             assert_eq!(r.total, 3);
+            // Await write queue tasks before nuking the directory.
+            mgr.graceful_shutdown().await;
         }
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
         nuke_and_recreate_index(&base.join("replay_interleave"));
         std::fs::write(base.join("replay_interleave").join("committed_seq"), "0").unwrap();
 
@@ -1017,7 +1025,6 @@ mod oplog_replay {
         content.push_str("{\"seq\":999,\"timestamp_ms\":1,\"node_id\":\"n\",\"tenant_id\":\"replay_corrupt\",\"op_type\":\"upsert\",\"payload\":{\"objectID\":\"2\",\"body\":{\"_id\":\"2\",\"name\":\"AfterCorrupt\"}}}\n");
         std::fs::write(&seg_path, content).unwrap();
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
         nuke_and_recreate_index(&base.join("replay_corrupt"));
         std::fs::write(base.join("replay_corrupt").join("committed_seq"), "0").unwrap();
 
@@ -1028,6 +1035,113 @@ mod oplog_replay {
                 r.total >= 1,
                 "should recover at least the valid entries, got {}",
                 r.total
+            );
+        }
+    }
+
+    // ─── Storage bytes tests (from test_storage_bytes.rs) ──────────────────
+
+    mod storage_bytes {
+        use super::super::common;
+        use serde_json::json;
+
+        #[tokio::test]
+        async fn test_list_indices_reports_nonzero_data_size() {
+            let (addr, _temp) = common::spawn_server().await;
+            let client = reqwest::Client::new();
+
+            let resp = client
+                .post(format!("http://{}/1/indexes/storage_test/batch", addr))
+                .header("x-algolia-api-key", "test")
+                .header("x-algolia-application-id", "test")
+                .json(&json!({
+                    "requests": [
+                        {"action": "addObject", "body": {"objectID": "1", "title": "Hello World", "body": "This is a test document with some content."}},
+                        {"action": "addObject", "body": {"objectID": "2", "title": "Foo Bar", "body": "Another test document with different content."}},
+                        {"action": "addObject", "body": {"objectID": "3", "title": "Baz Qux", "body": "Yet another document for good measure."}},
+                    ]
+                }))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), 200);
+            common::wait_for_response_task(&client, &addr, resp).await;
+
+            let resp = client
+                .get(format!("http://{}/1/indexes", addr))
+                .header("x-algolia-api-key", "test")
+                .header("x-algolia-application-id", "test")
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), 200);
+
+            let body: serde_json::Value = resp.json().await.unwrap();
+            let items = body["items"].as_array().expect("items should be an array");
+            assert!(!items.is_empty(), "Should have at least one index");
+
+            let index = items
+                .iter()
+                .find(|i| i["name"] == "storage_test")
+                .expect("storage_test index should exist");
+
+            let data_size = index["dataSize"]
+                .as_u64()
+                .expect("dataSize should be a number");
+            let file_size = index["fileSize"]
+                .as_u64()
+                .expect("fileSize should be a number");
+            let entries = index["entries"]
+                .as_u64()
+                .expect("entries should be a number");
+
+            assert_eq!(entries, 3, "Should have 3 documents");
+            assert!(
+                data_size > 0,
+                "dataSize should be > 0 after indexing documents, got {}",
+                data_size
+            );
+            assert_eq!(data_size, file_size, "dataSize and fileSize should match");
+        }
+
+        #[tokio::test]
+        async fn test_list_indices_reports_pending_tasks() {
+            let (addr, _temp) = common::spawn_server().await;
+            let client = reqwest::Client::new();
+
+            let resp = client
+                .post(format!("http://{}/1/indexes/task_test/batch", addr))
+                .header("x-algolia-api-key", "test")
+                .header("x-algolia-application-id", "test")
+                .json(&json!({
+                    "requests": [
+                        {"action": "addObject", "body": {"objectID": "1", "title": "Test"}}
+                    ]
+                }))
+                .send()
+                .await
+                .unwrap();
+            common::wait_for_response_task(&client, &addr, resp).await;
+
+            let resp = client
+                .get(format!("http://{}/1/indexes", addr))
+                .header("x-algolia-api-key", "test")
+                .header("x-algolia-application-id", "test")
+                .send()
+                .await
+                .unwrap();
+
+            let body: serde_json::Value = resp.json().await.unwrap();
+            let items = body["items"].as_array().unwrap();
+            let index = items
+                .iter()
+                .find(|i| i["name"] == "task_test")
+                .expect("task_test index should exist");
+
+            let pending = index["numberOfPendingTasks"].as_u64().unwrap();
+            assert_eq!(
+                pending, 0,
+                "After indexing completes, numberOfPendingTasks should be 0"
             );
         }
     }
@@ -1055,7 +1169,6 @@ mod oplog_replay {
         let settings_path = base.join("replay_settings").join("settings.json");
         let _original_settings = std::fs::read_to_string(&settings_path).unwrap();
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
         nuke_and_recreate_index(&base.join("replay_settings"));
         std::fs::write(base.join("replay_settings").join("committed_seq"), "0").unwrap();
         std::fs::write(&settings_path, "{}").unwrap();
@@ -1106,7 +1219,6 @@ mod oplog_replay {
             .map(|e| e["seq"].as_u64().unwrap())
             .unwrap_or(0);
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
         nuke_and_recreate_index(&base.join("replay_compact"));
         std::fs::write(base.join("replay_compact").join("committed_seq"), "0").unwrap();
 

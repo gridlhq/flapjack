@@ -1,3 +1,5 @@
+mod common;
+
 use flapjack_http::auth::{
     generate_secured_api_key, validate_secured_key, KeyStore, SecuredKeyRestrictions,
 };
@@ -398,4 +400,493 @@ fn test_parent_index_restriction_enforced() {
         !flapjack_http::auth::index_pattern_matches(&parent.indexes, "users"),
         "parent does NOT allow users — middleware should reject"
     );
+}
+
+// ─── Admin key bootstrap tests ───────────────────────────────────────────────
+
+mod admin_key_bootstrap {
+    use flapjack_http::auth::{generate_admin_key, reset_admin_key, KeyStore};
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_keystore_creates_admin_entry() {
+        let temp_dir = TempDir::new().unwrap();
+        let admin_key = "test_admin_key_1234567890abcdef";
+
+        let store = KeyStore::load_or_create(temp_dir.path(), admin_key);
+
+        let found = store.lookup(admin_key);
+        assert!(found.is_some(), "Admin key should be in store");
+
+        let admin = found.unwrap();
+        assert_eq!(admin.description, "Admin API Key");
+        assert!(admin.acl.len() > 10, "Admin should have all ACLs");
+    }
+
+    #[test]
+    fn test_keystore_hashes_admin_key_at_rest() {
+        let temp_dir = TempDir::new().unwrap();
+        let admin_key = "test_admin_secret_key_plaintext";
+
+        let _store = KeyStore::load_or_create(temp_dir.path(), admin_key);
+
+        let keys_json = fs::read_to_string(temp_dir.path().join("keys.json")).unwrap();
+
+        assert!(
+            !keys_json.contains(admin_key),
+            "keys.json should NOT contain plaintext key"
+        );
+
+        assert!(keys_json.contains("\"hash\":"), "Should have hash field");
+        assert!(keys_json.contains("\"salt\":"), "Should have salt field");
+    }
+
+    #[test]
+    fn test_keystore_rotates_admin_key() {
+        let temp_dir = TempDir::new().unwrap();
+        let old_key = "old_admin_key_1111111111111111";
+        let new_key = "new_admin_key_2222222222222222";
+
+        let _store1 = KeyStore::load_or_create(temp_dir.path(), old_key);
+
+        let keys_json_old = fs::read_to_string(temp_dir.path().join("keys.json")).unwrap();
+        let data_old: serde_json::Value = serde_json::from_str(&keys_json_old).unwrap();
+        let hash_old = data_old["keys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|k| k["description"] == "Admin API Key")
+            .unwrap()["hash"]
+            .as_str()
+            .unwrap();
+
+        let store2 = KeyStore::load_or_create(temp_dir.path(), new_key);
+
+        assert!(
+            store2.lookup(old_key).is_none(),
+            "Old key should be invalid after rotation"
+        );
+
+        assert!(
+            store2.lookup(new_key).is_some(),
+            "New key should work after rotation"
+        );
+
+        let keys_json_new = fs::read_to_string(temp_dir.path().join("keys.json")).unwrap();
+        let data_new: serde_json::Value = serde_json::from_str(&keys_json_new).unwrap();
+        let hash_new = data_new["keys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|k| k["description"] == "Admin API Key")
+            .unwrap()["hash"]
+            .as_str()
+            .unwrap();
+
+        assert_ne!(hash_old, hash_new, "Hash should change on rotation");
+    }
+
+    #[test]
+    fn test_reset_admin_key_generates_new_key() {
+        let temp_dir = TempDir::new().unwrap();
+        let initial_key = "initial_admin_key_123456789abc";
+
+        let _store = KeyStore::load_or_create(temp_dir.path(), initial_key);
+
+        let admin_key_file = temp_dir.path().join(".admin_key");
+        fs::write(&admin_key_file, initial_key).unwrap();
+
+        let new_key = reset_admin_key(temp_dir.path()).expect("Should reset admin key");
+
+        assert_ne!(new_key, initial_key, "Should generate new key");
+        assert!(
+            new_key.starts_with("fj_admin_"),
+            "New key should have correct prefix"
+        );
+
+        let file_key = fs::read_to_string(&admin_key_file).unwrap();
+        assert_eq!(file_key, new_key, ".admin_key should be updated");
+
+        let store_after_reset = KeyStore::load_or_create(temp_dir.path(), &new_key);
+        assert!(
+            store_after_reset.lookup(&new_key).is_some(),
+            "New key should work"
+        );
+        assert!(
+            store_after_reset.lookup(initial_key).is_none(),
+            "Old key should not work"
+        );
+    }
+
+    #[test]
+    fn test_generate_admin_key_format() {
+        let key = generate_admin_key();
+
+        assert!(key.starts_with("fj_admin_"), "Should have fj_admin_ prefix");
+        assert_eq!(key.len(), 41, "Should be fj_admin_ + 32 hex chars");
+
+        let hex_part = &key[9..];
+        assert!(
+            hex_part.chars().all(|c| c.is_ascii_hexdigit()),
+            "Suffix should be hex"
+        );
+    }
+
+    #[test]
+    fn test_admin_key_file_permissions_unix() {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let temp_dir = TempDir::new().unwrap();
+            let admin_key_file = temp_dir.path().join(".admin_key");
+            let admin_key = "test_key_for_permissions_test";
+
+            let _store = KeyStore::load_or_create(temp_dir.path(), admin_key);
+
+            fs::write(&admin_key_file, admin_key).unwrap();
+            let perms = fs::Permissions::from_mode(0o600);
+            fs::set_permissions(&admin_key_file, perms).unwrap();
+
+            let metadata = fs::metadata(&admin_key_file).unwrap();
+            let file_perms = metadata.permissions();
+            let mode = file_perms.mode() & 0o777;
+
+            assert_eq!(mode, 0o600, "Should have restrictive permissions");
+        }
+    }
+
+    #[test]
+    fn test_keystore_preserves_existing_keys() {
+        let temp_dir = TempDir::new().unwrap();
+        let admin_key = "test_admin_key";
+
+        let store1 = KeyStore::load_or_create(temp_dir.path(), admin_key);
+        let all_keys = store1.list_all();
+        let initial_count = all_keys.len();
+
+        assert!(initial_count >= 2, "Should have admin + search keys");
+
+        let store2 = KeyStore::load_or_create(temp_dir.path(), admin_key);
+        let keys_after_reload = store2.list_all();
+
+        assert_eq!(
+            keys_after_reload.len(),
+            initial_count,
+            "Should preserve existing keys on reload"
+        );
+
+        assert!(
+            keys_after_reload
+                .iter()
+                .any(|k| k.description == "Admin API Key"),
+            "Admin key should persist"
+        );
+        assert!(
+            keys_after_reload
+                .iter()
+                .any(|k| k.description == "Default Search API Key"),
+            "Search key should persist"
+        );
+    }
+
+    #[test]
+    fn test_cannot_delete_admin_key() {
+        let temp_dir = TempDir::new().unwrap();
+        let admin_key = "test_admin_key_delete_test";
+
+        let store = KeyStore::load_or_create(temp_dir.path(), admin_key);
+
+        let deleted = store.delete_key(admin_key);
+
+        assert!(!deleted, "Should not be able to delete admin key");
+
+        assert!(
+            store.lookup(admin_key).is_some(),
+            "Admin key should still exist"
+        );
+    }
+
+    #[test]
+    fn test_keystore_handles_corrupted_json_gracefully() {
+        let temp_dir = TempDir::new().unwrap();
+        let keys_json_path = temp_dir.path().join("keys.json");
+        let admin_key = "test_admin_key_corruption_test";
+
+        fs::write(&keys_json_path, "{ invalid json }").unwrap();
+
+        let store = KeyStore::load_or_create(temp_dir.path(), admin_key);
+
+        assert!(
+            store.lookup(admin_key).is_some(),
+            "Should recover from corrupted JSON"
+        );
+
+        let keys_json = fs::read_to_string(&keys_json_path).unwrap();
+        assert!(
+            serde_json::from_str::<serde_json::Value>(&keys_json).is_ok(),
+            "Should have valid JSON after recovery"
+        );
+    }
+
+    #[test]
+    fn test_admin_key_with_leading_trailing_whitespace() {
+        let temp_dir = TempDir::new().unwrap();
+        let key_with_spaces = " fj_admin_test_key_whitespace ";
+        let trimmed_key = key_with_spaces.trim();
+
+        let store1 = KeyStore::load_or_create(temp_dir.path(), trimmed_key);
+
+        assert!(
+            store1.lookup(trimmed_key).is_some(),
+            "Trimmed key should authenticate immediately"
+        );
+
+        let admin_key_file = temp_dir.path().join(".admin_key");
+        fs::write(&admin_key_file, trimmed_key).unwrap();
+
+        let file_content = fs::read_to_string(&admin_key_file).unwrap();
+        let file_key_trimmed = file_content.trim();
+        let store2 = KeyStore::load_or_create(temp_dir.path(), file_key_trimmed);
+
+        assert!(
+            store2.lookup(file_key_trimmed).is_some(),
+            "Trimmed key should authenticate after reload from file"
+        );
+
+        assert_eq!(file_content, trimmed_key, "File should contain trimmed key");
+        assert!(
+            !file_content.starts_with(' ') && !file_content.ends_with(' '),
+            "File should not have leading/trailing whitespace"
+        );
+
+        assert_eq!(
+            key_with_spaces.trim(),
+            trimmed_key,
+            "Original key with spaces should trim to expected value"
+        );
+    }
+}
+
+// ─── E2E secured key tests (HTTP server) ────────────────────────────────────
+
+mod e2e {
+    use super::common;
+    use flapjack_http::auth::{generate_secured_api_key, KeyStore};
+
+    type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+    fn get_search_key(store: &KeyStore) -> String {
+        store
+            .list_all()
+            .iter()
+            .find(|k| k.description == "Default Search API Key")
+            .unwrap()
+            .hmac_key
+            .clone()
+            .unwrap()
+    }
+
+    async fn http_post(
+        addr: &str,
+        path: &str,
+        body: &serde_json::Value,
+        api_key: &str,
+    ) -> reqwest::Response {
+        reqwest::Client::new()
+            .post(format!("http://{}{}", addr, path))
+            .header("x-algolia-application-id", "test")
+            .header("x-algolia-api-key", api_key)
+            .header("content-type", "application/json")
+            .json(body)
+            .send()
+            .await
+            .unwrap()
+    }
+
+    async fn setup_index(addr: &str, admin_key: &str) {
+        let docs = serde_json::json!({
+            "requests": [
+                {"action": "addObject", "body": {"objectID": "1", "brand": "Samsung", "name": "Galaxy S24"}},
+                {"action": "addObject", "body": {"objectID": "2", "brand": "Samsung", "name": "Galaxy Tab"}},
+                {"action": "addObject", "body": {"objectID": "3", "brand": "Apple", "name": "iPhone 15"}},
+                {"action": "addObject", "body": {"objectID": "4", "brand": "Apple", "name": "MacBook Pro"}},
+            ]
+        });
+        let resp = http_post(addr, "/1/indexes/products/batch", &docs, admin_key).await;
+        assert_eq!(resp.status(), 200);
+        let client = reqwest::Client::new();
+        common::wait_for_response_task_authed(&client, addr, resp, Some(admin_key)).await;
+    }
+
+    #[tokio::test]
+    async fn test_e2e_secured_key_forces_filter() -> Result<()> {
+        let admin_key = "admin_key_1234567890abcdef";
+        let (addr, tmp) = common::spawn_server_with_key(Some(admin_key)).await;
+        let store = KeyStore::load_or_create(tmp.path(), admin_key);
+        let search_key = get_search_key(&store);
+
+        setup_index(&addr, admin_key).await;
+
+        let settings = serde_json::json!({"attributesForFaceting": ["filterOnly(brand)"]});
+        let settings_resp =
+            http_post(&addr, "/1/indexes/products/settings", &settings, admin_key).await;
+        let client = reqwest::Client::new();
+        common::wait_for_response_task_authed(&client, &addr, settings_resp, Some(admin_key)).await;
+
+        let unrestricted = http_post(
+            &addr,
+            "/1/indexes/products/query",
+            &serde_json::json!({"query": ""}),
+            &search_key,
+        )
+        .await;
+        let unrestricted_body: serde_json::Value = unrestricted.json().await?;
+        assert_eq!(
+            unrestricted_body["nbHits"], 4,
+            "unrestricted should see all 4 docs"
+        );
+
+        let secured =
+            generate_secured_api_key(&search_key, "filters=brand%3ASamsung&validUntil=9999999999");
+        let restricted = http_post(
+            &addr,
+            "/1/indexes/products/query",
+            &serde_json::json!({"query": ""}),
+            &secured,
+        )
+        .await;
+        assert_eq!(restricted.status(), 200);
+        let restricted_body: serde_json::Value = restricted.json().await?;
+        assert_eq!(
+            restricted_body["nbHits"], 2,
+            "secured key should only see Samsung docs"
+        );
+
+        let hits = restricted_body["hits"].as_array().unwrap();
+        for hit in hits {
+            assert_eq!(hit["brand"], "Samsung", "all hits should be Samsung");
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_e2e_secured_key_restrict_indices_blocks_wrong_index() -> Result<()> {
+        let admin_key = "admin_key_1234567890abcdef";
+        let (addr, tmp) = common::spawn_server_with_key(Some(admin_key)).await;
+        let store = KeyStore::load_or_create(tmp.path(), admin_key);
+        let search_key = get_search_key(&store);
+
+        setup_index(&addr, admin_key).await;
+
+        let secured = generate_secured_api_key(
+            &search_key,
+            "restrictIndices=%5B%22other_index%22%5D&validUntil=9999999999",
+        );
+        let resp = http_post(
+            &addr,
+            "/1/indexes/products/query",
+            &serde_json::json!({"query": ""}),
+            &secured,
+        )
+        .await;
+        assert_eq!(resp.status(), 403, "should be blocked from products index");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_e2e_secured_key_expired_rejected() -> Result<()> {
+        let admin_key = "admin_key_1234567890abcdef";
+        let (addr, tmp) = common::spawn_server_with_key(Some(admin_key)).await;
+        let store = KeyStore::load_or_create(tmp.path(), admin_key);
+        let search_key = get_search_key(&store);
+
+        let secured = generate_secured_api_key(&search_key, "validUntil=1000000000");
+        let resp = http_post(
+            &addr,
+            "/1/indexes/products/query",
+            &serde_json::json!({"query": ""}),
+            &secured,
+        )
+        .await;
+        assert_eq!(resp.status(), 403, "expired secured key should get 403");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_e2e_secured_key_parent_index_scope_enforced() -> Result<()> {
+        let admin_key = "admin_key_1234567890abcdef";
+        let (addr, tmp) = common::spawn_server_with_key(Some(admin_key)).await;
+        let store = KeyStore::load_or_create(tmp.path(), admin_key);
+
+        let (_scoped, scoped_plaintext) = store.create_key(flapjack_http::auth::ApiKey {
+            hash: String::new(),
+            salt: String::new(),
+            hmac_key: None,
+            created_at: 0,
+            acl: vec!["search".to_string()],
+            description: "scoped".to_string(),
+            indexes: vec!["allowed_*".to_string()],
+            max_hits_per_query: 0,
+            max_queries_per_ip_per_hour: 0,
+            query_parameters: String::new(),
+            referers: vec![],
+            validity: 0,
+        });
+
+        let secured = generate_secured_api_key(&scoped_plaintext, "validUntil=9999999999");
+        let resp = http_post(
+            &addr,
+            "/1/indexes/products/query",
+            &serde_json::json!({"query": ""}),
+            &secured,
+        )
+        .await;
+        assert_eq!(
+            resp.status(),
+            403,
+            "parent scoped to allowed_* should block products"
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_e2e_secured_key_filter_merges_with_user_filter() -> Result<()> {
+        let admin_key = "admin_key_1234567890abcdef";
+        let (addr, tmp) = common::spawn_server_with_key(Some(admin_key)).await;
+        let store = KeyStore::load_or_create(tmp.path(), admin_key);
+        let search_key = get_search_key(&store);
+
+        setup_index(&addr, admin_key).await;
+
+        let settings = serde_json::json!({"attributesForFaceting": ["filterOnly(brand)"]});
+        let settings_resp =
+            http_post(&addr, "/1/indexes/products/settings", &settings, admin_key).await;
+        let client = reqwest::Client::new();
+        common::wait_for_response_task_authed(&client, &addr, settings_resp, Some(admin_key)).await;
+
+        let secured =
+            generate_secured_api_key(&search_key, "filters=brand%3ASamsung&validUntil=9999999999");
+
+        let resp = http_post(
+            &addr,
+            "/1/indexes/products/query",
+            &serde_json::json!({"query": "Galaxy"}),
+            &secured,
+        )
+        .await;
+        let body: serde_json::Value = resp.json().await?;
+        let hits = body["hits"].as_array().unwrap();
+        assert!(!hits.is_empty(), "should find Samsung Galaxy docs");
+        for hit in hits {
+            assert_eq!(hit["brand"], "Samsung");
+        }
+
+        Ok(())
+    }
 }

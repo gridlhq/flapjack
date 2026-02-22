@@ -1,3 +1,9 @@
+//! Consolidated filter tests.
+//!
+//! Merged from (all deleted):
+//!   - test_filters.rs              (filter param parsing, precedence, enforcement)
+//!   - test_filter_correctness.rs   (end-to-end boolean filter correctness)
+
 use flapjack::index::settings::IndexSettings;
 use flapjack::types::{Document, FieldValue, Filter};
 use flapjack::IndexManager;
@@ -271,5 +277,106 @@ mod enforcement {
         let filter = parse_filter("price >= 50").unwrap();
         let result = manager.search("test", "", Some(&filter), None, 10).unwrap();
         assert_eq!(result.total, 1);
+    }
+}
+
+// ============================================================
+// From test_filter_correctness.rs
+// End-to-end boolean filter correctness with IndexManager
+// ============================================================
+
+mod correctness {
+    use super::*;
+
+    fn text_doc(id: &str, fields: Vec<(&str, &str)>) -> Document {
+        let f = fields
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), FieldValue::Text(v.to_string())))
+            .collect::<HashMap<_, _>>();
+        Document {
+            id: id.to_string(),
+            fields: f,
+        }
+    }
+
+    async fn setup(
+        tmp: &TempDir,
+        index: &str,
+        facet_fields: Vec<&str>,
+        docs: Vec<Document>,
+    ) -> std::sync::Arc<IndexManager> {
+        let manager = IndexManager::new(tmp.path());
+        manager.create_tenant(index).unwrap();
+
+        let settings = IndexSettings::default_with_facets(
+            facet_fields.into_iter().map(|s| s.to_string()).collect(),
+        );
+        settings
+            .save(tmp.path().join(index).join("settings.json"))
+            .unwrap();
+
+        manager.add_documents_sync(index, docs).await.unwrap();
+        manager
+    }
+
+    #[tokio::test]
+    async fn test_and_of_ors_returns_correct_results() {
+        let tmp = TempDir::new().unwrap();
+        let manager = setup(
+            &tmp,
+            "products",
+            vec!["brand", "category"],
+            vec![
+                text_doc("1", vec![("brand", "Nike"), ("category", "Shoes")]),
+                text_doc("2", vec![("brand", "Adidas"), ("category", "Shoes")]),
+                text_doc("3", vec![("brand", "Nike"), ("category", "Apparel")]),
+                text_doc("4", vec![("brand", "Puma"), ("category", "Shoes")]),
+            ],
+        )
+        .await;
+
+        let filter = parse_filter("(brand:Nike OR brand:Adidas) AND category:Shoes").unwrap();
+        let result = manager
+            .search("products", "", Some(&filter), None, 10)
+            .unwrap();
+
+        assert_eq!(result.total, 2, "Should match exactly 2 docs");
+        let ids: Vec<&str> = result
+            .documents
+            .iter()
+            .map(|d| d.document.id.as_str())
+            .collect();
+        assert!(ids.contains(&"1"), "Should include Nike+Shoes");
+        assert!(ids.contains(&"2"), "Should include Adidas+Shoes");
+    }
+
+    #[tokio::test]
+    async fn test_nested_precedence() {
+        let tmp = TempDir::new().unwrap();
+        let manager = setup(
+            &tmp,
+            "test",
+            vec!["a", "b", "c"],
+            vec![
+                text_doc("1", vec![("a", "x"), ("b", "y"), ("c", "z")]),
+                text_doc("2", vec![("a", "x"), ("b", "w"), ("c", "z")]),
+                text_doc("3", vec![("a", "v"), ("b", "y"), ("c", "z")]),
+                text_doc("4", vec![("a", "v"), ("b", "w"), ("c", "q")]),
+            ],
+        )
+        .await;
+
+        let filter = parse_filter("((a:x OR a:v) AND b:y) OR c:q").unwrap();
+        let result = manager.search("test", "", Some(&filter), None, 10).unwrap();
+
+        assert_eq!(result.total, 3, "Should match exactly 3 docs");
+        let ids: Vec<&str> = result
+            .documents
+            .iter()
+            .map(|d| d.document.id.as_str())
+            .collect();
+        assert!(ids.contains(&"1"));
+        assert!(ids.contains(&"3"));
+        assert!(ids.contains(&"4"));
     }
 }

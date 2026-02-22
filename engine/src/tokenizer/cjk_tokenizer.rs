@@ -163,3 +163,212 @@ impl Tokenizer for CjkAwareTokenizer {
         CjkAwareTokenStream { tokens, index: 0 }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tantivy::tokenizer::Tokenizer;
+
+    fn collect_tokens(text: &str) -> Vec<String> {
+        let mut tokenizer = CjkAwareTokenizer;
+        let mut stream = tokenizer.token_stream(text);
+        let mut result = Vec::new();
+        while stream.advance() {
+            result.push(stream.token().text.clone());
+        }
+        result
+    }
+
+    // ── is_cjk ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn is_cjk_chinese() {
+        assert!(is_cjk('中'));
+        assert!(is_cjk('国'));
+    }
+
+    #[test]
+    fn is_cjk_japanese_hiragana() {
+        assert!(is_cjk('あ'));
+        assert!(is_cjk('の'));
+    }
+
+    #[test]
+    fn is_cjk_japanese_katakana() {
+        assert!(is_cjk('ア'));
+        assert!(is_cjk('ン'));
+    }
+
+    #[test]
+    fn is_cjk_korean() {
+        assert!(is_cjk('한'));
+        assert!(is_cjk('글'));
+    }
+
+    #[test]
+    fn is_cjk_ascii_false() {
+        assert!(!is_cjk('a'));
+        assert!(!is_cjk('Z'));
+        assert!(!is_cjk('5'));
+        assert!(!is_cjk(' '));
+    }
+
+    #[test]
+    fn is_cjk_latin_extended_false() {
+        assert!(!is_cjk('é'));
+        assert!(!is_cjk('ñ'));
+    }
+
+    // ── is_intra_word_separator ─────────────────────────────────────────
+
+    #[test]
+    fn separator_hyphen() {
+        assert!(is_intra_word_separator('-'));
+    }
+
+    #[test]
+    fn separator_dot() {
+        assert!(is_intra_word_separator('.'));
+    }
+
+    #[test]
+    fn separator_underscore() {
+        assert!(is_intra_word_separator('_'));
+    }
+
+    #[test]
+    fn separator_not_alphanumeric() {
+        assert!(!is_intra_word_separator('a'));
+        assert!(!is_intra_word_separator('5'));
+    }
+
+    #[test]
+    fn separator_not_whitespace() {
+        assert!(!is_intra_word_separator(' '));
+        assert!(!is_intra_word_separator('\t'));
+    }
+
+    #[test]
+    fn separator_not_cjk() {
+        assert!(!is_intra_word_separator('中'));
+    }
+
+    #[test]
+    fn separator_not_null() {
+        assert!(!is_intra_word_separator('\0'));
+    }
+
+    // ── tokenizer: basic Latin ──────────────────────────────────────────
+
+    #[test]
+    fn tokenize_simple_english() {
+        let tokens = collect_tokens("hello world");
+        assert_eq!(tokens, vec!["hello", "world"]);
+    }
+
+    #[test]
+    fn tokenize_empty() {
+        let tokens = collect_tokens("");
+        assert!(tokens.is_empty());
+    }
+
+    #[test]
+    fn tokenize_single_word() {
+        let tokens = collect_tokens("flapjack");
+        assert_eq!(tokens, vec!["flapjack"]);
+    }
+
+    // ── tokenizer: CJK ─────────────────────────────────────────────────
+
+    #[test]
+    fn tokenize_chinese_chars_individually() {
+        let tokens = collect_tokens("中国人");
+        assert_eq!(tokens, vec!["中", "国", "人"]);
+    }
+
+    #[test]
+    fn tokenize_japanese_hiragana() {
+        let tokens = collect_tokens("おはよう");
+        assert_eq!(tokens, vec!["お", "は", "よ", "う"]);
+    }
+
+    #[test]
+    fn tokenize_mixed_cjk_and_latin() {
+        let tokens = collect_tokens("hello中国world");
+        assert_eq!(tokens, vec!["hello", "中", "国", "world"]);
+    }
+
+    // ── tokenizer: intra-word separators (concat tokens) ────────────────
+
+    #[test]
+    fn tokenize_hyphenated_produces_parts_and_concat() {
+        let tokens = collect_tokens("e-commerce");
+        assert!(tokens.contains(&"e".to_string()));
+        assert!(tokens.contains(&"commerce".to_string()));
+        assert!(tokens.contains(&"ecommerce".to_string()));
+    }
+
+    #[test]
+    fn tokenize_short_concat_skipped() {
+        // "a-b" → parts "a" and "b", but concat "ab" is only 2 chars < 3, so no concat token
+        let tokens = collect_tokens("a-b");
+        assert!(tokens.contains(&"a".to_string()));
+        assert!(tokens.contains(&"b".to_string()));
+        assert!(!tokens.contains(&"ab".to_string()));
+    }
+
+    #[test]
+    fn tokenize_dotted_word() {
+        let tokens = collect_tokens("Dr.Smith");
+        assert!(tokens.contains(&"Dr".to_string()));
+        assert!(tokens.contains(&"Smith".to_string()));
+        assert!(tokens.contains(&"DrSmith".to_string()));
+    }
+
+    // ── tokenizer: positions and offsets ─────────────────────────────────
+
+    #[test]
+    fn token_positions_increment() {
+        let mut tokenizer = CjkAwareTokenizer;
+        let mut stream = tokenizer.token_stream("hello world");
+        let mut positions = Vec::new();
+        while stream.advance() {
+            positions.push(stream.token().position);
+        }
+        for i in 1..positions.len() {
+            assert!(positions[i] > positions[i - 1]);
+        }
+    }
+
+    #[test]
+    fn token_offsets_within_text() {
+        let text = "hello 中国";
+        let mut tokenizer = CjkAwareTokenizer;
+        let mut stream = tokenizer.token_stream(text);
+        while stream.advance() {
+            let t = stream.token();
+            assert!(t.offset_from <= t.offset_to);
+            assert!(t.offset_to <= text.len());
+        }
+    }
+
+    // ── tokenizer: whitespace edge cases ────────────────────────────────
+
+    #[test]
+    fn tokenize_multiple_spaces() {
+        let tokens = collect_tokens("hello   world");
+        assert_eq!(tokens, vec!["hello", "world"]);
+    }
+
+    #[test]
+    fn tokenize_only_whitespace() {
+        let tokens = collect_tokens("   ");
+        assert!(tokens.is_empty());
+    }
+
+    #[test]
+    fn tokenize_mixed_whitespace() {
+        let tokens = collect_tokens("hello\tworld\nnew");
+        assert_eq!(tokens, vec!["hello", "world", "new"]);
+    }
+}

@@ -24,6 +24,8 @@ s3-snapshots = ["rust-s3", "flate2", "tar"]
 openapi = ["utoipa"]
 memory-stats = ["tikv-jemalloc-ctl", "sysinfo"]
 analytics = ["dep:datafusion", "dep:arrow", "dep:parquet"]
+vector-search = ["dep:usearch"]
+vector-search-local = ["vector-search", "dep:fastembed"]
 
 [dependencies]
 tantivy = "0.25"
@@ -63,6 +65,8 @@ hostname = "0.4"
 utoipa = { version = "5.3", features = ["uuid"], optional = true }
 flapjack-ssl = { path = "flapjack-ssl" }
 sysinfo = { version = "0.30", optional = true }
+usearch = { version = "2", optional = true }
+fastembed = { version = "5", optional = true, default-features = false, features = ["ort-download-binaries", "hf-hub-rustls-tls"] }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemalloc-ctl = { version = "0.6", features = ["stats"], optional = true }
@@ -92,6 +96,10 @@ chrono = "0.4"
 flapjack-http = { path = "flapjack-http" }
 flapjack-replication = { path = "flapjack-replication" }
 flapjack-ssl = { path = "flapjack-ssl" }
+wiremock = "0.6"
+
+[profile.test]
+opt-level = 1
 
 [[bench]]
 name = "main_benchmarks"

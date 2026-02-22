@@ -59,8 +59,22 @@ jobs:
           workspaces: engine
       - name: Create dashboard dist stub (for RustEmbed)
         run: mkdir -p dashboard/dist && echo '<html></html>' > dashboard/dist/index.html
-      - run: >
-          cargo clippy --workspace --all-targets -- -D warnings
+      - name: Clippy (with vector-search)
+        run: >
+          cargo clippy
+          -p flapjack -p flapjack-http -p flapjack-server
+          --all-targets --features vector-search
+          -- -D warnings
+          -A clippy::too_many_arguments
+          -A clippy::type_complexity
+          -A clippy::only_used_in_recursion
+          -A deprecated
+      - name: Clippy (remaining crates)
+        run: >
+          cargo clippy
+          -p flapjack-ssl -p flapjack-replication
+          --all-targets
+          -- -D warnings
           -A clippy::too_many_arguments
           -A clippy::type_complexity
           -A clippy::only_used_in_recursion
@@ -90,9 +104,11 @@ jobs:
       - name: Create dashboard dist stub (for RustEmbed)
         run: mkdir -p dashboard/dist && echo '<html></html>' > dashboard/dist/index.html
       - name: Build binaries (needed by integration tests)
-        run: cargo build --package flapjack-server
-      - name: Fast tests
-        run: cargo nextest run
+        run: cargo build --package flapjack-server --features vector-search
+      - name: Fast tests (vector-search)
+        run: cargo nextest run -p flapjack -p flapjack-http --features vector-search
+      - name: Fast tests (remaining)
+        run: cargo nextest run -p flapjack-server -p flapjack-ssl -p flapjack-replication
 
   rust-tests-all:
     name: Rust tests (all)
@@ -118,9 +134,11 @@ jobs:
       - name: Create dashboard dist stub (for RustEmbed)
         run: mkdir -p dashboard/dist && echo '<html></html>' > dashboard/dist/index.html
       - name: Build binaries (needed by integration tests)
-        run: cargo build --package flapjack-server
-      - name: All tests
-        run: cargo nextest run -P ci
+        run: cargo build --package flapjack-server --features vector-search
+      - name: All tests (vector-search)
+        run: cargo nextest run -p flapjack -p flapjack-http --features vector-search -P ci
+      - name: All tests (remaining)
+        run: cargo nextest run -p flapjack-server -p flapjack-ssl -p flapjack-replication -P ci
 
   # ============================================================================
   # BUILD SERVER (shared by SDK e2e tests)
@@ -142,7 +160,7 @@ jobs:
         run: mkdir -p dashboard/dist && echo '<html></html>' > dashboard/dist/index.html
       - name: Build server
         working-directory: engine
-        run: cargo build --package flapjack-server
+        run: cargo build --package flapjack-server --features vector-search
       - name: Upload server binary
         uses: actions/upload-artifact@v4
         with:
@@ -229,6 +247,46 @@ jobs:
         if: always()
         with:
           name: dashboard-pages-report
+          path: engine/dashboard/playwright-report/
+          retention-days: 7
+
+  dashboard-full-e2e:
+    name: Dashboard full e2e tests
+    needs: [check-repo, build-server]
+    if: needs.check-repo.outputs.is-public-repo == 'true' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download server binary
+        uses: actions/download-artifact@v4
+        with:
+          name: flapjack-server
+          path: /tmp/flapjack
+      - name: Start Flapjack server
+        run: |
+          chmod +x /tmp/flapjack/flapjack
+          FLAPJACK_ADMIN_KEY=fj_devtestadminkey000000 /tmp/flapjack/flapjack --data-dir /tmp/flapjack-data &
+          sleep 3
+          curl -sf http://localhost:7700/health || (echo "Server failed to start" && exit 1)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: engine/dashboard/package-lock.json
+      - name: Install dependencies
+        working-directory: engine/dashboard
+        run: npm install
+      - name: Install Playwright browsers
+        working-directory: engine/dashboard
+        run: npx playwright install --with-deps chromium
+      - name: Run full e2e tests
+        working-directory: engine/dashboard
+        run: npm run test:e2e-ui:full
+      - name: Upload test report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dashboard-full-e2e-report
           path: engine/dashboard/playwright-report/
           retention-days: 7
 

@@ -1,6 +1,7 @@
 use crate::query::plurals::IgnorePluralsValue;
 use crate::query::stopwords::RemoveStopWordsValue;
 use serde::{Deserialize, Serialize, Serializer};
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::Path;
 
@@ -36,6 +37,20 @@ fn ignore_plurals_is_default(v: &IgnorePluralsValue) -> bool {
 
 fn vec_is_empty(v: &[String]) -> bool {
     v.is_empty()
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum IndexMode {
+    KeywordSearch,
+    NeuralSearch,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SemanticSearchSettings {
+    #[serde(rename = "eventSources", skip_serializing_if = "Option::is_none")]
+    pub event_sources: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -153,6 +168,15 @@ pub struct IndexSettings {
         skip_serializing_if = "ignore_plurals_is_default"
     )]
     pub ignore_plurals: IgnorePluralsValue,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub embedders: Option<HashMap<String, serde_json::Value>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<IndexMode>,
+
+    #[serde(rename = "semanticSearch", skip_serializing_if = "Option::is_none")]
+    pub semantic_search: Option<SemanticSearchSettings>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -207,6 +231,9 @@ impl Default for IndexSettings {
             remove_stop_words: RemoveStopWordsValue::Disabled,
             query_languages: Vec::new(),
             ignore_plurals: IgnorePluralsValue::Disabled,
+            embedders: None,
+            mode: None,
+            semantic_search: None,
         }
     }
 }
@@ -272,6 +299,87 @@ impl IndexSettings {
 
         true
     }
+
+    pub fn is_neural_search_active(&self) -> bool {
+        matches!(self.mode, Some(IndexMode::NeuralSearch))
+    }
+
+    /// Validate embedder configurations. Returns Ok(()) if no embedders or if
+    /// the vector-search feature is not enabled. With the feature, each config
+    /// is parsed into EmbedderConfig and validated.
+    pub fn validate_embedders(&self) -> Result<(), String> {
+        let embedders = match &self.embedders {
+            Some(map) if !map.is_empty() => map,
+            _ => return Ok(()),
+        };
+        self.validate_embedders_inner(embedders)
+    }
+
+    #[cfg(feature = "vector-search")]
+    fn validate_embedders_inner(
+        &self,
+        embedders: &HashMap<String, serde_json::Value>,
+    ) -> Result<(), String> {
+        use crate::vector::config::EmbedderConfig;
+        for (name, value) in embedders {
+            if value.is_null() {
+                continue;
+            }
+            let config: EmbedderConfig = serde_json::from_value(value.clone())
+                .map_err(|e| format!("embedder '{}': {}", name, e))?;
+            config
+                .validate()
+                .map_err(|e| format!("embedder '{}': {}", name, e))?;
+        }
+        Ok(())
+    }
+
+    #[cfg(not(feature = "vector-search"))]
+    fn validate_embedders_inner(
+        &self,
+        embedders: &HashMap<String, serde_json::Value>,
+    ) -> Result<(), String> {
+        let _ = embedders;
+        Ok(())
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum EmbedderChange {
+    Added(String),
+    Removed(String),
+    Modified(String),
+}
+
+pub fn detect_embedder_changes(
+    old: &Option<HashMap<String, serde_json::Value>>,
+    new: &Option<HashMap<String, serde_json::Value>>,
+) -> Vec<EmbedderChange> {
+    let empty = HashMap::new();
+    let old_map = old.as_ref().unwrap_or(&empty);
+    let new_map = new.as_ref().unwrap_or(&empty);
+
+    let mut changes = Vec::new();
+    let mut all_keys: HashSet<&String> = old_map.keys().collect();
+    all_keys.extend(new_map.keys());
+
+    for key in all_keys {
+        match (old_map.get(key), new_map.get(key)) {
+            (None, Some(_)) => changes.push(EmbedderChange::Added(key.clone())),
+            (Some(_), None) => changes.push(EmbedderChange::Removed(key.clone())),
+            (Some(old_val), Some(new_val)) => {
+                let fields_changed = ["source", "model", "dimensions"]
+                    .iter()
+                    .any(|field| old_val.get(field) != new_val.get(field));
+                if fields_changed {
+                    changes.push(EmbedderChange::Modified(key.clone()));
+                }
+            }
+            (None, None) => unreachable!(),
+        }
+    }
+
+    changes
 }
 
 fn parse_facet_modifier(attr: &str) -> String {
@@ -372,11 +480,388 @@ mod tests {
         );
         assert_eq!(loaded.distinct, original.distinct, "distinct mismatch");
     }
-}
-#[test]
-fn test_partial_json_uses_defaults() {
-    let json = r#"{"queryType":"prefixAll"}"#;
-    let settings: IndexSettings = serde_json::from_str(json).unwrap();
-    assert_eq!(settings.query_type, "prefixAll");
-    assert_eq!(settings.min_word_size_for_1_typo, 4); // default value
+
+    #[test]
+    fn test_partial_json_uses_defaults() {
+        let json = r#"{"queryType":"prefixAll"}"#;
+        let settings: IndexSettings = serde_json::from_str(json).unwrap();
+        assert_eq!(settings.query_type, "prefixAll");
+        assert_eq!(settings.min_word_size_for_1_typo, 4); // default value
+    }
+
+    // ── Embedders field tests (4.1) ──
+
+    #[test]
+    fn test_settings_embedders_default_none() {
+        let settings = IndexSettings::default();
+        assert!(settings.embedders.is_none());
+    }
+
+    #[test]
+    fn test_settings_embedders_roundtrip() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("settings.json");
+
+        let mut embedders = HashMap::new();
+        embedders.insert(
+            "default".to_string(),
+            serde_json::json!({"source": "userProvided", "dimensions": 384}),
+        );
+
+        let original = IndexSettings {
+            embedders: Some(embedders),
+            ..Default::default()
+        };
+
+        original.save(&path).unwrap();
+        let loaded = IndexSettings::load(&path).unwrap();
+
+        let loaded_embedders = loaded
+            .embedders
+            .as_ref()
+            .expect("embedders should survive roundtrip");
+        let default_config = loaded_embedders
+            .get("default")
+            .expect("should have 'default' key");
+        assert_eq!(default_config["source"], "userProvided");
+        assert_eq!(default_config["dimensions"], 384);
+    }
+
+    #[test]
+    fn test_settings_embedders_skip_serializing_when_none() {
+        let settings = IndexSettings::default();
+        let json_str = serde_json::to_string(&settings).unwrap();
+        assert!(
+            !json_str.contains("embedders"),
+            "JSON should not contain 'embedders' when None"
+        );
+    }
+
+    #[test]
+    fn test_settings_embedders_partial_update() {
+        let json = r#"{"embedders": {"myEmb": {"source": "userProvided", "dimensions": 128}}}"#;
+        let settings: IndexSettings = serde_json::from_str(json).unwrap();
+
+        // Embedders populated
+        let emb = settings.embedders.as_ref().unwrap();
+        assert_eq!(emb["myEmb"]["dimensions"], 128);
+
+        // Other fields got defaults
+        assert_eq!(settings.hits_per_page, 20);
+        assert_eq!(settings.query_type, "prefixLast");
+    }
+
+    #[test]
+    fn test_settings_backward_compat_no_embedders() {
+        let json = r#"{"queryType":"prefixAll","hitsPerPage":10}"#;
+        let settings: IndexSettings = serde_json::from_str(json).unwrap();
+        assert!(settings.embedders.is_none());
+        assert_eq!(settings.query_type, "prefixAll");
+        assert_eq!(settings.hits_per_page, 10);
+    }
+
+    // ── Embedder validation tests (4.5) ──
+
+    #[cfg(feature = "vector-search")]
+    #[test]
+    fn test_validate_embedders_valid() {
+        let mut embedders = HashMap::new();
+        embedders.insert(
+            "default".to_string(),
+            serde_json::json!({"source": "userProvided", "dimensions": 384}),
+        );
+        let settings = IndexSettings {
+            embedders: Some(embedders),
+            ..Default::default()
+        };
+        assert!(settings.validate_embedders().is_ok());
+    }
+
+    #[cfg(feature = "vector-search")]
+    #[test]
+    fn test_validate_embedders_invalid_source() {
+        let mut embedders = HashMap::new();
+        embedders.insert(
+            "broken".to_string(),
+            serde_json::json!({"source": "nonExistent"}),
+        );
+        let settings = IndexSettings {
+            embedders: Some(embedders),
+            ..Default::default()
+        };
+        let err = settings.validate_embedders().unwrap_err();
+        assert!(
+            err.contains("broken"),
+            "error should mention embedder name: {}",
+            err
+        );
+    }
+
+    #[cfg(feature = "vector-search")]
+    #[test]
+    fn test_validate_embedders_missing_required_field() {
+        let mut embedders = HashMap::new();
+        embedders.insert("myEmb".to_string(), serde_json::json!({"source": "openAi"}));
+        let settings = IndexSettings {
+            embedders: Some(embedders),
+            ..Default::default()
+        };
+        let err = settings.validate_embedders().unwrap_err();
+        assert!(
+            err.contains("myEmb"),
+            "error should mention embedder name: {}",
+            err
+        );
+        assert!(
+            err.contains("apiKey"),
+            "error should mention missing field: {}",
+            err
+        );
+    }
+
+    #[cfg(feature = "vector-search")]
+    #[test]
+    fn test_validate_embedders_null_value_skipped() {
+        let mut embedders = HashMap::new();
+        embedders.insert("default".to_string(), serde_json::Value::Null);
+        let settings = IndexSettings {
+            embedders: Some(embedders),
+            ..Default::default()
+        };
+        assert!(settings.validate_embedders().is_ok());
+    }
+
+    #[test]
+    fn test_validate_embedders_none_is_ok() {
+        let settings = IndexSettings::default();
+        assert!(settings.validate_embedders().is_ok());
+    }
+
+    #[test]
+    fn test_validate_embedders_empty_map_is_ok() {
+        let settings = IndexSettings {
+            embedders: Some(HashMap::new()),
+            ..Default::default()
+        };
+        assert!(settings.validate_embedders().is_ok());
+    }
+
+    // ── Stale vector detection tests (4.8) ──
+
+    #[test]
+    fn test_embedder_changes_detects_model_change() {
+        let old = Some(HashMap::from([(
+            "emb1".to_string(),
+            serde_json::json!({"source": "openAi", "model": "A"}),
+        )]));
+        let new = Some(HashMap::from([(
+            "emb1".to_string(),
+            serde_json::json!({"source": "openAi", "model": "B"}),
+        )]));
+        let changes = detect_embedder_changes(&old, &new);
+        assert_eq!(changes, vec![EmbedderChange::Modified("emb1".to_string())]);
+    }
+
+    #[test]
+    fn test_embedder_changes_detects_source_change() {
+        let old = Some(HashMap::from([(
+            "emb1".to_string(),
+            serde_json::json!({"source": "openAi"}),
+        )]));
+        let new = Some(HashMap::from([(
+            "emb1".to_string(),
+            serde_json::json!({"source": "rest"}),
+        )]));
+        let changes = detect_embedder_changes(&old, &new);
+        assert_eq!(changes, vec![EmbedderChange::Modified("emb1".to_string())]);
+    }
+
+    #[test]
+    fn test_embedder_changes_detects_dimensions_change() {
+        let old = Some(HashMap::from([(
+            "emb1".to_string(),
+            serde_json::json!({"source": "userProvided", "dimensions": 128}),
+        )]));
+        let new = Some(HashMap::from([(
+            "emb1".to_string(),
+            serde_json::json!({"source": "userProvided", "dimensions": 384}),
+        )]));
+        let changes = detect_embedder_changes(&old, &new);
+        assert_eq!(changes, vec![EmbedderChange::Modified("emb1".to_string())]);
+    }
+
+    #[test]
+    fn test_embedder_changes_unchanged() {
+        let config = serde_json::json!({"source": "userProvided", "dimensions": 384});
+        let old = Some(HashMap::from([("emb1".to_string(), config.clone())]));
+        let new = Some(HashMap::from([("emb1".to_string(), config)]));
+        let changes = detect_embedder_changes(&old, &new);
+        assert!(changes.is_empty());
+    }
+
+    #[test]
+    fn test_embedder_changes_new_embedder() {
+        let old: Option<HashMap<String, serde_json::Value>> = Some(HashMap::new());
+        let new = Some(HashMap::from([(
+            "new_emb".to_string(),
+            serde_json::json!({"source": "userProvided", "dimensions": 128}),
+        )]));
+        let changes = detect_embedder_changes(&old, &new);
+        assert_eq!(changes, vec![EmbedderChange::Added("new_emb".to_string())]);
+    }
+
+    #[test]
+    fn test_embedder_changes_removed_embedder() {
+        let old = Some(HashMap::from([(
+            "old_emb".to_string(),
+            serde_json::json!({"source": "userProvided", "dimensions": 128}),
+        )]));
+        let new: Option<HashMap<String, serde_json::Value>> = Some(HashMap::new());
+        let changes = detect_embedder_changes(&old, &new);
+        assert_eq!(
+            changes,
+            vec![EmbedderChange::Removed("old_emb".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_embedder_changes_both_none() {
+        let changes = detect_embedder_changes(&None, &None);
+        assert!(changes.is_empty());
+    }
+
+    // ── Mode and SemanticSearch tests (5.2) ──
+
+    #[test]
+    fn test_settings_mode_default_none() {
+        let settings = IndexSettings::default();
+        assert!(settings.mode.is_none());
+    }
+
+    #[test]
+    fn test_settings_mode_roundtrip() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("settings.json");
+
+        let original = IndexSettings {
+            mode: Some(IndexMode::NeuralSearch),
+            ..Default::default()
+        };
+
+        original.save(&path).unwrap();
+        let loaded = IndexSettings::load(&path).unwrap();
+
+        assert_eq!(loaded.mode, Some(IndexMode::NeuralSearch));
+    }
+
+    #[test]
+    fn test_settings_mode_skip_serializing_when_none() {
+        let settings = IndexSettings::default();
+        let json_str = serde_json::to_string(&settings).unwrap();
+        assert!(
+            !json_str.contains("\"mode\""),
+            "JSON should not contain 'mode' when None"
+        );
+    }
+
+    #[test]
+    fn test_settings_mode_serde_values() {
+        // Deserialize
+        let neural: IndexMode = serde_json::from_str("\"neuralSearch\"").unwrap();
+        assert_eq!(neural, IndexMode::NeuralSearch);
+
+        let keyword: IndexMode = serde_json::from_str("\"keywordSearch\"").unwrap();
+        assert_eq!(keyword, IndexMode::KeywordSearch);
+
+        // Serialize
+        assert_eq!(
+            serde_json::to_string(&IndexMode::NeuralSearch).unwrap(),
+            "\"neuralSearch\""
+        );
+        assert_eq!(
+            serde_json::to_string(&IndexMode::KeywordSearch).unwrap(),
+            "\"keywordSearch\""
+        );
+    }
+
+    #[test]
+    fn test_settings_mode_backward_compat() {
+        let json = r#"{"queryType":"prefixAll","hitsPerPage":10}"#;
+        let settings: IndexSettings = serde_json::from_str(json).unwrap();
+        assert!(settings.mode.is_none());
+        assert_eq!(settings.query_type, "prefixAll");
+    }
+
+    #[test]
+    fn test_settings_semantic_search_default_none() {
+        let settings = IndexSettings::default();
+        assert!(settings.semantic_search.is_none());
+    }
+
+    #[test]
+    fn test_settings_semantic_search_roundtrip() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("settings.json");
+
+        let original = IndexSettings {
+            semantic_search: Some(SemanticSearchSettings {
+                event_sources: Some(vec!["idx1".to_string(), "idx2".to_string()]),
+            }),
+            ..Default::default()
+        };
+
+        original.save(&path).unwrap();
+        let loaded = IndexSettings::load(&path).unwrap();
+
+        let ss = loaded
+            .semantic_search
+            .expect("semantic_search should survive roundtrip");
+        assert_eq!(
+            ss.event_sources,
+            Some(vec!["idx1".to_string(), "idx2".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_settings_semantic_search_event_sources() {
+        let ss = SemanticSearchSettings {
+            event_sources: Some(vec!["idx1".to_string()]),
+        };
+        let json_str = serde_json::to_string(&ss).unwrap();
+        assert!(
+            json_str.contains("eventSources"),
+            "should use camelCase: {}",
+            json_str
+        );
+        assert!(
+            !json_str.contains("event_sources"),
+            "should not use snake_case: {}",
+            json_str
+        );
+
+        // Roundtrip
+        let deserialized: SemanticSearchSettings = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(deserialized.event_sources, Some(vec!["idx1".to_string()]));
+    }
+
+    #[test]
+    fn test_settings_is_neural_search_active() {
+        let mut settings = IndexSettings::default();
+        assert!(
+            !settings.is_neural_search_active(),
+            "default should not be neural"
+        );
+
+        settings.mode = Some(IndexMode::KeywordSearch);
+        assert!(
+            !settings.is_neural_search_active(),
+            "keywordSearch should not be neural"
+        );
+
+        settings.mode = Some(IndexMode::NeuralSearch);
+        assert!(
+            settings.is_neural_search_active(),
+            "neuralSearch should be neural"
+        );
+    }
 }

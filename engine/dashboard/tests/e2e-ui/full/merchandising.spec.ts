@@ -18,6 +18,7 @@
  */
 import { test, expect } from '../../fixtures/auth.fixture';
 import { API_BASE, API_HEADERS, TEST_INDEX } from '../helpers';
+import { getRules, deleteRule } from '../../fixtures/api-helpers';
 
 const MERCH_URL = `/index/${TEST_INDEX}/merchandising`;
 
@@ -51,7 +52,7 @@ test.describe('Merchandising Studio', () => {
     await expect(firstCard).toBeVisible({ timeout: 10_000 });
 
     const pinButton = firstCard.getByRole('button', { name: /pin/i }).or(
-      firstCard.locator('button[title*="Pin"]')
+      firstCard.getByRole('button', { name: /Pin/ })
     );
     await expect(pinButton.first()).toBeVisible();
   });
@@ -64,7 +65,7 @@ test.describe('Merchandising Studio', () => {
     const firstCard = page.getByTestId('merch-card').first();
     await expect(firstCard).toBeVisible({ timeout: 10_000 });
 
-    const hideButton = firstCard.locator('button[title="Hide from results"]');
+    const hideButton = firstCard.getByRole('button', { name: 'Hide from results' });
     await expect(hideButton).toBeVisible();
   });
 
@@ -80,7 +81,7 @@ test.describe('Merchandising Studio', () => {
     if (cardCount >= 2) {
       const secondCard = cards.nth(1);
 
-      const pinBtn = secondCard.locator('button[title*="Pin"]').or(
+      const pinBtn = secondCard.getByRole('button', { name: /Pin/ }).or(
         secondCard.getByRole('button', { name: /pin/i })
       );
       await pinBtn.first().click();
@@ -105,7 +106,7 @@ test.describe('Merchandising Studio', () => {
     await expect(cards.first()).toBeVisible({ timeout: 10_000 });
 
     const firstCard = cards.first();
-    const hideBtn = firstCard.locator('button[title="Hide from results"]');
+    const hideBtn = firstCard.getByRole('button', { name: 'Hide from results' });
     await hideBtn.click();
 
     await expect(page.getByText(/1 hidden/i).first()).toBeVisible({ timeout: 5_000 });
@@ -131,7 +132,7 @@ test.describe('Merchandising Studio', () => {
     if (cardCount >= 2) {
       // Pin first card
       const firstCard = cards.first();
-      const pinBtn = firstCard.locator('button[title*="Pin"]').or(
+      const pinBtn = firstCard.getByRole('button', { name: /Pin/ }).or(
         firstCard.getByRole('button', { name: /pin/i })
       );
       await pinBtn.first().click();
@@ -139,7 +140,7 @@ test.describe('Merchandising Studio', () => {
 
       // Hide second card
       const secondCard = cards.nth(1);
-      const hideBtn = secondCard.locator('button[title="Hide from results"]');
+      const hideBtn = secondCard.getByRole('button', { name: 'Hide from results' });
       await hideBtn.click();
       await expect(page.getByText(/1 hidden/i).first()).toBeVisible({ timeout: 5_000 });
 
@@ -162,7 +163,7 @@ test.describe('Merchandising Studio', () => {
 
     // Pin the first result
     const firstCard = cards.first();
-    const pinBtn = firstCard.locator('button[title*="Pin"]').or(
+    const pinBtn = firstCard.getByRole('button', { name: /Pin/ }).or(
       firstCard.getByRole('button', { name: /pin/i })
     );
     await pinBtn.first().click();
@@ -184,23 +185,11 @@ test.describe('Merchandising Studio', () => {
     await expect(page.getByText('Rules').first()).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(/monitor/).first()).toBeVisible({ timeout: 10_000 });
 
-    // Cleanup
-    const rulesRes = await request.get(
-      `${API_BASE}/1/indexes/${TEST_INDEX}/rules`,
-      { headers: API_HEADERS }
-    );
-    if (rulesRes.ok()) {
-      const rules = await rulesRes.json();
-      const items = rules.hits || rules.items || rules;
-      if (Array.isArray(items)) {
-        for (const rule of items) {
-          if (rule.objectID?.startsWith('merch-')) {
-            await request.delete(
-              `${API_BASE}/1/indexes/${TEST_INDEX}/rules/${rule.objectID}`,
-              { headers: API_HEADERS }
-            );
-          }
-        }
+    // Cleanup — delete merch-created rules
+    const { items } = await getRules(request, TEST_INDEX);
+    for (const rule of items) {
+      if (rule.objectID?.startsWith('merch-')) {
+        await deleteRule(request, TEST_INDEX, rule.objectID);
       }
     }
   });
@@ -300,18 +289,18 @@ test.describe('Merchandising Studio', () => {
 
     // Pin the first card
     const firstCard = cards.first();
-    const pinBtn = firstCard.locator('button[title*="Pin"]').or(
+    const pinBtn = firstCard.getByRole('button', { name: /Pin/ }).or(
       firstCard.getByRole('button', { name: /pin/i })
     );
     await pinBtn.first().click();
     await expect(page.getByText(/Pinned #/i).first()).toBeVisible({ timeout: 5_000 });
 
     // Move down button should be visible for pinned items
-    const moveDownBtn = page.locator('button[title="Move down"]').first();
+    const moveDownBtn = page.getByRole('button', { name: 'Move down' }).first();
     await expect(moveDownBtn).toBeVisible();
 
     // Move up button should be visible too
-    const moveUpBtn = page.locator('button[title="Move up"]').first();
+    const moveUpBtn = page.getByRole('button', { name: 'Move up' }).first();
     await expect(moveUpBtn).toBeVisible();
 
     // Click move down

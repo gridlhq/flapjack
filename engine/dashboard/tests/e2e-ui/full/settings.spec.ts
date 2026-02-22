@@ -23,6 +23,7 @@
  */
 import { test, expect } from '../../fixtures/auth.fixture';
 import { API_BASE, API_HEADERS, TEST_INDEX } from '../helpers';
+import { getSettings, updateSettings } from '../../fixtures/api-helpers';
 
 test.describe('Settings Page', () => {
 
@@ -59,13 +60,8 @@ test.describe('Settings Page', () => {
     await expect(jsonToggle).toBeVisible();
     await jsonToggle.click();
 
-    const editor = page.locator('.monaco-editor').or(page.getByText('Loading editor...'));
-    await expect(editor).toBeVisible({ timeout: 15000 });
-
-    const monacoEditor = page.locator('.monaco-editor');
-    if (await monacoEditor.isVisible({ timeout: 10000 }).catch(() => false)) {
-      await expect(monacoEditor.getByText(/searchableAttributes/)).toBeVisible({ timeout: 5000 });
-    }
+    // After toggling, the settings JSON should be visible containing searchableAttributes
+    await expect(page.getByText(/searchableAttributes/).first()).toBeVisible({ timeout: 15_000 });
 
     await jsonToggle.click();
     await expect(page.getByText('Search Behavior').first()).toBeVisible({ timeout: 10000 });
@@ -124,20 +120,17 @@ test.describe('Settings Page', () => {
   test('Reset button appears after form modification and reverts changes', async ({ page }) => {
     await expect(page.getByText('Search Behavior').first()).toBeVisible({ timeout: 10000 });
 
-    // Wait for settings to fully load — chips should be rendered
-    await expect(page.locator('button.rounded-full').first()).toBeVisible({ timeout: 10_000 });
+    // Wait for settings to fully load — seeded "tags" attribute chip should be rendered
+    // Use .first() because "tags" chip appears in multiple settings sections
+    const tagsChip = page.getByTestId('attr-chip-tags').first();
+    await expect(tagsChip).toBeVisible({ timeout: 10_000 });
 
     // Reset button should NOT be visible initially (no changes made)
     await expect(page.getByRole('button', { name: /reset/i })).not.toBeVisible();
     await expect(page.getByRole('button', { name: /save/i })).not.toBeVisible();
 
-    // Modify the form by clicking a searchable attribute chip to deselect it
-    // Try 'tags' first, fall back to any available chip
-    const tagsChip = page.locator('button.rounded-full').filter({ hasText: /^tags$/ });
-    const anyChip = page.locator('button.rounded-full').first();
-    const chipToClick = await tagsChip.isVisible({ timeout: 3_000 }).catch(() => false) ? tagsChip : anyChip;
-    await expect(chipToClick).toBeVisible({ timeout: 5_000 });
-    await chipToClick.click();
+    // Modify the form by clicking the "tags" attribute chip to deselect it
+    await tagsChip.click();
 
     // Reset and Save buttons should now be visible
     const resetBtn = page.getByRole('button', { name: /reset/i });
@@ -159,38 +152,35 @@ test.describe('Settings Page', () => {
     await expect(page.getByText('Search Behavior').first()).toBeVisible({ timeout: 10000 });
 
     // Get the current settings via API to restore later
-    const originalRes = await request.get(
-      `${API_BASE}/1/indexes/${TEST_INDEX}/settings`,
-      { headers: API_HEADERS }
-    );
-    const originalSettings = await originalRes.json();
+    const originalSettings = await getSettings(request, TEST_INDEX);
 
-    // Look for a textarea or input for custom ranking to modify
-    const customRankingSection = page.getByText('Custom Ranking').first();
-    await expect(customRankingSection).toBeVisible();
+    // Wait for seeded attributes to load
+    // Use .first() because "tags" chip appears in multiple settings sections
+    const tagsChip = page.getByTestId('attr-chip-tags').first();
+    await expect(tagsChip).toBeVisible({ timeout: 10_000 });
 
-    // Try to find a Save button — if the form is read-only until modified, we need to modify first
-    // Add a searchable attribute via the form
-    const searchableSection = page.getByText('Searchable Attributes').first();
-    await expect(searchableSection).toBeVisible();
+    // Click "tags" to deselect it (triggers dirty state)
+    await tagsChip.click();
 
-    // Look for an "Add" button near searchable attributes
-    const addAttrBtn = page.getByRole('button', { name: /add/i }).first();
-    if (await addAttrBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-      // Some form implementations have an add button
-      // For now, verify Save button becomes visible after form interaction
-    }
-
-    // Verify Save button exists (may be disabled until changes are made)
+    // Save button should now be visible
     const saveBtn = page.getByRole('button', { name: /save/i });
-    if (await saveBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
-      await expect(saveBtn).toBeVisible();
-    }
+    await expect(saveBtn).toBeVisible({ timeout: 5_000 });
 
-    // Restore original settings via API to be safe
-    await request.patch(
-      `${API_BASE}/1/indexes/${TEST_INDEX}/settings`,
-      { headers: API_HEADERS, data: originalSettings }
+    // Click Save and wait for the API response
+    const responsePromise = page.waitForResponse(
+      resp => resp.url().includes('/settings') && (resp.status() === 200 || resp.status() === 202),
+      { timeout: 15_000 }
     );
+    await saveBtn.click();
+    await responsePromise;
+
+    // After save, reload page and verify the change persisted
+    await page.reload();
+    await expect(page.getByRole('heading', { name: /settings/i })).toBeVisible({ timeout: 10_000 });
+    // "tags" should no longer be selected (verify it's in deselected state)
+    await expect(page.getByText('tags').first()).toBeVisible({ timeout: 10_000 });
+
+    // Restore original settings via API
+    await updateSettings(request, TEST_INDEX, originalSettings);
   });
 });

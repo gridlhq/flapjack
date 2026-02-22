@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { Home, Key, Activity, ArrowRightLeft, ScrollText, X, Database, ChevronDown, ChevronRight } from 'lucide-react';
+import { Home, Key, Activity, ArrowRightLeft, ScrollText, X, Database, ChevronDown, ChevronRight, Lightbulb, BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useEffect, useState } from 'react';
 import { useIndexes } from '@/hooks/useIndexes';
@@ -15,6 +15,9 @@ const navItems = [
   { to: '/logs', icon: ScrollText, label: 'API Logs' },
   { to: '/migrate', icon: ArrowRightLeft, label: 'Migrate' },
   { to: '/keys', icon: Key, label: 'API Keys' },
+  { to: '/query-suggestions', icon: Lightbulb, label: 'Query Suggestions' },
+  { to: '/experiments', icon: Database, label: 'Experiments' },
+  { to: '/metrics', icon: BarChart3, label: 'Metrics' },
   { to: '/system', icon: Activity, label: 'System' },
 ];
 
@@ -28,7 +31,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   // Close sidebar on route change (mobile)
   useEffect(() => {
     onClose?.();
-  }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [location.pathname]); // intentionally omit onClose to avoid re-triggering on ref changes
 
   const visibleIndexes = showAllIndexes
     ? indexes

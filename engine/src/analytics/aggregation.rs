@@ -94,3 +94,72 @@ impl QueryAggregator {
             .retain(|_, v| v.last_seen.elapsed().as_secs() < cutoff_secs);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn first_search_always_counted() {
+        let agg = QueryAggregator::new(30);
+        assert!(agg.should_count("user1", "idx", "laptop"));
+    }
+
+    #[test]
+    fn rapid_keystroke_not_counted() {
+        let agg = QueryAggregator::new(30);
+        assert!(agg.should_count("user1", "idx", "l"));
+        assert!(!agg.should_count("user1", "idx", "la"));
+        assert!(!agg.should_count("user1", "idx", "lap"));
+        assert!(!agg.should_count("user1", "idx", "lapt"));
+    }
+
+    #[test]
+    fn different_users_both_counted() {
+        let agg = QueryAggregator::new(30);
+        assert!(agg.should_count("user1", "idx", "laptop"));
+        assert!(agg.should_count("user2", "idx", "laptop"));
+    }
+
+    #[test]
+    fn different_indexes_both_counted() {
+        let agg = QueryAggregator::new(30);
+        assert!(agg.should_count("user1", "idx_a", "laptop"));
+        assert!(agg.should_count("user1", "idx_b", "laptop"));
+    }
+
+    #[test]
+    fn pagination_dedup_same_query_same_filters() {
+        let agg = QueryAggregator::new(30);
+        assert!(agg.should_count_with_filters("user1", "idx", "laptop", Some("brand:Apple")));
+        // Same query + same filters = pagination, not a new search
+        assert!(!agg.should_count_with_filters("user1", "idx", "laptop", Some("brand:Apple")));
+    }
+
+    #[test]
+    fn different_filters_not_deduped() {
+        let agg = QueryAggregator::new(30);
+        assert!(agg.should_count_with_filters("user1", "idx", "laptop", Some("brand:Apple")));
+        // Different filters = different search, but within window → still not counted (typing continuation)
+        assert!(!agg.should_count_with_filters("user1", "idx", "laptop", Some("brand:Samsung")));
+    }
+
+    #[test]
+    fn evict_expired_cleans_up() {
+        let agg = QueryAggregator::new(0); // 0-second window = everything expires immediately
+        agg.should_count("user1", "idx", "laptop");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        agg.evict_expired();
+        // After eviction, new search from same user should count again
+        assert!(agg.should_count("user1", "idx", "phone"));
+    }
+
+    #[test]
+    fn zero_window_new_search_after_expiry() {
+        let agg = QueryAggregator::new(0);
+        assert!(agg.should_count("user1", "idx", "laptop"));
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        // Window expired, so this should count as a new search
+        assert!(agg.should_count("user1", "idx", "phone"));
+    }
+}

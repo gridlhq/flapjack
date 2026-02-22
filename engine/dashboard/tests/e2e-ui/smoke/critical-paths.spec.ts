@@ -6,8 +6,8 @@
  * and analytics data via seed.setup.ts.
  *
  * Prerequisites:
- * - Flapjack server running on port 7700
- * - Vite dev server on port 5177 (proxying API to 7700)
+ * - Flapjack server running on the repo-local configured backend port
+ * - Vite dev server on the repo-local configured dashboard port
  * - Auth pre-seeded via auth fixture (localStorage)
  *
  * Per AI_TESTING_METHODOLOGY.md:
@@ -17,6 +17,7 @@
  * - No hardcoded sleeps — use Playwright auto-waiting
  */
 import { test, expect } from '../../fixtures/auth.fixture';
+import { deleteIndex } from '../../fixtures/api-helpers';
 
 const TEST_INDEX = 'e2e-products';
 const TEMP_INDEX = 'e2e-temp';
@@ -45,7 +46,8 @@ test.describe('Smoke Tests', () => {
 
     // The indexes stat should show at least 1 (the seeded index)
     const indexesCard = page.getByTestId('stat-card-indexes');
-    await expect(indexesCard.locator('.text-2xl')).not.toHaveText('0');
+    const indexCount = await indexesCard.getByTestId('stat-value').textContent();
+    expect(Number(indexCount)).toBeGreaterThanOrEqual(1);
   });
 
   // ===========================================================================
@@ -66,11 +68,11 @@ test.describe('Smoke Tests', () => {
     await searchInput.press('Enter');
 
     // Verify results appear — seeded data includes products matching "laptop"
-    const resultsPanel = page.locator('[data-testid="results-panel"]');
+    const resultsPanel = page.getByTestId('results-panel');
     await expect(resultsPanel).toBeVisible({ timeout: 10000 });
 
     // Verify at least one document card rendered with real data
-    await expect(resultsPanel.locator('[data-testid="document-card"]').first()).toBeVisible({ timeout: 10000 });
+    await expect(resultsPanel.getByTestId('document-card').first()).toBeVisible({ timeout: 10000 });
 
     // Verify result count text shows "results" somewhere in the panel
     await expect(resultsPanel.getByText('results').first()).toBeVisible();
@@ -136,7 +138,7 @@ test.describe('Smoke Tests', () => {
     await expect(page.getByRole('button', { name: 'Create Key' }).or(page.getByRole('button', { name: 'Create Your First Key' })).first()).toBeVisible();
 
     // The keys list section should be visible (either key cards or empty state)
-    // The seeded admin key (fj_devtestadminkey000000) should have created at least
+    // The seeded admin key should have created at least
     // one key entry, or there should be a "no keys" message with a create prompt
     const keysList = page.getByTestId('keys-list');
     const emptyState = page.getByText(/no.*key/i);
@@ -168,7 +170,7 @@ test.describe('Smoke Tests', () => {
   // ===========================================================================
   // SMOKE 7: Create and delete index
   // ===========================================================================
-  test('Create and delete index', async ({ page }) => {
+  test('Create and delete index', async ({ page, request }) => {
     // Clean up the temp index first in case a previous test run left it
     // (the cleanup.setup.ts handles this too, but be safe)
     await page.goto('/overview');
@@ -199,7 +201,7 @@ test.describe('Smoke Tests', () => {
         const nextBtn = page.getByRole('button', { name: /next/i });
         if (await nextBtn.isEnabled()) {
           await nextBtn.click();
-          await page.waitForTimeout(500);
+          await expect(nextBtn).toBeVisible({ timeout: 1000 });
         } else {
           break; // no more pages
         }
@@ -223,22 +225,7 @@ test.describe('Smoke Tests', () => {
       await expect(sidebar.getByText(TEMP_INDEX)).not.toBeVisible({ timeout: 10000 });
     } finally {
       // Cleanup: ensure e2e-temp is deleted even if the test fails mid-way
-      // Use the API directly for reliable cleanup
-      try {
-        await page.request.delete(
-          `http://localhost:7700/1/indexes/${TEMP_INDEX}`,
-          {
-            headers: {
-              'x-algolia-application-id': 'flapjack',
-              'x-algolia-api-key': 'fj_devtestadminkey000000',
-              'Content-Type': 'application/json',
-            },
-          }
-        );
-        // Ignore errors — the index may already be deleted
-      } catch {
-        // Cleanup is best-effort
-      }
+      await deleteIndex(request, TEMP_INDEX);
     }
   });
 });

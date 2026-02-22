@@ -37,3 +37,15 @@ pub struct ReplicationStatus {
     pub replication_enabled: bool,
     pub peer_count: usize,
 }
+
+/// Health status of a single peer, derived from last_success tracking and circuit breaker.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeerHealthStatus {
+    pub peer_id: String,
+    pub addr: String,
+    /// Seconds since last successful replication. None = never contacted.
+    pub last_success_secs_ago: Option<u64>,
+    /// "healthy" (<60s), "stale" (60-300s), "unhealthy" (>300s),
+    /// "circuit_open" (circuit breaker tripped), "never_contacted"
+    pub status: String,
+}

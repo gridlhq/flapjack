@@ -167,7 +167,7 @@ export function Overview() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{indexes?.length || 0}</div>
+            <div className="text-2xl font-bold" data-testid="stat-value">{indexes?.length || 0}</div>
           </CardContent>
         </Card>
         <Card data-testid="stat-card-documents">
@@ -177,7 +177,7 @@ export function Overview() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalDocs.toLocaleString()}</div>
+            <div className="text-2xl font-bold" data-testid="stat-value">{totalDocs.toLocaleString()}</div>
           </CardContent>
         </Card>
         <Card data-testid="stat-card-storage">
@@ -187,7 +187,7 @@ export function Overview() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatBytes(totalSize)}</div>
+            <div className="text-2xl font-bold" data-testid="stat-value">{formatBytes(totalSize)}</div>
           </CardContent>
         </Card>
         <Card data-testid="stat-card-status">
@@ -266,7 +266,7 @@ export function Overview() {
                   />
                 </div>
                 {overview?.dates?.length > 0 && (
-                  <div className="h-32">
+                  <div className="h-32" data-testid="overview-analytics-chart">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={overview.dates}>
                         <defs>

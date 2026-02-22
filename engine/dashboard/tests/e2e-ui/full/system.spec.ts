@@ -6,9 +6,9 @@
  * The System page has 4 tabs: Health, Indexes, Replication, Snapshots.
  *
  * Pre-requisites:
- *   - Flapjack server running on port 7700
+ *   - Flapjack server running on the repo-local configured backend port
  *   - `e2e-products` index seeded with 12 products (via seed.setup.ts)
- *   - Vite dev server on localhost:5177
+ *   - Vite dev server on the repo-local configured dashboard port
  *
  * Covers:
  *   Health tab:
@@ -17,6 +17,11 @@
  *   - Facet cache card with numeric values
  *   - Index health summary with green dots
  *   - Auto-refresh notice
+ *   - Version badge with build profile
+ *   - Uptime card with time value
+ *   - Tenants loaded card with count >= 1
+ *   - Memory card with heap usage and progress bar
+ *   - Pressure level indicator (Normal/Elevated/Critical)
  *
  *   Indexes tab:
  *   - e2e-products index visible with document count (12)
@@ -91,6 +96,52 @@ test.describe('System Page', () => {
     await expect(page.getByText('Auto-refreshes every 5 seconds')).toBeVisible({ timeout: 10_000 });
   });
 
+  test('Health tab shows version badge with build profile', async ({ page }) => {
+    const versionBadge = page.getByTestId('health-version');
+    await expect(versionBadge).toBeVisible({ timeout: 15_000 });
+    const text = await versionBadge.textContent();
+    // Should contain a semver-style version like "0.1.0" or "0.1.0 · release"
+    expect(text).toMatch(/\d+\.\d+\.\d+/);
+  });
+
+  test('Health tab shows uptime card with time value', async ({ page }) => {
+    const uptimeCard = page.getByTestId('health-uptime');
+    await expect(uptimeCard).toBeVisible({ timeout: 15_000 });
+    await expect(uptimeCard.getByText('Uptime')).toBeVisible();
+    // Uptime value should contain a time format like "5m 30s", "1h 2m", "2s"
+    const valueEl = uptimeCard.getByTestId('stat-value');
+    await expect(valueEl).toBeVisible();
+    const value = await valueEl.textContent();
+    expect(value).toMatch(/\d+[smhd]/);
+  });
+
+  test('Health tab shows tenants loaded card', async ({ page }) => {
+    const tenantsCard = page.getByTestId('health-tenants-loaded');
+    await expect(tenantsCard).toBeVisible({ timeout: 15_000 });
+    await expect(tenantsCard.getByText('Tenants Loaded')).toBeVisible();
+    const valueEl = tenantsCard.getByTestId('stat-value');
+    const value = await valueEl.textContent();
+    expect(Number(value?.replace(/,/g, ''))).toBeGreaterThanOrEqual(1);
+  });
+
+  test('Health tab shows memory card with heap usage and progress bar', async ({ page }) => {
+    const memoryCard = page.getByTestId('health-memory');
+    await expect(memoryCard).toBeVisible({ timeout: 15_000 });
+    await expect(memoryCard.getByText('Memory')).toBeVisible();
+    // Format: "N MB / M MB (X%)"
+    const valueEl = memoryCard.getByTestId('stat-value');
+    const value = await valueEl.textContent();
+    expect(value).toMatch(/\d+\s*MB\s*\/\s*\d+\s*MB\s*\(\d+%\)/);
+  });
+
+  test('Health tab shows pressure level indicator', async ({ page }) => {
+    const pressure = page.getByTestId('health-pressure');
+    await expect(pressure).toBeVisible({ timeout: 15_000 });
+    const text = await pressure.textContent();
+    // Pressure level should be one of: Normal, Elevated, Critical
+    expect(['Normal', 'Elevated', 'Critical']).toContain(text?.trim());
+  });
+
   // =========================================================================
   // Indexes Tab
   // =========================================================================
@@ -101,8 +152,11 @@ test.describe('System Page', () => {
     const indexLink = page.getByTestId('index-link-e2e-products');
     await expect(indexLink).toBeVisible({ timeout: 15_000 });
 
-    // Row should show 12 documents (seeded products)
-    await expect(page.getByText('12').first()).toBeVisible();
+    // Doc count cell should show 12 (seeded products)
+    const docCountCell = page.getByTestId('index-doc-count-e2e-products');
+    await expect(docCountCell).toBeVisible();
+    const docCountText = await docCountCell.textContent();
+    expect(Number(docCountText?.replace(/,/g, ''))).toBeGreaterThanOrEqual(12);
   });
 
   test('Indexes tab shows total indexes, documents, and storage cards', async ({ page }) => {
@@ -112,21 +166,23 @@ test.describe('System Page', () => {
     const totalIndexesCard = page.getByTestId('indexes-total-count');
     await expect(totalIndexesCard).toBeVisible({ timeout: 15_000 });
     await expect(totalIndexesCard.getByText('Total Indexes')).toBeVisible();
-    await expect(totalIndexesCard.locator('p.text-2xl')).not.toHaveText('0');
+    const indexCountText = await totalIndexesCard.getByTestId('stat-value').textContent();
+    expect(Number(indexCountText)).toBeGreaterThanOrEqual(1);
 
     // Total Documents card
     const totalDocsCard = page.getByTestId('indexes-total-docs');
     await expect(totalDocsCard).toBeVisible();
     await expect(totalDocsCard.getByText('Total Documents')).toBeVisible();
-    await expect(totalDocsCard.locator('p.text-2xl')).not.toHaveText('0');
+    const docCountText = await totalDocsCard.getByTestId('stat-value').textContent();
+    expect(Number(docCountText?.replace(/,/g, ''))).toBeGreaterThanOrEqual(12);
 
     // Total Storage card
     const totalStorageCard = page.getByTestId('indexes-total-storage');
     await expect(totalStorageCard).toBeVisible();
     await expect(totalStorageCard.getByText('Total Storage')).toBeVisible();
-    const storageText = await totalStorageCard.locator('p.text-2xl').textContent();
+    const storageText = await totalStorageCard.getByTestId('stat-value').textContent();
     expect(storageText).toBeTruthy();
-    expect(storageText).not.toBe('0 B');
+    expect(storageText).not.toBe('0 Bytes');
   });
 
   test('Indexes tab shows health status column for each index', async ({ page }) => {
@@ -158,18 +214,22 @@ test.describe('System Page', () => {
     const nodeIdHeading = page.getByRole('heading', { name: /node id/i });
     await expect(nodeIdHeading).toBeVisible({ timeout: 15_000 });
 
-    // The Node ID value is displayed in a font-mono paragraph
-    await expect(page.locator('p.font-mono').first()).toBeVisible();
+    // The Node ID value is displayed with a data-testid
+    const nodeIdValue = page.getByTestId('node-id-value');
+    await expect(nodeIdValue).toBeVisible();
+    const nodeIdText = await nodeIdValue.textContent();
+    expect(nodeIdText).toBeTruthy();
   });
 
   test('Replication tab shows replication enabled/disabled status', async ({ page }) => {
     await page.getByRole('tab', { name: /replication/i }).click();
 
-    // Should show either "Enabled" or "Disabled" as a large text value
-    const enabledText = page.getByText('Enabled', { exact: true });
-    const disabledText = page.getByText('Disabled', { exact: true });
-
-    await expect(enabledText.or(disabledText)).toBeVisible({ timeout: 15_000 });
+    // Replication status should be visible and show actual state
+    const replicationStatus = page.getByTestId('replication-status');
+    await expect(replicationStatus).toBeVisible({ timeout: 15_000 });
+    const statusText = await replicationStatus.textContent();
+    // Status must be one of the valid values — not empty or unknown
+    expect(['Enabled', 'Disabled']).toContain(statusText?.trim());
   });
 
   test('Replication tab shows auto-refresh notice', async ({ page }) => {

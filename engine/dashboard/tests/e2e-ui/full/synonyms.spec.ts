@@ -17,7 +17,8 @@
  * - Synonym card structure
  */
 import { test, expect } from '../../fixtures/auth.fixture';
-import { API_BASE, API_HEADERS, TEST_INDEX } from '../helpers';
+import { TEST_INDEX } from '../helpers';
+import { createSynonym, deleteSynonym } from '../../fixtures/api-helpers';
 
 const SYNONYMS_URL = `/index/${TEST_INDEX}/synonyms`;
 
@@ -66,18 +67,18 @@ test.describe('Synonyms', () => {
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText('Create Synonym')).toBeVisible();
 
-    const idInput = dialog.locator('input.font-mono').first();
+    const idInput = dialog.getByTestId('synonym-id-input');
     await idInput.clear();
     await idInput.fill('e2e-test-synonym');
 
-    const wordInputs = dialog.locator('input[placeholder^="Word"]');
+    const wordInputs = dialog.getByPlaceholder(/^Word/);
     await expect(wordInputs.first()).toBeVisible();
 
     await wordInputs.nth(0).fill('test');
     await wordInputs.nth(1).fill('testing');
 
     await dialog.getByRole('button', { name: /Add Word/i }).click();
-    const updatedInputs = dialog.locator('input[placeholder^="Word"]');
+    const updatedInputs = dialog.getByPlaceholder(/^Word/);
     await updatedInputs.nth(2).fill('qa');
 
     await dialog.getByRole('button', { name: /Create/i }).click();
@@ -103,11 +104,7 @@ test.describe('Synonyms', () => {
       input: 'phone',
       synonyms: ['telephone', 'cell'],
     };
-    const synRes = await request.put(
-      `${API_BASE}/1/indexes/${TEST_INDEX}/synonyms/${oneWaySynonym.objectID}`,
-      { headers: API_HEADERS, data: oneWaySynonym }
-    );
-    expect(synRes.ok(), `Failed to create one-way synonym: ${await synRes.text()}`).toBeTruthy();
+    await createSynonym(request, TEST_INDEX, oneWaySynonym);
 
     await page.reload();
     await expect(page.getByText('Synonyms').first()).toBeVisible({ timeout: 15_000 });
@@ -118,10 +115,7 @@ test.describe('Synonyms', () => {
     await expect(page.getByText('One-way').first()).toBeVisible({ timeout: 5_000 });
 
     // Cleanup via API
-    await request.delete(
-      `${API_BASE}/1/indexes/${TEST_INDEX}/synonyms/e2e-oneway-synonym`,
-      { headers: API_HEADERS }
-    ).catch(() => {});
+    await deleteSynonym(request, TEST_INDEX, 'e2e-oneway-synonym');
   });
 
   // ---------- Search/Filter ----------
@@ -150,7 +144,7 @@ test.describe('Synonyms', () => {
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText('Create Synonym')).toBeVisible();
 
-    const wordInputs = dialog.locator('input[placeholder^="Word"]');
+    const wordInputs = dialog.getByPlaceholder(/^Word/);
     await expect(wordInputs.first()).toBeVisible();
 
     await dialog.getByRole('button', { name: /Cancel/i }).click();
@@ -174,19 +168,13 @@ test.describe('Synonyms', () => {
       type: 'synonym' as const,
       synonyms: ['deletetest', 'removetest'],
     };
-    await request.put(
-      `${API_BASE}/1/indexes/${TEST_INDEX}/synonyms/${testSynonym.objectID}`,
-      { headers: API_HEADERS, data: testSynonym }
-    );
+    await createSynonym(request, TEST_INDEX, testSynonym);
 
     await page.reload();
     await expect(page.getByText('Synonyms').first()).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText('deletetest').first()).toBeVisible({ timeout: 10_000 });
 
-    await request.delete(
-      `${API_BASE}/1/indexes/${TEST_INDEX}/synonyms/${testSynonym.objectID}`,
-      { headers: API_HEADERS }
-    );
+    await deleteSynonym(request, TEST_INDEX, testSynonym.objectID);
 
     await page.reload();
     await expect(page.getByText('Synonyms').first()).toBeVisible({ timeout: 15_000 });

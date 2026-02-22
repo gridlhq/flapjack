@@ -8,16 +8,22 @@ import { Label } from '@/components/ui/label';
 import { SearchBox } from '@/components/search/SearchBox';
 import { ResultsPanel } from '@/components/search/ResultsPanel';
 import { FacetsPanel } from '@/components/search/FacetsPanel';
+import { HybridSearchControls } from '@/components/search/HybridSearchControls';
+import { VectorStatusBadge } from '@/components/search/VectorStatusBadge';
 import { AddDocumentsDialog } from '@/components/documents/AddDocumentsDialog';
 import { useIndexes } from '@/hooks/useIndexes';
+import { useSettings, useEmbedderNames } from '@/hooks/useSettings';
 import { formatBytes } from '@/lib/utils';
 import api from '@/lib/api';
-import type { SearchParams } from '@/lib/types';
+import type { SearchParams, HybridSearchParams } from '@/lib/types';
 
 export function SearchBrowse() {
   const { indexName } = useParams<{ indexName: string }>();
   const { data: indexes } = useIndexes();
+  const { data: settings } = useSettings(indexName || '');
+  const { embedderNames } = useEmbedderNames(indexName || '');
   const [trackAnalytics, setTrackAnalytics] = useState(false);
+  const [hybridParams, setHybridParams] = useState<HybridSearchParams | null>(null);
   const [searchParams, setSearchParams] = useState<SearchParams>({
     query: '',
     hitsPerPage: 20,
@@ -39,16 +45,20 @@ export function SearchBrowse() {
     return token;
   }, []);
 
-  // Merge analytics params into search params when tracking is on
+  // Merge analytics + hybrid params into search params
   const effectiveParams = useMemo<SearchParams>(() => {
-    if (!trackAnalytics) return searchParams;
-    return {
-      ...searchParams,
-      analytics: true,
-      clickAnalytics: true,
-      analyticsTags: ['source:dashboard'],
-    };
-  }, [searchParams, trackAnalytics]);
+    const base = trackAnalytics
+      ? { ...searchParams, analytics: true, clickAnalytics: true, analyticsTags: ['source:dashboard'] }
+      : searchParams;
+    if (hybridParams) return { ...base, hybrid: hybridParams };
+    return base;
+  }, [searchParams, trackAnalytics, hybridParams]);
+
+  const handleHybridChange = useCallback((updates: Partial<SearchParams>) => {
+    const hybrid = updates.hybrid;
+    // Null out when ratio is 0 — no point sending hybrid params for pure keyword search
+    setHybridParams(hybrid?.semanticRatio ? hybrid : null);
+  }, []);
 
   const handleParamsChange = useCallback((updates: Partial<SearchParams>) => {
     setSearchParams((prev) => ({
@@ -118,6 +128,10 @@ export function SearchBrowse() {
               {(currentIndex.entries || 0).toLocaleString()} docs
             </span>
           )}
+          <VectorStatusBadge
+            embedders={settings?.embedders}
+            mode={settings?.mode}
+          />
         </div>
         <div className="flex items-center gap-3">
           {/* Analytics tracking toggle */}
@@ -129,7 +143,7 @@ export function SearchBrowse() {
             />
             <Label htmlFor="track-analytics" className="text-sm cursor-pointer select-none flex items-center gap-1.5">
               {trackAnalytics && (
-                <Circle className="h-2 w-2 fill-red-500 text-red-500 animate-pulse" />
+                <Circle className="h-2 w-2 fill-red-500 text-red-500 animate-pulse" data-testid="recording-indicator" />
               )}
               Track Analytics
             </Label>
@@ -172,6 +186,11 @@ export function SearchBrowse() {
         indexName={indexName}
         params={searchParams}
         onParamsChange={handleParamsChange}
+      />
+
+      <HybridSearchControls
+        embedderNames={embedderNames}
+        onParamsChange={handleHybridChange}
       />
 
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4 min-h-0">

@@ -273,3 +273,345 @@ impl FilterCompiler {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::index::schema::SchemaBuilder;
+    use crate::types::FieldValue;
+
+    fn make_compiler() -> FilterCompiler {
+        let schema = SchemaBuilder::new().build();
+        let tantivy = schema.to_tantivy();
+        FilterCompiler::new(tantivy)
+    }
+
+    // ── count_clauses ───────────────────────────────────────────────────
+
+    #[test]
+    fn count_clauses_single_equals() {
+        let c = make_compiler();
+        let f = Filter::Equals {
+            field: "x".into(),
+            value: FieldValue::Integer(1),
+        };
+        assert_eq!(c.count_clauses(&f), 1);
+    }
+
+    #[test]
+    fn count_clauses_and_of_three() {
+        let c = make_compiler();
+        let f = Filter::And(vec![
+            Filter::Equals {
+                field: "a".into(),
+                value: FieldValue::Integer(1),
+            },
+            Filter::Equals {
+                field: "b".into(),
+                value: FieldValue::Integer(2),
+            },
+            Filter::Equals {
+                field: "c".into(),
+                value: FieldValue::Integer(3),
+            },
+        ]);
+        assert_eq!(c.count_clauses(&f), 3);
+    }
+
+    #[test]
+    fn count_clauses_nested() {
+        let c = make_compiler();
+        let f = Filter::And(vec![
+            Filter::Or(vec![
+                Filter::Equals {
+                    field: "a".into(),
+                    value: FieldValue::Integer(1),
+                },
+                Filter::Equals {
+                    field: "b".into(),
+                    value: FieldValue::Integer(2),
+                },
+            ]),
+            Filter::Not(Box::new(Filter::Equals {
+                field: "c".into(),
+                value: FieldValue::Integer(3),
+            })),
+        ]);
+        assert_eq!(c.count_clauses(&f), 3);
+    }
+
+    // ── has_not ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn has_not_simple_equals_false() {
+        let c = make_compiler();
+        let f = Filter::Equals {
+            field: "x".into(),
+            value: FieldValue::Integer(1),
+        };
+        assert!(!c.has_not(&f));
+    }
+
+    #[test]
+    fn has_not_with_not_true() {
+        let c = make_compiler();
+        let f = Filter::Not(Box::new(Filter::Equals {
+            field: "x".into(),
+            value: FieldValue::Integer(1),
+        }));
+        assert!(c.has_not(&f));
+    }
+
+    #[test]
+    fn has_not_with_not_equals_true() {
+        let c = make_compiler();
+        let f = Filter::NotEquals {
+            field: "x".into(),
+            value: FieldValue::Integer(1),
+        };
+        assert!(c.has_not(&f));
+    }
+
+    #[test]
+    fn has_not_nested_in_and() {
+        let c = make_compiler();
+        let f = Filter::And(vec![
+            Filter::Equals {
+                field: "a".into(),
+                value: FieldValue::Integer(1),
+            },
+            Filter::NotEquals {
+                field: "b".into(),
+                value: FieldValue::Integer(2),
+            },
+        ]);
+        assert!(c.has_not(&f));
+    }
+
+    // ── to_query_string ─────────────────────────────────────────────────
+
+    #[test]
+    fn query_string_integer_equals() {
+        let c = make_compiler();
+        let f = Filter::Equals {
+            field: "price".into(),
+            value: FieldValue::Integer(42),
+        };
+        let qs = c.to_query_string(&f).unwrap();
+        assert_eq!(qs, "_json_filter.price:[42 TO 42]");
+    }
+
+    #[test]
+    fn query_string_text_equals() {
+        let c = make_compiler();
+        let f = Filter::Equals {
+            field: "color".into(),
+            value: FieldValue::Text("red".into()),
+        };
+        let qs = c.to_query_string(&f).unwrap();
+        assert_eq!(qs, "_json_filter.color:red");
+    }
+
+    #[test]
+    fn query_string_text_with_space_quoted() {
+        let c = make_compiler();
+        let f = Filter::Equals {
+            field: "color".into(),
+            value: FieldValue::Text("dark red".into()),
+        };
+        let qs = c.to_query_string(&f).unwrap();
+        assert_eq!(qs, "_json_filter.color:\"dark red\"");
+    }
+
+    #[test]
+    fn query_string_range() {
+        let c = make_compiler();
+        let f = Filter::Range {
+            field: "price".into(),
+            min: 10.0,
+            max: 100.0,
+        };
+        let qs = c.to_query_string(&f).unwrap();
+        assert_eq!(qs, "_json_filter.price:[10 TO 100]");
+    }
+
+    #[test]
+    fn query_string_gte() {
+        let c = make_compiler();
+        let f = Filter::GreaterThanOrEqual {
+            field: "age".into(),
+            value: FieldValue::Integer(18),
+        };
+        let qs = c.to_query_string(&f).unwrap();
+        assert_eq!(qs, "_json_filter.age:[18 TO *]");
+    }
+
+    #[test]
+    fn query_string_lte() {
+        let c = make_compiler();
+        let f = Filter::LessThanOrEqual {
+            field: "age".into(),
+            value: FieldValue::Integer(65),
+        };
+        let qs = c.to_query_string(&f).unwrap();
+        assert_eq!(qs, "_json_filter.age:[* TO 65]");
+    }
+
+    #[test]
+    fn query_string_and() {
+        let c = make_compiler();
+        let f = Filter::And(vec![
+            Filter::Equals {
+                field: "a".into(),
+                value: FieldValue::Integer(1),
+            },
+            Filter::Equals {
+                field: "b".into(),
+                value: FieldValue::Integer(2),
+            },
+        ]);
+        let qs = c.to_query_string(&f).unwrap();
+        assert_eq!(qs, "(_json_filter.a:[1 TO 1] AND _json_filter.b:[2 TO 2])");
+    }
+
+    #[test]
+    fn query_string_or() {
+        let c = make_compiler();
+        let f = Filter::Or(vec![
+            Filter::Equals {
+                field: "a".into(),
+                value: FieldValue::Integer(1),
+            },
+            Filter::Equals {
+                field: "a".into(),
+                value: FieldValue::Integer(2),
+            },
+        ]);
+        let qs = c.to_query_string(&f).unwrap();
+        assert_eq!(qs, "(_json_filter.a:[1 TO 1] OR _json_filter.a:[2 TO 2])");
+    }
+
+    #[test]
+    fn query_string_not_errors() {
+        let c = make_compiler();
+        let f = Filter::Not(Box::new(Filter::Equals {
+            field: "x".into(),
+            value: FieldValue::Integer(1),
+        }));
+        assert!(c.to_query_string(&f).is_err());
+    }
+
+    // ── compile ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn compile_simple_succeeds() {
+        let c = make_compiler();
+        let f = Filter::Equals {
+            field: "price".into(),
+            value: FieldValue::Integer(10),
+        };
+        assert!(c.compile(&f, None).is_ok());
+    }
+
+    #[test]
+    fn compile_with_not_succeeds() {
+        let c = make_compiler();
+        let f = Filter::Not(Box::new(Filter::Equals {
+            field: "price".into(),
+            value: FieldValue::Integer(10),
+        }));
+        assert!(c.compile(&f, None).is_ok());
+    }
+
+    #[test]
+    fn compile_too_many_clauses_errors() {
+        let c = make_compiler();
+        let clauses: Vec<Filter> = (0..1001)
+            .map(|i| Filter::Equals {
+                field: "x".into(),
+                value: FieldValue::Integer(i),
+            })
+            .collect();
+        let f = Filter::And(clauses);
+        assert!(c.compile(&f, None).is_err());
+    }
+
+    // ── format_value ────────────────────────────────────────────────────
+
+    #[test]
+    fn format_value_text_simple() {
+        let c = make_compiler();
+        assert_eq!(c.format_value(&FieldValue::Text("hello".into())), "hello");
+    }
+
+    #[test]
+    fn format_value_text_with_spaces() {
+        let c = make_compiler();
+        assert_eq!(
+            c.format_value(&FieldValue::Text("hello world".into())),
+            "\"hello world\""
+        );
+    }
+
+    #[test]
+    fn format_value_integer() {
+        let c = make_compiler();
+        assert_eq!(c.format_value(&FieldValue::Integer(42)), "42");
+    }
+
+    #[test]
+    fn format_value_float() {
+        let c = make_compiler();
+        assert_eq!(c.format_value(&FieldValue::Float(3.14)), "3.14");
+    }
+
+    #[test]
+    fn format_value_facet() {
+        let c = make_compiler();
+        assert_eq!(c.format_value(&FieldValue::Facet("cat".into())), "\"cat\"");
+    }
+
+    // ── gt/lt edge cases ────────────────────────────────────────────────
+
+    #[test]
+    fn gt_float_unsupported() {
+        let c = make_compiler();
+        let f = Filter::GreaterThan {
+            field: "price".into(),
+            value: FieldValue::Float(10.5),
+        };
+        assert!(c.to_query_string(&f).is_err());
+    }
+
+    #[test]
+    fn lt_float_unsupported() {
+        let c = make_compiler();
+        let f = Filter::LessThan {
+            field: "price".into(),
+            value: FieldValue::Float(10.5),
+        };
+        assert!(c.to_query_string(&f).is_err());
+    }
+
+    #[test]
+    fn gt_integer_adds_one() {
+        let c = make_compiler();
+        let f = Filter::GreaterThan {
+            field: "age".into(),
+            value: FieldValue::Integer(18),
+        };
+        let qs = c.to_query_string(&f).unwrap();
+        assert_eq!(qs, "_json_filter.age:[19 TO *]");
+    }
+
+    #[test]
+    fn lt_integer_subtracts_one() {
+        let c = make_compiler();
+        let f = Filter::LessThan {
+            field: "age".into(),
+            value: FieldValue::Integer(65),
+        };
+        let qs = c.to_query_string(&f).unwrap();
+        assert_eq!(qs, "_json_filter.age:[* TO 64]");
+    }
+}

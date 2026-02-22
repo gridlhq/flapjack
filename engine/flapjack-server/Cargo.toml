@@ -7,6 +7,11 @@ edition = "2021"
 name = "flapjack"
 path = "src/main.rs"
 
+[features]
+default = []
+vector-search = ["flapjack/vector-search", "flapjack-http/vector-search"]
+vector-search-local = ["vector-search", "flapjack/vector-search-local", "flapjack-http/vector-search-local"]
+
 [dependencies]
 flapjack = { path = "..", features = ["memory-stats"] }
 flapjack-http = { path = "../flapjack-http" }

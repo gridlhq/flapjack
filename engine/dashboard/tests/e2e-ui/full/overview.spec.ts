@@ -21,6 +21,7 @@
  */
 import { test, expect } from '../../fixtures/auth.fixture';
 import { API_BASE, API_HEADERS, TEST_INDEX } from '../helpers';
+import { deleteIndex } from '../../fixtures/api-helpers';
 
 test.describe('Overview Page', () => {
 
@@ -37,19 +38,19 @@ test.describe('Overview Page', () => {
   test('stat cards display total indexes, documents, and storage', async ({ page }) => {
     const indexesCard = page.getByTestId('stat-card-indexes');
     await expect(indexesCard).toBeVisible();
-    const indexCount = await indexesCard.locator('.text-2xl').textContent();
+    const indexCount = await indexesCard.getByTestId('stat-value').textContent();
     expect(Number(indexCount)).toBeGreaterThanOrEqual(1);
 
     const docsCard = page.getByTestId('stat-card-documents');
     await expect(docsCard).toBeVisible();
-    const docCount = await docsCard.locator('.text-2xl').textContent();
+    const docCount = await docsCard.getByTestId('stat-value').textContent();
     expect(Number(docCount?.replace(/,/g, ''))).toBeGreaterThanOrEqual(12);
 
     const storageCard = page.getByTestId('stat-card-storage');
     await expect(storageCard).toBeVisible();
-    const storageText = await storageCard.locator('.text-2xl').textContent();
+    const storageText = await storageCard.getByTestId('stat-value').textContent();
     expect(storageText).toBeTruthy();
-    expect(storageText).not.toBe('0 B');
+    expect(storageText).not.toBe('0 Bytes');
   });
 
   test('health indicator shows Healthy', async ({ page }) => {
@@ -61,7 +62,7 @@ test.describe('Overview Page', () => {
   test('create new index e2e-temp, verify it appears, then delete it', async ({ page, request }) => {
     const tempIndex = 'e2e-temp';
 
-    await request.delete(`${API_BASE}/1/indexes/${tempIndex}`, { headers: API_HEADERS }).catch(() => {});
+    await deleteIndex(request, tempIndex);
 
     await page.getByRole('button', { name: /create.*index/i }).click();
     const dialog = page.getByRole('dialog');
@@ -174,8 +175,9 @@ test.describe('Overview Page', () => {
     await expect(analyticsCard).toBeVisible({ timeout: 10_000 });
 
     // With seeded data, the mini chart SVG should render
-    const chart = analyticsCard.locator('.recharts-responsive-container');
+    const chart = analyticsCard.getByTestId('overview-analytics-chart');
     await expect(chart).toBeVisible({ timeout: 10_000 });
+    await expect(chart.locator('svg')).toBeVisible();
   });
 
   test('View Details link in analytics section navigates to analytics page', async ({ page }) => {

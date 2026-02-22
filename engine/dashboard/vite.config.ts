@@ -2,8 +2,11 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import { visualizer } from 'rollup-plugin-visualizer';
+import { getLocalInstanceConfig } from './local-instance-config';
 
-const BACKEND_TARGET = process.env.FLAPJACK_BACKEND_URL || 'http://localhost:7700';
+const instance = getLocalInstanceConfig();
+const BACKEND_TARGET = instance.backendBaseUrl;
+const DASHBOARD_PORT = instance.dashboardPort;
 
 export default defineConfig(({ command }) => ({
   // In production build, assets are served under /dashboard/ by the backend server.
@@ -50,7 +53,9 @@ export default defineConfig(({ command }) => ({
     minify: 'esbuild',
   },
   server: {
-    port: 5177,
+    host: instance.host,
+    strictPort: true,
+    port: DASHBOARD_PORT,
     proxy: {
       '/1': BACKEND_TARGET,
       '/2': BACKEND_TARGET,

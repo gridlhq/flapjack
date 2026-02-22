@@ -26,7 +26,7 @@ use nom::{
 ///
 /// # Examples
 /// ```
-/// use flapjack::http::filter_parser::parse_filter;
+/// use flapjack_http::filter_parser::parse_filter;
 ///
 /// let filter = parse_filter("price > 100 AND category:electronics").unwrap();
 /// ```

@@ -33,7 +33,8 @@ npm install
 npm run dev
 ```
 
-Opens on http://localhost:5174 with API proxied to http://localhost:7700
+Reads ports from repo-root `flapjack.local.conf` (copy from `flapjack.local.conf.example`).
+By default opens on `http://127.0.0.1:5177` with API proxied to `http://127.0.0.1:7700`.
 
 ### Build for Production
 
@@ -88,7 +89,7 @@ Edit `src/globals.css` to customize the color scheme.
 
 ### API Endpoint
 
-Default: `http://localhost:7700` (dev mode)
+Default (from `flapjack.local.conf`): `http://127.0.0.1:7700` (dev mode)
 
 In production, the dashboard is served from the same origin as the API.
 
@@ -118,9 +119,10 @@ dashboard/
 
 The dashboard can be tested against a running Flapjack instance:
 
-1. Start Flapjack server: `cargo run --bin flapjack-server`
-2. Start dashboard dev server: `npm run dev`
-3. Open http://localhost:5174
+1. Set clone-local ports in repo root: `cp ../../flapjack.local.conf.example ../../flapjack.local.conf`
+2. Start Flapjack server on configured backend port (example): `cargo run -p flapjack-server -- --port <FJ_BACKEND_PORT>`
+3. Start dashboard dev server: `npm run dev`
+4. Open `http://127.0.0.1:5177` (or your configured dashboard port)
 
 ## 🚢 Deployment
 

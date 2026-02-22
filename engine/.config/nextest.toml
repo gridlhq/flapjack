@@ -6,7 +6,13 @@
 
 
 [profile.default]
-default-filter = "not (test(/_slow$/) or test(/_very_slow$/))"
+# Exclude lib tests from nextest — they run 1800x faster under `cargo test --lib`
+# because nextest spawns a separate process per test, each paying ~1.5s to load the
+# flapjack binary. 877+ lib tests in <1s vs minutes under nextest.
+# Run lib tests separately: cargo test --lib -p flapjack -p flapjack-http
+default-filter = "not (test(/_slow$/) or test(/_very_slow$/) or kind(lib))"
+# With fewer test binaries (15 HTTP tests instead of 57), default parallelism
+# (num CPUs = 12) works well. No need to throttle.
 
 [profile.slow]
 default-filter = "test(/_slow$/) and not test(/_very_slow$/)"

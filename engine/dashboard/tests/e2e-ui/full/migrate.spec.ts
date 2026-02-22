@@ -8,8 +8,8 @@
  * and info section content.
  *
  * Pre-requisites:
- *   - Flapjack server running on port 7700
- *   - Vite dev server on localhost:5177
+ *   - Flapjack server running on the repo-local configured backend port
+ *   - Vite dev server on the repo-local configured dashboard port
  *
  * Covers:
  * - All form sections visible on load (credentials, index, overwrite, info)
@@ -77,7 +77,7 @@ test.describe('Migrate Page', () => {
     await keyInput.fill('secret-key');
 
     // Click the eye toggle button (sibling button inside the relative container)
-    const toggleBtn = keyInput.locator('..').locator('button');
+    const toggleBtn = keyInput.locator('xpath=..').getByRole('button');
     await toggleBtn.click();
     await expect(keyInput).toHaveAttribute('type', 'text');
 

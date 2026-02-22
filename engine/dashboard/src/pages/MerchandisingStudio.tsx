@@ -72,7 +72,7 @@ export function MerchandisingStudio() {
 
     // Filter out hidden results
     const hiddenIds = new Set(hides.map((h) => h.objectID));
-    let results = searchData.hits.filter((hit) => !hiddenIds.has(hit.objectID));
+    const results = searchData.hits.filter((hit) => !hiddenIds.has(hit.objectID));
 
     // Remove pinned items from their natural positions
     const pinnedIds = new Set(pins.map((p) => p.objectID));

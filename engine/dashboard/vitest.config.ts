@@ -9,8 +9,8 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: './tests/setup.ts',
     css: true,
-    // Only run unit tests in src/, exclude e2e-ui tests (Playwright .spec.ts files)
-    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    // Run unit tests in src/ plus clone-local config parser tests at repo root.
+    include: ['src/**/*.{test,spec}.{ts,tsx}', 'local-instance-config.test.ts'],
     exclude: ['node_modules', 'dist', 'tests/**/*.spec.ts'],
     coverage: {
       provider: 'v8',

@@ -4,6 +4,8 @@ use axum::{
     routing::{delete, get, post},
     Router,
 };
+use fs2::FileExt;
+use std::fs::OpenOptions;
 use std::path::Path;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
@@ -24,6 +26,7 @@ use crate::handlers::{
 };
 use crate::middleware::{allow_private_network, normalize_content_type};
 use crate::openapi::ApiDoc;
+use flapjack::experiments::store::ExperimentStore;
 use flapjack::IndexManager;
 
 pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
@@ -82,6 +85,15 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let data_dir = std::env::var("FLAPJACK_DATA_DIR").unwrap_or_else(|_| "./data".to_string());
+    let _data_dir_lock = match acquire_data_dir_process_lock(Path::new(&data_dir)) {
+        Ok(lock) => lock,
+        Err(message) => {
+            eprintln!("ERROR: {}", message);
+            std::process::exit(1);
+        }
+    };
+    let requested_bind_addr =
+        std::env::var("FLAPJACK_BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:7700".to_string());
 
     // Determine effective admin key:
     //   1. --no-auth → no key
@@ -144,27 +156,50 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         None => None,
     };
 
-    let has_auth = key_store.is_some();
-
     let manager = IndexManager::new(&data_dir);
 
     // Load replication config and initialize ReplicationManager
     let node_config =
         flapjack_replication::config::NodeConfig::load_or_default(std::path::Path::new(&data_dir));
 
+    let node_json_path = Path::new(&data_dir).join("node.json");
+    if node_json_path.exists() {
+        if node_config.bind_addr != requested_bind_addr {
+            tracing::warn!(
+                requested = %requested_bind_addr,
+                node_json_bind_addr = %node_config.bind_addr,
+                node_json = %node_json_path.display(),
+                "bind address loaded from node.json overrides FLAPJACK_BIND_ADDR"
+            );
+        } else {
+            tracing::info!(
+                node_json_bind_addr = %node_config.bind_addr,
+                node_json = %node_json_path.display(),
+                "bind address loaded from node.json"
+            );
+        }
+    }
+
     // Use bind_addr from node.json, falling back to env var
     let bind_addr = node_config.bind_addr.clone();
 
     // Initialize analytics cluster client (for HA analytics fan-out)
-    if let Some(cluster_client) = crate::analytics_cluster::AnalyticsClusterClient::new(&node_config) {
+    if let Some(cluster_client) =
+        crate::analytics_cluster::AnalyticsClusterClient::new(&node_config)
+    {
         crate::analytics_cluster::set_global_cluster(cluster_client);
-        tracing::info!("[HA-analytics] Cluster analytics enabled: fan-out to {} peers", node_config.peers.len());
+        tracing::info!(
+            "[HA-analytics] Cluster analytics enabled: fan-out to {} peers",
+            node_config.peers.len()
+        );
     }
 
     let replication_manager = if !node_config.peers.is_empty() {
         tracing::info!("Replication enabled: {} peers", node_config.peers.len());
         let repl = flapjack_replication::manager::ReplicationManager::new(node_config);
         flapjack_replication::set_global_manager(Arc::clone(&repl));
+        repl.start_health_probe(10);
+        tracing::info!("[HEALTH] Background health probe started (10s interval)");
         Some(repl)
     } else {
         tracing::info!("Replication disabled (no peers in node.json)");
@@ -247,9 +282,35 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
             analytics_config.flush_interval_secs,
             analytics_config.retention_days
         );
+
+        // Spawn rollup broadcaster if cluster peers are configured.
+        // Pushes local analytics rollups to peers every FLAPJACK_ROLLUP_INTERVAL_SECS
+        // (default 300s) so peers can serve Tier 2 cached analytics queries.
+        if let Some(cluster) = crate::analytics_cluster::get_global_cluster() {
+            let rollup_interval_secs: u64 = std::env::var("FLAPJACK_ROLLUP_INTERVAL_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(300);
+            let local_node_id = cluster.node_id().to_string();
+            crate::rollup_broadcaster::spawn_rollup_broadcaster(
+                Arc::clone(&analytics_engine),
+                analytics_config.clone(),
+                cluster,
+                local_node_id,
+                rollup_interval_secs,
+            );
+            tracing::info!(
+                "[ROLLUP-BROADCAST] Broadcaster started (interval={}s)",
+                rollup_interval_secs
+            );
+        }
     } else {
         tracing::info!("[analytics] Analytics disabled");
     }
+
+    let metrics_state = crate::handlers::metrics::MetricsState::new();
+
+    let usage_counters = Arc::new(dashmap::DashMap::new());
 
     let state = Arc::new(AppState {
         manager,
@@ -257,7 +318,52 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         replication_manager,
         ssl_manager,
         analytics_engine: Some(Arc::clone(&analytics_engine)),
+        experiment_store: Some(Arc::new(ExperimentStore::new(Path::new(&data_dir))?)),
+        metrics_state: Some(metrics_state.clone()),
+        usage_counters: usage_counters.clone(),
+        paused_indexes: crate::pause_registry::PausedIndexes::new(),
+        start_time: std::time::Instant::now(),
+        #[cfg(feature = "vector-search")]
+        embedder_store: Arc::new(crate::embedder_store::EmbedderStore::new()),
     });
+
+    // Startup catch-up: if replication is enabled, fetch missed ops from peers.
+    // Runs in background — does not delay server startup.
+    if state.replication_manager.is_some() {
+        crate::startup_catchup::spawn_startup_catchup(Arc::clone(&state));
+
+        // P0: Periodic anti-entropy sync — pulls missed ops from peers on a timer.
+        // Closes the partition recovery gap: if nodes can't communicate for a while
+        // but remain running, writes made during the partition are synced when
+        // connectivity resumes (without requiring a restart).
+        let sync_interval: u64 = std::env::var("FLAPJACK_SYNC_INTERVAL_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(60);
+        crate::startup_catchup::spawn_periodic_sync(Arc::clone(&state), sync_interval);
+        tracing::info!(
+            "[REPL-sync] Periodic anti-entropy sync enabled (interval={}s)",
+            sync_interval
+        );
+    }
+
+    // Background poller: update per-tenant storage gauges every 60s
+    {
+        let mgr = Arc::clone(&state.manager);
+        let ms = metrics_state.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
+            loop {
+                interval.tick().await;
+                let storage = mgr.all_tenant_storage();
+                // Clear stale entries (tenants that were unloaded)
+                ms.storage_gauges.clear();
+                for (tid, bytes) in storage {
+                    ms.storage_gauges.insert(tid, bytes);
+                }
+            }
+        });
+    }
 
     let key_routes = if let Some(ref ks) = key_store {
         Router::new()
@@ -372,7 +478,42 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
             "/1/indexes/:indexName/task/:task_id",
             get(get_task_for_index),
         )
+        // Query Suggestions API (Algolia-compatible paths)
+        .route(
+            "/1/configs",
+            get(crate::handlers::query_suggestions::list_configs)
+                .post(crate::handlers::query_suggestions::create_config),
+        )
+        .route(
+            "/1/configs/:indexName",
+            get(crate::handlers::query_suggestions::get_config)
+                .put(crate::handlers::query_suggestions::update_config)
+                .delete(crate::handlers::query_suggestions::delete_config),
+        )
+        .route(
+            "/1/configs/:indexName/status",
+            get(crate::handlers::query_suggestions::get_status),
+        )
+        .route(
+            "/1/configs/:indexName/build",
+            post(crate::handlers::query_suggestions::trigger_build),
+        )
+        .route(
+            "/1/logs/:indexName",
+            get(crate::handlers::query_suggestions::get_logs),
+        )
         .with_state(state.clone());
+
+    let usage_counters_for_mw = usage_counters.clone();
+    let protected =
+        protected.layer(middleware::from_fn(
+            move |request: axum::extract::Request, next: middleware::Next| {
+                let counters = usage_counters_for_mw.clone();
+                async move {
+                    crate::usage_middleware::usage_counting_layer(request, next, &counters).await
+                }
+            },
+        ));
 
     let ks_for_middleware = key_store.clone();
     let auth_middleware = middleware::from_fn(
@@ -402,8 +543,36 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
             get(crate::handlers::internal::replication_status),
         )
         .route(
+            "/internal/cluster/status",
+            get(crate::handlers::internal::cluster_status),
+        )
+        .route(
+            "/internal/analytics-rollup",
+            post(crate::handlers::internal::receive_analytics_rollup),
+        )
+        .route(
+            "/internal/rollup-cache",
+            get(crate::handlers::internal::rollup_cache_status),
+        )
+        .route(
+            "/internal/storage",
+            get(crate::handlers::internal::storage_all),
+        )
+        .route(
+            "/internal/storage/:indexName",
+            get(crate::handlers::internal::storage_index),
+        )
+        .route(
             "/.well-known/acme-challenge/:token",
             get(crate::handlers::internal::acme_challenge),
+        )
+        .route(
+            "/internal/pause/:indexName",
+            post(crate::handlers::internal::pause_index),
+        )
+        .route(
+            "/internal/resume/:indexName",
+            post(crate::handlers::internal::resume_index),
         )
         .with_state(state.clone());
 
@@ -506,13 +675,45 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         )
         .with_state(state.clone());
 
+    let experiments_routes = Router::new()
+        .route(
+            "/2/abtests",
+            post(crate::handlers::experiments::create_experiment)
+                .get(crate::handlers::experiments::list_experiments),
+        )
+        .route(
+            "/2/abtests/:id",
+            get(crate::handlers::experiments::get_experiment)
+                .put(crate::handlers::experiments::update_experiment)
+                .delete(crate::handlers::experiments::delete_experiment),
+        )
+        .route(
+            "/2/abtests/:id/start",
+            post(crate::handlers::experiments::start_experiment),
+        )
+        .route(
+            "/2/abtests/:id/stop",
+            post(crate::handlers::experiments::stop_experiment),
+        )
+        .route(
+            "/2/abtests/:id/conclude",
+            post(crate::handlers::experiments::conclude_experiment),
+        )
+        .route(
+            "/2/abtests/:id/results",
+            get(crate::handlers::experiments::get_experiment_results),
+        )
+        .with_state(state.clone());
+
     // Insights API (event ingestion - Algolia compatible)
+    let analytics_collector_for_shutdown = Arc::clone(&analytics_collector);
     let insights_routes = Router::new()
         .route("/1/events", post(crate::handlers::insights::post_events))
         .with_state(analytics_collector);
 
     let health_route = Router::new()
         .route("/health", get(health))
+        .route("/metrics", get(crate::handlers::metrics_handler))
         .with_state(state.clone());
 
     let app = Router::new()
@@ -522,6 +723,7 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         .merge(protected)
         .merge(analytics_routes)
         .merge(analytics_cleanup_routes)
+        .merge(experiments_routes)
         .merge(insights_routes)
         .merge(internal);
 
@@ -552,55 +754,7 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
             }
         },
     );
-    // Quickstart API: simple, no-auth convenience endpoints for local dev.
-    // Only available when auth is disabled (--no-auth / FLAPJACK_NO_AUTH=1).
-    // When auth is enabled, all data access must go through the authenticated
-    // /1/indexes/* routes — no search engine (Algolia, Meilisearch, Typesense)
-    // exposes unprotected data routes, even for convenience.
     let app = app.layer(auth_middleware);
-    let app = if !has_auth {
-        let quickstart = Router::new()
-            .route(
-                "/indexes",
-                get(crate::handlers::quickstart::qs_list_indexes),
-            )
-            .route(
-                "/indexes/:indexName/search",
-                get(crate::handlers::quickstart::qs_search_get)
-                    .post(crate::handlers::quickstart::qs_search_post),
-            )
-            .route(
-                "/indexes/:indexName/documents",
-                post(crate::handlers::quickstart::qs_add_documents),
-            )
-            .route(
-                "/indexes/:indexName/documents/delete",
-                post(crate::handlers::quickstart::qs_delete_documents),
-            )
-            .route(
-                "/indexes/:indexName/documents/:docId",
-                get(crate::handlers::quickstart::qs_get_document)
-                    .delete(crate::handlers::quickstart::qs_delete_document),
-            )
-            .route(
-                "/indexes/:indexName/settings",
-                get(crate::handlers::quickstart::qs_get_settings)
-                    .put(crate::handlers::quickstart::qs_set_settings),
-            )
-            .route(
-                "/indexes/:indexName",
-                delete(crate::handlers::quickstart::qs_delete_index),
-            )
-            .route(
-                "/tasks/:taskId",
-                get(crate::handlers::quickstart::qs_get_task),
-            )
-            .route("/migrate", post(crate::handlers::quickstart::qs_migrate))
-            .with_state(state.clone());
-        app.merge(quickstart)
-    } else {
-        app
-    };
     let app = app
         .layer(memory_middleware)
         .layer(DefaultBodyLimit::max(max_body_mb * 1024 * 1024))
@@ -609,6 +763,7 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         .layer(middleware::from_fn(allow_private_network));
 
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
+    let resolved_bind_addr = listener.local_addr()?.to_string();
 
     // Determine auth status for banner display
     let auth_status = if no_auth {
@@ -622,15 +777,103 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     print_startup_banner(
-        &bind_addr,
+        &resolved_bind_addr,
         auth_status,
         startup_start.elapsed().as_millis(),
         &data_dir,
     );
 
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
 
+    // --- Graceful shutdown sequence ---
+    tracing::info!("[shutdown] Server stopped accepting connections, cleaning up...");
+
+    // 1. Flush analytics buffers
+    if analytics_config.enabled {
+        analytics_collector_for_shutdown.shutdown(); // signals flush loop to do final flush_all() and exit
+        tracing::info!("[shutdown] Analytics buffers flushed");
+    }
+
+    // 2. Drain write queues (flushes pending index writes)
+    state.manager.graceful_shutdown().await;
+    tracing::info!("[shutdown] All write queues drained");
+
+    tracing::info!("[shutdown] Clean shutdown complete");
     Ok(())
+}
+
+/// Wait for SIGINT (Ctrl+C) or SIGTERM, whichever comes first.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to listen for ctrl+c");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to listen for SIGTERM")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => tracing::info!("[shutdown] Received SIGINT (Ctrl+C)"),
+        _ = terminate => tracing::info!("[shutdown] Received SIGTERM"),
+    }
+}
+
+struct DataDirProcessLock {
+    file: std::fs::File,
+}
+
+impl Drop for DataDirProcessLock {
+    fn drop(&mut self) {
+        let _ = self.file.unlock();
+    }
+}
+
+fn acquire_data_dir_process_lock(data_dir: &Path) -> Result<DataDirProcessLock, String> {
+    std::fs::create_dir_all(data_dir).map_err(|e| {
+        format!(
+            "Failed to create data directory {}: {}",
+            data_dir.display(),
+            e
+        )
+    })?;
+
+    let lock_path = data_dir.join(".process.lock");
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(&lock_path)
+        .map_err(|e| {
+            format!(
+                "Failed to open process lock file {}: {}",
+                lock_path.display(),
+                e
+            )
+        })?;
+
+    match file.try_lock_exclusive() {
+        Ok(()) => Ok(DataDirProcessLock { file }),
+        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Err(format!(
+            "Data directory already in use: {}. Use unique --data-dir per instance.",
+            lock_path.display()
+        )),
+        Err(e) => Err(format!(
+            "Failed to acquire process lock {}: {}",
+            lock_path.display(),
+            e
+        )),
+    }
 }
 
 enum AuthStatus {
@@ -649,58 +892,45 @@ fn print_startup_banner(bind_addr: &str, auth: AuthStatus, startup_ms: u128, dat
     println!();
     println!(
         "  {} {}  {}",
-        "🥞 Flapjack".bold().bright_green(),
+        "\u{1F95E} Flapjack".bold(),
         version.as_str().dimmed(),
         timing.as_str().dimmed(),
     );
     println!();
-    println!("  {}  Local:      {}", "➜".green(), url.as_str().cyan());
+    println!(
+        "  {}  Local:      {}",
+        "\u{2192}".green(),
+        url.as_str().cyan()
+    );
     let dash = format!("{}/dashboard", url);
-    println!("  {}  Dashboard:  {}", "➜".green(), dash.as_str().cyan());
+    println!(
+        "  {}  Dashboard:  {}",
+        "\u{2192}".green(),
+        dash.as_str().cyan()
+    );
     let docs = format!("{}/swagger-ui", url);
-    println!("  {}  API Docs:   {}", "➜".green(), docs.as_str().cyan());
+    println!(
+        "  {}  API Docs:   {}",
+        "\u{2192}".green(),
+        docs.as_str().cyan()
+    );
 
     match auth {
         AuthStatus::NewKey(ref key) => {
             println!();
             println!(
-                "{}",
-                "  ╔══════════════════════════════════════════════════════════════════════╗"
-                    .yellow()
-                    .bold()
-            );
-            println!(
-                "{}",
-                "  ║                                                                      ║"
-                    .yellow()
-                    .bold()
-            );
-            println!(
-                "{}",
-                "  ║  ⚠️  IMPORTANT: Save this API key - it won't be shown again!  ⚠️     ║"
-                    .yellow()
-                    .bold()
-            );
-            println!(
-                "{}",
-                "  ║                                                                      ║"
-                    .yellow()
-                    .bold()
-            );
-            println!(
-                "{}",
-                "  ╚══════════════════════════════════════════════════════════════════════╝"
+                "  {}",
+                "! Save this API key \u{2014} it won\u{2019}t be shown again!"
                     .yellow()
                     .bold()
             );
             println!();
             println!(
-                "  {}  Your Admin API Key:  {}",
-                "🔑".bold(),
+                "  {}  Admin API Key:  {}",
+                "\u{1F511}",
                 key.as_str().cyan().bold().on_black()
             );
             println!();
-            println!("  {}  What to do:", "📋".bold());
             println!(
                 "     {} Copy this key to a safe place (password manager, secrets vault)",
                 "1.".cyan().bold()
@@ -719,26 +949,29 @@ fn print_startup_banner(bind_addr: &str, auth: AuthStatus, startup_ms: u128, dat
             );
             println!("        {}", format!("     {}/1/indexes", url).dimmed());
             println!();
-            println!("  {}  Key Storage:", "💾".bold());
             println!(
-                "     • Stored securely in: {}",
+                "     {} Stored in: {}",
+                "\u{2713}".green(),
                 format!("{}/.admin_key", data_dir).cyan()
             );
             println!(
-                "     • For production: Set {} env var",
-                "FLAPJACK_ADMIN_KEY".cyan()
+                "     {} Keys hashed at rest {}",
+                "\u{2713}".green(),
+                "(SHA-256 + unique salt)".dimmed()
             );
-            println!("     • If lost: Run {}", "flapjack reset-admin-key".cyan());
-            println!();
-            println!("  {}  Security Notes:", "🔒".bold());
-            println!("     • Keys are hashed at rest (SHA-256 + unique salt)");
             println!(
-                "     • Never commit {} to version control",
+                "     {} Never commit {} to version control",
+                "!".yellow(),
                 ".admin_key".cyan()
             );
-            println!("     • For local dev: Key auto-loads from file");
             println!(
-                "     • For production: Always use {} env var",
+                "     {} If lost: {}",
+                "\u{2192}".dimmed(),
+                "flapjack reset-admin-key".cyan()
+            );
+            println!(
+                "     {} Production: set {} env var",
+                "\u{2192}".dimmed(),
                 "FLAPJACK_ADMIN_KEY".cyan()
             );
         }
@@ -746,46 +979,21 @@ fn print_startup_banner(bind_addr: &str, auth: AuthStatus, startup_ms: u128, dat
             let key_file = format!("{}/.admin_key", data_dir);
             println!();
             println!(
-                "  {}  Auth:  {} (keys hashed at rest)",
-                "🔒".bold().green(),
-                "Enabled".green().bold()
-            );
-            println!();
-            println!("  {}  API Key Location:", "🔑".bold());
-            println!("     • Loaded from: {}", key_file.cyan());
-            println!("     • View key: {}", format!("cat {}", key_file).cyan());
-            println!("     • Reset key: {}", "flapjack reset-admin-key".cyan());
-            println!(
-                "     • For production: Set {} env var",
-                "FLAPJACK_ADMIN_KEY".cyan()
+                "  {} Auth enabled  {}",
+                "\u{2713}".green(),
+                format!("(loaded from {})", key_file).dimmed()
             );
         }
         AuthStatus::Disabled => {
             println!();
             println!(
-                "{}",
-                "  ╔══════════════════════════════════════════════════════════════════════╗"
-                    .yellow()
+                "  {} {}",
+                "!".yellow().bold(),
+                "Auth disabled \u{2014} all routes publicly accessible".yellow()
             );
             println!(
-                "{}",
-                "  ║  ⚠️  WARNING: Authentication is DISABLED                            ║"
-                    .yellow()
-            );
-            println!(
-                "{}",
-                "  ║      All API routes are publicly accessible without auth            ║"
-                    .yellow()
-            );
-            println!(
-                "{}",
-                "  ║      Only use --no-auth for local development/testing               ║"
-                    .yellow()
-            );
-            println!(
-                "{}",
-                "  ╚══════════════════════════════════════════════════════════════════════╝"
-                    .yellow()
+                "    {}",
+                "Only use --no-auth for local development/testing".dimmed()
             );
         }
     }

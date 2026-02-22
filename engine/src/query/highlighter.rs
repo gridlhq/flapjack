@@ -517,3 +517,292 @@ pub fn extract_query_words(query_text: &str) -> Vec<String> {
         .map(|s| s.to_lowercase())
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn h() -> Highlighter {
+        Highlighter::default()
+    }
+
+    // --- extract_query_words ---
+
+    #[test]
+    fn qw_basic() {
+        assert_eq!(extract_query_words("hello world"), vec!["hello", "world"]);
+    }
+
+    #[test]
+    fn qw_lowercases() {
+        assert_eq!(extract_query_words("Hello WORLD"), vec!["hello", "world"]);
+    }
+
+    #[test]
+    fn qw_empty() {
+        let r: Vec<String> = extract_query_words("");
+        assert!(r.is_empty());
+    }
+
+    #[test]
+    fn qw_extra_spaces() {
+        assert_eq!(
+            extract_query_words("  hello   world  "),
+            vec!["hello", "world"]
+        );
+    }
+
+    // --- parse_snippet_spec ---
+
+    #[test]
+    fn snippet_spec_with_count() {
+        assert_eq!(parse_snippet_spec("title:5"), ("title", 5));
+    }
+
+    #[test]
+    fn snippet_spec_no_colon() {
+        assert_eq!(parse_snippet_spec("title"), ("title", 10));
+    }
+
+    #[test]
+    fn snippet_spec_star() {
+        assert_eq!(parse_snippet_spec("*:3"), ("*", 3));
+    }
+
+    #[test]
+    fn snippet_spec_invalid_count_defaults_10() {
+        assert_eq!(parse_snippet_spec("title:abc"), ("title", 10));
+    }
+
+    // --- merge_positions ---
+
+    #[test]
+    fn merge_empty() {
+        assert_eq!(Highlighter::merge_positions(vec![]), vec![]);
+    }
+
+    #[test]
+    fn merge_single() {
+        assert_eq!(Highlighter::merge_positions(vec![(0, 5)]), vec![(0, 5)]);
+    }
+
+    #[test]
+    fn merge_non_overlapping() {
+        let r = Highlighter::merge_positions(vec![(0, 3), (5, 8)]);
+        assert_eq!(r, vec![(0, 3), (5, 8)]);
+    }
+
+    #[test]
+    fn merge_overlapping() {
+        let r = Highlighter::merge_positions(vec![(0, 5), (3, 8)]);
+        assert_eq!(r, vec![(0, 8)]);
+    }
+
+    #[test]
+    fn merge_adjacent_fuses() {
+        // start == end of previous → fused (start <= current.1)
+        let r = Highlighter::merge_positions(vec![(0, 5), (5, 8)]);
+        assert_eq!(r, vec![(0, 8)]);
+    }
+
+    #[test]
+    fn merge_three_into_one() {
+        let r = Highlighter::merge_positions(vec![(0, 4), (2, 6), (5, 9)]);
+        assert_eq!(r, vec![(0, 9)]);
+    }
+
+    // --- apply_highlights ---
+
+    #[test]
+    fn apply_prefix() {
+        assert_eq!(
+            h().apply_highlights("hello world", &[(0, 5)]),
+            "<em>hello</em> world"
+        );
+    }
+
+    #[test]
+    fn apply_suffix() {
+        assert_eq!(
+            h().apply_highlights("hello world", &[(6, 11)]),
+            "hello <em>world</em>"
+        );
+    }
+
+    #[test]
+    fn apply_middle() {
+        assert_eq!(
+            h().apply_highlights("hello world foo", &[(6, 11)]),
+            "hello <em>world</em> foo"
+        );
+    }
+
+    #[test]
+    fn apply_multiple_spans() {
+        let r = h().apply_highlights("hello world", &[(0, 5), (6, 11)]);
+        assert_eq!(r, "<em>hello</em> <em>world</em>");
+    }
+
+    #[test]
+    fn apply_empty_positions() {
+        assert_eq!(h().apply_highlights("hello", &[]), "hello");
+    }
+
+    #[test]
+    fn apply_custom_tags() {
+        let h = Highlighter::new("<b>".to_string(), "</b>".to_string());
+        assert_eq!(
+            h.apply_highlights("hello world", &[(0, 5)]),
+            "<b>hello</b> world"
+        );
+    }
+
+    // --- highlight_text: exact matching ---
+
+    #[test]
+    fn hl_no_match() {
+        let r = h().highlight_text("hello world", &["xyz".to_string()]);
+        assert!(matches!(r.match_level, MatchLevel::None));
+        assert!(r.matched_words.is_empty());
+        assert_eq!(r.value, "hello world");
+        assert!(r.fully_highlighted.is_none());
+    }
+
+    #[test]
+    fn hl_single_word_full_match() {
+        let r = h().highlight_text("hello world", &["hello".to_string()]);
+        assert!(matches!(r.match_level, MatchLevel::Full));
+        assert_eq!(r.matched_words, vec!["hello"]);
+        assert_eq!(r.value, "<em>hello</em> world");
+    }
+
+    #[test]
+    fn hl_two_words_full_match() {
+        let r = h().highlight_text("hello world", &["hello".to_string(), "world".to_string()]);
+        assert!(matches!(r.match_level, MatchLevel::Full));
+        assert_eq!(r.value, "<em>hello</em> <em>world</em>");
+    }
+
+    #[test]
+    fn hl_partial_match() {
+        let r = h().highlight_text("hello world", &["hello".to_string(), "xyz".to_string()]);
+        assert!(matches!(r.match_level, MatchLevel::Partial));
+        assert_eq!(r.matched_words, vec!["hello"]);
+    }
+
+    #[test]
+    fn hl_case_insensitive() {
+        let r = h().highlight_text("Hello World", &["hello".to_string()]);
+        assert!(matches!(r.match_level, MatchLevel::Full));
+        // Original casing preserved in output
+        assert_eq!(r.value, "<em>Hello</em> World");
+    }
+
+    #[test]
+    fn hl_multiple_occurrences() {
+        let r = h().highlight_text("cat and cat", &["cat".to_string()]);
+        assert!(matches!(r.match_level, MatchLevel::Full));
+        assert_eq!(r.value, "<em>cat</em> and <em>cat</em>");
+    }
+
+    #[test]
+    fn hl_fully_highlighted_true() {
+        let r = h().highlight_text("cat", &["cat".to_string()]);
+        assert_eq!(r.fully_highlighted, Some(true));
+    }
+
+    #[test]
+    fn hl_fully_highlighted_false() {
+        let r = h().highlight_text("cat and dog", &["cat".to_string()]);
+        assert_eq!(r.fully_highlighted, Some(false));
+    }
+
+    #[test]
+    fn hl_matched_words_deduped_and_sorted() {
+        // "cat" appears twice → matched_words should have it once
+        let r = h().highlight_text("cat cat", &["cat".to_string()]);
+        assert_eq!(r.matched_words, vec!["cat"]);
+    }
+
+    // --- highlight_text: split matching ---
+
+    #[test]
+    fn hl_split_match() {
+        // query "hotdog" → split to "hot dog" → matches text "hot dog collar"
+        let r = h().highlight_text("hot dog collar", &["hotdog".to_string()]);
+        assert!(matches!(r.match_level, MatchLevel::Full));
+        assert!(r.value.starts_with("<em>hot dog</em>"));
+    }
+
+    // --- highlight_text: concat matching ---
+
+    #[test]
+    fn hl_concat_match() {
+        // query ["ear", "buds"] → concat "earbuds" → matches text "wireless earbuds sale"
+        let r = h().highlight_text(
+            "wireless earbuds sale",
+            &["ear".to_string(), "buds".to_string()],
+        );
+        assert!(matches!(r.match_level, MatchLevel::Full));
+        assert!(r.value.contains("<em>earbuds</em>"));
+    }
+
+    // --- highlight_text: fuzzy matching ---
+
+    #[test]
+    fn hl_fuzzy_transposition() {
+        // "laptpo" is 1 transposition away from "laptop"
+        let r = h().highlight_text("laptop sale", &["laptpo".to_string()]);
+        assert!(matches!(r.match_level, MatchLevel::Full));
+        assert!(r.value.contains("<em>laptop</em>"));
+    }
+
+    #[test]
+    fn hl_fuzzy_no_match_short_word() {
+        // "cat" is 3 chars — below the fuzzy threshold of 4, so "cot" should NOT fuzzy-match
+        let r = h().highlight_text("cot sale", &["cat".to_string()]);
+        assert!(matches!(r.match_level, MatchLevel::None));
+    }
+
+    // --- highlight_document ---
+
+    #[test]
+    fn hl_document_all_fields_included() {
+        use crate::types::{Document, FieldValue};
+        use std::collections::HashMap;
+        let mut fields = HashMap::new();
+        fields.insert(
+            "title".to_string(),
+            FieldValue::Text("Gaming Laptop".to_string()),
+        );
+        fields.insert("brand".to_string(), FieldValue::Text("Dell".to_string()));
+        let doc = Document {
+            id: "1".to_string(),
+            fields,
+        };
+        let result = h().highlight_document(&doc, &["gaming".to_string()], &[]);
+        assert!(result.contains_key("title"));
+        assert!(result.contains_key("brand"));
+        assert!(!result.contains_key("objectID"));
+    }
+
+    #[test]
+    fn hl_document_array_field() {
+        use crate::types::{Document, FieldValue};
+        use std::collections::HashMap;
+        let mut fields = HashMap::new();
+        fields.insert(
+            "tags".to_string(),
+            FieldValue::Array(vec![
+                FieldValue::Text("laptop".to_string()),
+                FieldValue::Text("gaming".to_string()),
+            ]),
+        );
+        let doc = Document {
+            id: "1".to_string(),
+            fields,
+        };
+        let result = h().highlight_document(&doc, &["laptop".to_string()], &[]);
+        assert!(matches!(result.get("tags"), Some(HighlightValue::Array(_))));
+    }
+}

@@ -21,7 +21,11 @@ import type {
 } from '@flapjack-search/client-common';
 
 import type { Action } from '../model/action';
+import type { ABTest } from '../model/abTest';
+import type { ABTestResults } from '../model/abTestResults';
+import type { ABTestResponse } from '../model/abTestResponse';
 import type { AddApiKeyResponse } from '../model/addApiKeyResponse';
+import type { AddABTestRequest } from '../model/addABTestRequest';
 import type { ApiKey } from '../model/apiKey';
 import type { ApiKeyOperation } from '../model/apiKeyOperation';
 import type { AssignUserIdParams } from '../model/assignUserIdParams';
@@ -52,6 +56,7 @@ import type { HasPendingMappingsResponse } from '../model/hasPendingMappingsResp
 import type { IndexSettings } from '../model/indexSettings';
 import type { Languages } from '../model/languages';
 import type { ListApiKeysResponse } from '../model/listApiKeysResponse';
+import type { ListABTestsResponse } from '../model/listABTestsResponse';
 import type { ListClustersResponse } from '../model/listClustersResponse';
 import type { ListIndicesResponse } from '../model/listIndicesResponse';
 import type { ListUserIdsResponse } from '../model/listUserIdsResponse';
@@ -790,6 +795,224 @@ export function createSearchClient({
       requestOptions?: RequestOptions | undefined
     ): Promise<{results: Array<SearchForFacetValuesResponse>}> {
       return this.search(searchMethodParams, requestOptions) as Promise<{results: Array<SearchForFacetValuesResponse>}>;
+    },
+    /**
+      * Creates a new A/B test.
+      *
+      * Required API Key ACLs:
+      *  - editSettings
+                     * @param addABTestRequest - Parameters of the A/B test to create.
+             * @param requestOptions - The requestOptions to send along with the query, they will be merged with the transporter requestOptions.
+    */
+    addABTest(       addABTestRequest: AddABTestRequest  ,
+requestOptions?: RequestOptions ) : Promise<ABTestResponse> {
+
+
+      if (!addABTestRequest) {
+        throw new Error('Parameter `addABTestRequest` is required when calling `addABTest`.');
+      }
+
+
+      const requestPath = '/2/abtests';
+      const headers: Headers = {};
+      const queryParameters: QueryParameters = {};
+
+      
+
+
+      const request: Request = {
+        method: 'POST',
+        path: requestPath,
+        queryParameters,
+        headers,
+        data: addABTestRequest,
+      };
+
+
+      return transporter.request(request, requestOptions);
+    },
+
+    /**
+      * Retrieves an A/B test by its ID.
+      *
+      * Required API Key ACLs:
+      *  - search
+                * @param abTestID - Unique A/B test identifier.
+                 * @param requestOptions - The requestOptions to send along with the query, they will be merged with the transporter requestOptions.
+    */
+    getABTest(       abTestID: string  ,
+requestOptions?: RequestOptions ) : Promise<ABTest> {
+
+
+      if (!abTestID) {
+        throw new Error('Parameter `abTestID` is required when calling `getABTest`.');
+      }
+
+
+      const requestPath = '/2/abtests/{abTestID}'.replace('{abTestID}',encodeURIComponent(abTestID));
+      const headers: Headers = {};
+      const queryParameters: QueryParameters = {};
+
+      
+
+
+      const request: Request = {
+        method: 'GET',
+        path: requestPath,
+        queryParameters,
+        headers,
+      };
+
+
+      return transporter.request(request, requestOptions);
+    },
+
+    /**
+      * Lists A/B tests.
+      *
+      * Required API Key ACLs:
+      *  - search
+                * @param listABTests - The listABTests object.
+          * @param listABTests.offset - First A/B test to retrieve.
+          * @param listABTests.limit - Maximum number of A/B tests to retrieve.
+                 * @param requestOptions - The requestOptions to send along with the query, they will be merged with the transporter requestOptions.
+    */
+    listABTests(     { offset, limit }: { offset?: number|undefined; limit?: number|undefined; } = {},
+requestOptions: RequestOptions | undefined = undefined ) : Promise<ListABTestsResponse> {
+
+
+
+      const requestPath = '/2/abtests';
+      const headers: Headers = {};
+      const queryParameters: QueryParameters = {};
+
+      
+      if (offset !== undefined) {
+        queryParameters['offset'] = offset.toString();
+      }
+
+      
+      if (limit !== undefined) {
+        queryParameters['limit'] = limit.toString();
+      }
+
+      
+
+
+      const request: Request = {
+        method: 'GET',
+        path: requestPath,
+        queryParameters,
+        headers,
+      };
+
+
+      return transporter.request(request, requestOptions);
+    },
+
+    /**
+      * Retrieves A/B test results by ID.
+      *
+      * Required API Key ACLs:
+      *  - search
+                * @param abTestID - Unique A/B test identifier.
+                 * @param requestOptions - The requestOptions to send along with the query, they will be merged with the transporter requestOptions.
+    */
+    getABTestResults(       abTestID: string  ,
+requestOptions?: RequestOptions ) : Promise<ABTestResults> {
+
+
+      if (!abTestID) {
+        throw new Error('Parameter `abTestID` is required when calling `getABTestResults`.');
+      }
+
+
+      const requestPath = '/2/abtests/{abTestID}/results'.replace('{abTestID}',encodeURIComponent(abTestID));
+      const headers: Headers = {};
+      const queryParameters: QueryParameters = {};
+
+      
+
+
+      const request: Request = {
+        method: 'GET',
+        path: requestPath,
+        queryParameters,
+        headers,
+      };
+
+
+      return transporter.request(request, requestOptions);
+    },
+
+    /**
+      * Stops an A/B test.
+      *
+      * Required API Key ACLs:
+      *  - editSettings
+                * @param abTestID - Unique A/B test identifier.
+                 * @param requestOptions - The requestOptions to send along with the query, they will be merged with the transporter requestOptions.
+    */
+    stopABTest(       abTestID: string  ,
+requestOptions?: RequestOptions ) : Promise<ABTestResponse> {
+
+
+      if (!abTestID) {
+        throw new Error('Parameter `abTestID` is required when calling `stopABTest`.');
+      }
+
+
+      const requestPath = '/2/abtests/{abTestID}/stop'.replace('{abTestID}',encodeURIComponent(abTestID));
+      const headers: Headers = {};
+      const queryParameters: QueryParameters = {};
+
+      
+
+
+      const request: Request = {
+        method: 'POST',
+        path: requestPath,
+        queryParameters,
+        headers,
+      };
+
+
+      return transporter.request(request, requestOptions);
+    },
+
+    /**
+      * Deletes an A/B test.
+      *
+      * Required API Key ACLs:
+      *  - editSettings
+                * @param abTestID - Unique A/B test identifier.
+                 * @param requestOptions - The requestOptions to send along with the query, they will be merged with the transporter requestOptions.
+    */
+    deleteABTest(       abTestID: string  ,
+requestOptions?: RequestOptions ) : Promise<Record<string, unknown>> {
+
+
+      if (!abTestID) {
+        throw new Error('Parameter `abTestID` is required when calling `deleteABTest`.');
+      }
+
+
+      const requestPath = '/2/abtests/{abTestID}'.replace('{abTestID}',encodeURIComponent(abTestID));
+      const headers: Headers = {};
+      const queryParameters: QueryParameters = {};
+
+      
+
+
+      const request: Request = {
+        method: 'DELETE',
+        path: requestPath,
+        queryParameters,
+        headers,
+      };
+
+
+      return transporter.request(request, requestOptions);
     },
     /**
       * Creates a new API key with specific permissions and restrictions.
@@ -3468,4 +3691,3 @@ requestOptions?: RequestOptions ) : Promise<UpdateApiKeyResponse> {
 
   };
 }
-

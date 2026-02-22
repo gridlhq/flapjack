@@ -1,4 +1,5 @@
 import { test, expect } from '../fixtures/auth.fixture';
+import { API_BASE, API_HEADERS } from '../fixtures/local-instance';
 
 /**
  * Demo Analytics API Tests — PURE API (no browser)
@@ -7,13 +8,6 @@ import { test, expect } from '../fixtures/auth.fixture';
  * These tests do NOT open a browser. For browser-based demo analytics verification,
  * see tests/e2e-ui/full/analytics*.spec.ts
  */
-
-const API_BASE = 'http://localhost:7700';
-const API_HEADERS = {
-  'x-algolia-application-id': 'flapjack',
-  'x-algolia-api-key': 'fj_devtestadminkey000000',
-  'Content-Type': 'application/json',
-};
 
 test.describe('Analytics Management API (no browser)', () => {
   test('flush endpoint triggers immediate analytics update', async ({ request }) => {

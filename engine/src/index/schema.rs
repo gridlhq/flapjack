@@ -276,3 +276,113 @@ impl SchemaBuilder {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── FieldOptions defaults ───────────────────────────────────────────
+
+    #[test]
+    fn field_options_default() {
+        let opts = FieldOptions::default();
+        assert!(opts.stored);
+        assert!(opts.indexed);
+        assert!(!opts.fast);
+        assert_eq!(opts.text_indexing, TextIndexing::EdgeNgram);
+    }
+
+    // ── SchemaBuilder ───────────────────────────────────────────────────
+
+    #[test]
+    fn builder_inserts_id_field_at_position_zero() {
+        let schema = SchemaBuilder::new().build();
+        assert_eq!(schema.fields()[0].name, "_id");
+        assert_eq!(schema.fields()[0].field_type, FieldType::Text);
+    }
+
+    #[test]
+    fn builder_add_field_accessible_by_name() {
+        let schema = SchemaBuilder::new()
+            .add_field("title", FieldType::Text, FieldOptions::default())
+            .build();
+        let field = schema.get_field("title");
+        assert!(field.is_some());
+        assert_eq!(field.unwrap().field_type, FieldType::Text);
+    }
+
+    #[test]
+    fn builder_multiple_fields() {
+        let schema = SchemaBuilder::new()
+            .add_field("title", FieldType::Text, FieldOptions::default())
+            .add_field("price", FieldType::Float, FieldOptions::default())
+            .add_field("count", FieldType::Integer, FieldOptions::default())
+            .build();
+        // +1 for _id
+        assert_eq!(schema.fields().len(), 4);
+        assert!(schema.get_field("title").is_some());
+        assert!(schema.get_field("price").is_some());
+        assert!(schema.get_field("count").is_some());
+    }
+
+    #[test]
+    fn get_field_missing_returns_none() {
+        let schema = SchemaBuilder::new().build();
+        assert!(schema.get_field("nonexistent").is_none());
+    }
+
+    #[test]
+    fn get_field_id_always_present() {
+        let schema = SchemaBuilder::new().build();
+        assert!(schema.get_field("_id").is_some());
+    }
+
+    // ── to_tantivy ─────────────────────────────────────────────────────
+
+    #[test]
+    fn to_tantivy_has_required_fields() {
+        let schema = SchemaBuilder::new().build();
+        let tantivy = schema.to_tantivy();
+        assert!(tantivy.get_field("_id").is_ok());
+        assert!(tantivy.get_field("_json_search").is_ok());
+        assert!(tantivy.get_field("_json_filter").is_ok());
+        assert!(tantivy.get_field("_json_exact").is_ok());
+        assert!(tantivy.get_field("_facets").is_ok());
+        assert!(tantivy.get_field("_geo_lat").is_ok());
+        assert!(tantivy.get_field("_geo_lng").is_ok());
+    }
+
+    // ── from_tantivy ────────────────────────────────────────────────────
+
+    #[test]
+    fn from_tantivy_returns_empty_schema() {
+        let tantivy = TantivySchema::builder().build();
+        let schema = Schema::from_tantivy(tantivy).unwrap();
+        assert!(schema.fields().is_empty());
+    }
+
+    // ── get_tantivy_field ───────────────────────────────────────────────
+
+    #[test]
+    fn get_tantivy_field_found() {
+        let schema = SchemaBuilder::new().build();
+        let tantivy = schema.to_tantivy();
+        assert!(schema.get_tantivy_field(&tantivy, "_id").is_ok());
+    }
+
+    #[test]
+    fn get_tantivy_field_not_found() {
+        let schema = SchemaBuilder::new().build();
+        let tantivy = schema.to_tantivy();
+        assert!(schema.get_tantivy_field(&tantivy, "missing").is_err());
+    }
+
+    // ── FieldType variants ──────────────────────────────────────────────
+
+    #[test]
+    fn field_types_distinct() {
+        assert_ne!(FieldType::Text, FieldType::Integer);
+        assert_ne!(FieldType::Float, FieldType::Date);
+        assert_ne!(FieldType::Facet, FieldType::Text);
+    }
+}

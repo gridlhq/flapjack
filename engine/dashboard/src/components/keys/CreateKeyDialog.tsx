@@ -146,7 +146,7 @@ export const CreateKeyDialog = memo(function CreateKeyDialog({
               ))}
             </div>
             {selectedAcl.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-2">
+              <div className="flex flex-wrap gap-1 mt-2" data-testid="selected-permissions">
                 {selectedAcl.map((acl) => (
                   <Badge key={acl} variant="secondary">
                     {acl}

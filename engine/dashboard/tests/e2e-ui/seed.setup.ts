@@ -2,23 +2,22 @@
  * Playwright setup project — seeds test data into the real Flapjack backend.
  * Runs ONCE before any e2e-ui tests.
  *
- * Requires: Flapjack server running on port 7700
+ * Requires: Flapjack server running on the repo-local configured backend port.
  */
 import { test as setup, expect } from '@playwright/test';
 import { PRODUCTS, SYNONYMS, RULES, SETTINGS } from '../fixtures/test-data';
+import { API_BASE as API, API_HEADERS as H } from '../fixtures/local-instance';
+import { deleteExperimentsByName } from '../fixtures/api-helpers';
 
-const API = 'http://localhost:7700';
-const H = {
-  'x-algolia-application-id': 'flapjack',
-  'x-algolia-api-key': 'fj_devtestadminkey000000',
-  'Content-Type': 'application/json',
-};
 const INDEX = 'e2e-products';
 
 setup('seed test data', async ({ request }) => {
   // 1. Backend must be running
   const health = await request.get(`${API}/health`);
-  expect(health.ok(), 'Flapjack server must be running on port 7700').toBeTruthy();
+  expect(
+    health.ok(),
+    `Flapjack server must be running at ${API}`,
+  ).toBeTruthy();
 
   // 2. Clean slate — delete test index if it exists (ignore 404)
   await request.delete(`${API}/1/indexes/${INDEX}`, { headers: H }).catch(() => {});
@@ -69,4 +68,29 @@ setup('seed test data', async ({ request }) => {
     const body = await res.json();
     expect(body.nbHits).toBeGreaterThanOrEqual(PRODUCTS.length);
   }).toPass({ timeout: 15_000 });
+
+  // 9. Seed a baseline experiment for experiment browser-unmocked tests.
+  await deleteExperimentsByName(request, 'e2e-seeded-experiment');
+
+  const expRes = await request.post(`${API}/2/abtests`, {
+    headers: H,
+    data: {
+      name: 'e2e-seeded-experiment',
+      indexName: INDEX,
+      trafficSplit: 0.5,
+      control: { name: 'control' },
+      variant: {
+        name: 'variant',
+        queryOverrides: { filters: 'brand:Apple' },
+      },
+      primaryMetric: 'ctr',
+      minimumDays: 14,
+    },
+  });
+  expect(expRes.ok(), 'Failed to create seeded experiment').toBeTruthy();
+  const seededExp = await expRes.json();
+
+  // Start the experiment so it has a running status for detail page tests
+  const startRes = await request.post(`${API}/2/abtests/${seededExp.id}/start`, { headers: H });
+  expect(startRes.ok(), 'Failed to start seeded experiment').toBeTruthy();
 });

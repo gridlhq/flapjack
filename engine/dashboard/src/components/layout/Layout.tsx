@@ -18,7 +18,7 @@ export function Layout() {
       {isDisconnected && (
         <div className="bg-red-600 text-white px-4 py-2 flex items-center justify-center gap-2 text-sm font-medium" data-testid="disconnected-banner">
           <AlertTriangle className="h-4 w-4 shrink-0" />
-          <span>Server disconnected — check that Flapjack is running on {import.meta.env.DEV ? 'localhost:7700' : window.location.host}</span>
+          <span>Server disconnected — check that Flapjack is running on {import.meta.env.DEV ? new URL(__BACKEND_URL__).host : window.location.host}</span>
         </div>
       )}
       <DevModePanel />

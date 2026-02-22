@@ -2,6 +2,7 @@ use serde_json::json;
 
 mod common;
 use common::spawn_server;
+use common::{wait_for_response_task, wait_for_task};
 
 /// Helper: create a reqwest client with Algolia-style headers pre-set
 fn algolia_client() -> reqwest::Client {
@@ -17,21 +18,22 @@ fn h(rb: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
 /// Helper: seed an index with test data and wait for indexing
 async fn seed_index(base: &str, index: &str, records: Vec<serde_json::Value>) {
     let client = algolia_client();
+    let addr = base.trim_start_matches("http://");
     let requests: Vec<serde_json::Value> = records
         .into_iter()
         .map(|body| json!({"action": "addObject", "body": body}))
         .collect();
-    h(client.post(format!("{}/1/indexes/{}/batch", base, index)))
+    let resp = h(client.post(format!("{}/1/indexes/{}/batch", base, index)))
         .json(&json!({"requests": requests}))
         .send()
         .await
         .unwrap();
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    wait_for_response_task(&client, addr, resp).await;
 }
 
 #[tokio::test]
 async fn test_sdk_endpoints_exist() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = reqwest::Client::new();
     let base = format!("http://{}", addr);
 
@@ -74,7 +76,7 @@ async fn test_sdk_endpoints_exist() {
 /// POST /1/indexes/{indexName} — add record with auto-generated objectID
 #[tokio::test]
 async fn test_add_record_auto_id() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = reqwest::Client::new();
     let base = format!("http://{}", addr);
 
@@ -113,8 +115,9 @@ async fn test_add_record_auto_id() {
         oid
     );
 
-    // Verify the record was actually stored by fetching it
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    // Wait for the write task to complete
+    let task_id = body["taskID"].as_i64().unwrap();
+    wait_for_task(&client, &addr, task_id).await;
 
     let res = client
         .get(format!("{}/1/indexes/products/{}", base, oid))
@@ -137,12 +140,12 @@ async fn test_add_record_auto_id() {
 /// POST /1/indexes/{indexName}/{objectID}/partial — partial update existing doc
 #[tokio::test]
 async fn test_partial_update_existing() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = reqwest::Client::new();
     let base = format!("http://{}", addr);
 
     // First, add a record via batch
-    client
+    let resp = client
         .post(format!("{}/1/indexes/products/batch", base))
         .header("x-algolia-application-id", "test-app")
         .header("x-algolia-api-key", "test-key")
@@ -156,7 +159,7 @@ async fn test_partial_update_existing() {
         .await
         .unwrap();
 
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    wait_for_response_task(&client, &addr, resp).await;
 
     // Partial update: change price, keep name
     let res = client
@@ -198,7 +201,7 @@ async fn test_partial_update_existing() {
 /// POST /1/indexes/{indexName}/{objectID}/partial with createIfNotExists=true (default)
 #[tokio::test]
 async fn test_partial_update_creates_when_missing() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = reqwest::Client::new();
     let base = format!("http://{}", addr);
 
@@ -214,7 +217,7 @@ async fn test_partial_update_creates_when_missing() {
 
     assert!(res.status().is_success());
 
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    wait_for_response_task(&client, &addr, res).await;
 
     // Verify it was created
     let res = client
@@ -237,7 +240,7 @@ async fn test_partial_update_creates_when_missing() {
 /// POST /1/indexes/{indexName}/{objectID}/partial?createIfNotExists=false — no-op when missing
 #[tokio::test]
 async fn test_partial_update_noop_when_missing() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = reqwest::Client::new();
     let base = format!("http://{}", addr);
 
@@ -257,7 +260,7 @@ async fn test_partial_update_noop_when_missing() {
     // Algolia returns 200 even for no-op
     assert!(res.status().is_success());
 
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    wait_for_response_task(&client, &addr, res).await;
 
     // Verify it was NOT created
     let res = client
@@ -278,7 +281,7 @@ async fn test_partial_update_noop_when_missing() {
 /// Batch addObject without objectID should auto-generate a UUID
 #[tokio::test]
 async fn test_batch_add_object_auto_id() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = reqwest::Client::new();
     let base = format!("http://{}", addr);
 
@@ -313,12 +316,12 @@ async fn test_batch_add_object_auto_id() {
 /// Unknown search params should not cause 400 errors (serde ignores them)
 #[tokio::test]
 async fn test_unknown_search_params_accepted() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = reqwest::Client::new();
     let base = format!("http://{}", addr);
 
     // Create the index first so search doesn't 404
-    client
+    let resp = client
         .post(format!("{}/1/indexes/products/batch", base))
         .header("x-algolia-application-id", "test-app")
         .header("x-algolia-api-key", "test-key")
@@ -329,7 +332,7 @@ async fn test_unknown_search_params_accepted() {
         .await
         .unwrap();
 
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    wait_for_response_task(&client, &addr, resp).await;
 
     let res = client
         .post(format!("{}/1/indexes/products/query", base))
@@ -365,7 +368,7 @@ async fn test_unknown_search_params_accepted() {
 
 #[tokio::test]
 async fn test_settings_roundtrip() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -411,7 +414,7 @@ async fn test_settings_roundtrip() {
 
 #[tokio::test]
 async fn test_put_object_replaces_fully() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -433,7 +436,8 @@ async fn test_put_object_replaces_fully() {
     assert_eq!(body["objectID"], "p1");
     assert!(body.get("updatedAt").is_some());
 
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let task_id = body["taskID"].as_i64().unwrap();
+    wait_for_task(&client, &addr, task_id).await;
 
     // Verify: brand should be gone (full replace, not merge)
     let res = h(client.get(format!("{}/1/indexes/products/p1", base)))
@@ -455,7 +459,7 @@ async fn test_put_object_replaces_fully() {
 
 #[tokio::test]
 async fn test_delete_object() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -475,7 +479,8 @@ async fn test_delete_object() {
     assert!(body.get("taskID").is_some());
     assert!(body.get("deletedAt").is_some());
 
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let task_id = body["taskID"].as_i64().unwrap();
+    wait_for_task(&client, &addr, task_id).await;
 
     // Verify gone
     let res = h(client.get(format!("{}/1/indexes/products/d1", base)))
@@ -491,7 +496,7 @@ async fn test_delete_object() {
 
 #[tokio::test]
 async fn test_batch_delete_object() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -517,7 +522,7 @@ async fn test_batch_delete_object() {
         .unwrap();
     assert!(res.status().is_success(), "batch delete: {}", res.status());
 
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    wait_for_response_task(&client, &addr, res).await;
 
     let res = h(client.get(format!("{}/1/indexes/products/bd1", base)))
         .send()
@@ -532,7 +537,7 @@ async fn test_batch_delete_object() {
 
 #[tokio::test]
 async fn test_batch_update_object() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -555,7 +560,7 @@ async fn test_batch_update_object() {
         .unwrap();
     assert!(res.status().is_success());
 
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    wait_for_response_task(&client, &addr, res).await;
 
     let res = h(client.get(format!("{}/1/indexes/products/u1", base)))
         .send()
@@ -571,7 +576,7 @@ async fn test_batch_update_object() {
 
 #[tokio::test]
 async fn test_list_indices() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -600,7 +605,7 @@ async fn test_list_indices() {
 
 #[tokio::test]
 async fn test_delete_index() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -638,7 +643,7 @@ async fn test_delete_index() {
 
 #[tokio::test]
 async fn test_clear_index() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -658,7 +663,7 @@ async fn test_clear_index() {
         .unwrap();
     assert!(res.status().is_success(), "clear index: {}", res.status());
 
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    wait_for_response_task(&client, &addr, res).await;
 
     let res = h(client.post(format!("{}/1/indexes/products/query", base)))
         .json(&json!({"query": ""}))
@@ -675,7 +680,7 @@ async fn test_clear_index() {
 
 #[tokio::test]
 async fn test_multi_index_search() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -718,7 +723,7 @@ async fn test_multi_index_search() {
 
 #[tokio::test]
 async fn test_multi_index_get_objects() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -763,7 +768,7 @@ async fn test_multi_index_get_objects() {
 
 #[tokio::test]
 async fn test_synonyms_crud() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -834,7 +839,7 @@ async fn test_synonyms_crud() {
 
 #[tokio::test]
 async fn test_synonyms_batch_and_clear() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -892,7 +897,7 @@ async fn test_synonyms_batch_and_clear() {
 
 #[tokio::test]
 async fn test_rules_crud() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -955,7 +960,7 @@ async fn test_rules_crud() {
 
 #[tokio::test]
 async fn test_rules_batch_and_clear() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -1010,7 +1015,7 @@ async fn test_rules_batch_and_clear() {
 
 #[tokio::test]
 async fn test_browse_index() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -1069,7 +1074,7 @@ async fn test_browse_index() {
 
 #[tokio::test]
 async fn test_search_response_format() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -1121,7 +1126,7 @@ async fn test_search_response_format() {
 
 #[tokio::test]
 async fn test_faceted_search() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -1161,7 +1166,7 @@ async fn test_faceted_search() {
 
 #[tokio::test]
 async fn test_delete_by_query() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -1189,7 +1194,7 @@ async fn test_delete_by_query() {
         .unwrap();
     assert!(res.status().is_success(), "deleteByQuery: {}", res.status());
 
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    wait_for_response_task(&client, &addr, res).await;
 
     // Only "B" should remain
     let res = h(client.get(format!("{}/1/indexes/products/1", base)))
@@ -1209,7 +1214,7 @@ async fn test_delete_by_query() {
 
 #[tokio::test]
 async fn test_partial_update_increment() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -1228,7 +1233,7 @@ async fn test_partial_update_increment() {
         .unwrap();
     assert!(res.status().is_success());
 
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    wait_for_response_task(&client, &addr, res).await;
 
     let res = h(client.get(format!("{}/1/indexes/products/p1", base)))
         .send()
@@ -1241,7 +1246,7 @@ async fn test_partial_update_increment() {
 
 #[tokio::test]
 async fn test_partial_update_decrement() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -1259,7 +1264,7 @@ async fn test_partial_update_decrement() {
         .unwrap();
     assert!(res.status().is_success());
 
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    wait_for_response_task(&client, &addr, res).await;
 
     let res = h(client.get(format!("{}/1/indexes/products/p1", base)))
         .send()
@@ -1271,7 +1276,7 @@ async fn test_partial_update_decrement() {
 
 #[tokio::test]
 async fn test_partial_update_add_to_array() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -1289,7 +1294,7 @@ async fn test_partial_update_add_to_array() {
         .unwrap();
     assert!(res.status().is_success());
 
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    wait_for_response_task(&client, &addr, res).await;
 
     let res = h(client.get(format!("{}/1/indexes/products/p1", base)))
         .send()
@@ -1306,7 +1311,7 @@ async fn test_partial_update_add_to_array() {
 
 #[tokio::test]
 async fn test_partial_update_remove_from_array() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -1324,7 +1329,7 @@ async fn test_partial_update_remove_from_array() {
         .unwrap();
     assert!(res.status().is_success());
 
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    wait_for_response_task(&client, &addr, res).await;
 
     let res = h(client.get(format!("{}/1/indexes/products/p1", base)))
         .send()
@@ -1341,7 +1346,7 @@ async fn test_partial_update_remove_from_array() {
 
 #[tokio::test]
 async fn test_partial_update_add_unique() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -1360,7 +1365,7 @@ async fn test_partial_update_add_unique() {
         .unwrap();
     assert!(res.status().is_success());
 
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    wait_for_response_task(&client, &addr, res).await;
 
     let res = h(client.get(format!("{}/1/indexes/products/p1", base)))
         .send()
@@ -1378,7 +1383,7 @@ async fn test_partial_update_add_unique() {
         .unwrap();
     assert!(res.status().is_success());
 
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    wait_for_response_task(&client, &addr, res).await;
 
     let res = h(client.get(format!("{}/1/indexes/products/p1", base)))
         .send()
@@ -1395,7 +1400,7 @@ async fn test_partial_update_add_unique() {
 
 #[tokio::test]
 async fn test_partial_update_increment_on_missing_field() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -1414,7 +1419,7 @@ async fn test_partial_update_increment_on_missing_field() {
         .unwrap();
     assert!(res.status().is_success());
 
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    wait_for_response_task(&client, &addr, res).await;
 
     let res = h(client.get(format!("{}/1/indexes/products/p1", base)))
         .send()
@@ -1427,7 +1432,7 @@ async fn test_partial_update_increment_on_missing_field() {
 
 #[tokio::test]
 async fn test_partial_update_batch_operations() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -1455,7 +1460,7 @@ async fn test_partial_update_batch_operations() {
         .unwrap();
     assert!(res.status().is_success());
 
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    wait_for_response_task(&client, &addr, res).await;
 
     let res = h(client.get(format!("{}/1/indexes/products/p1", base)))
         .send()
@@ -1472,7 +1477,7 @@ async fn test_partial_update_batch_operations() {
 
 #[tokio::test]
 async fn test_snippet_result_basic() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -1523,7 +1528,7 @@ async fn test_snippet_result_basic() {
 
 #[tokio::test]
 async fn test_snippet_with_highlight() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -1573,7 +1578,7 @@ async fn test_snippet_with_highlight() {
 
 #[tokio::test]
 async fn test_snippet_no_match() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -1624,7 +1629,7 @@ async fn test_snippet_no_match() {
 
 #[tokio::test]
 async fn test_query_type_prefix_last() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -1653,7 +1658,7 @@ async fn test_query_type_prefix_last() {
 
 #[tokio::test]
 async fn test_query_type_prefix_none() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -1696,7 +1701,7 @@ async fn test_query_type_prefix_none() {
 
 #[tokio::test]
 async fn test_query_type_prefix_all() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -1724,7 +1729,7 @@ async fn test_query_type_prefix_all() {
 
 #[tokio::test]
 async fn test_typo_tolerance_default() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -1750,7 +1755,7 @@ async fn test_typo_tolerance_default() {
 
 #[tokio::test]
 async fn test_typo_tolerance_false() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -1777,7 +1782,7 @@ async fn test_typo_tolerance_false() {
 
 #[tokio::test]
 async fn test_typo_tolerance_true_explicit() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -1805,7 +1810,7 @@ async fn test_typo_tolerance_true_explicit() {
 
 #[tokio::test]
 async fn test_advanced_syntax_exclusion() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -1842,7 +1847,7 @@ async fn test_advanced_syntax_exclusion() {
 
 #[tokio::test]
 async fn test_advanced_syntax_exact_phrase() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -1879,7 +1884,7 @@ async fn test_advanced_syntax_exact_phrase() {
 
 #[tokio::test]
 async fn test_advanced_syntax_disabled_default() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -1924,7 +1929,7 @@ async fn test_advanced_syntax_disabled_default() {
 
 #[tokio::test]
 async fn test_remove_words_last_words() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -1957,7 +1962,7 @@ async fn test_remove_words_last_words() {
 
 #[tokio::test]
 async fn test_remove_words_first_words() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -1986,7 +1991,7 @@ async fn test_remove_words_first_words() {
 
 #[tokio::test]
 async fn test_remove_words_none_default() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -2015,7 +2020,7 @@ async fn test_remove_words_none_default() {
 
 #[tokio::test]
 async fn test_highlight_custom_tags() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -2062,7 +2067,7 @@ async fn test_highlight_custom_tags() {
 
 #[tokio::test]
 async fn test_browse_pagination_cursor() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -2121,17 +2126,17 @@ async fn test_browse_pagination_cursor() {
 
 #[tokio::test]
 async fn test_optional_filters_boost() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
     // Configure faceting so category is in _json_filter
-    h(client.put(format!("{}/1/indexes/products/settings", base)))
+    let resp = h(client.put(format!("{}/1/indexes/products/settings", base)))
         .json(&json!({"attributesForFaceting": ["category"]}))
         .send()
         .await
         .unwrap();
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    wait_for_response_task(&client, &addr, resp).await;
 
     seed_index(
         &base,
@@ -2182,16 +2187,16 @@ async fn test_optional_filters_boost() {
 
 #[tokio::test]
 async fn test_optional_filters_no_exclusion() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
-    h(client.put(format!("{}/1/indexes/items/settings", base)))
+    let resp = h(client.put(format!("{}/1/indexes/items/settings", base)))
         .json(&json!({"attributesForFaceting": ["brand"]}))
         .send()
         .await
         .unwrap();
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    wait_for_response_task(&client, &addr, resp).await;
 
     seed_index(
         &base,
@@ -2233,16 +2238,16 @@ async fn test_optional_filters_no_exclusion() {
 
 #[tokio::test]
 async fn test_optional_filters_score_weight() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
-    h(client.put(format!("{}/1/indexes/scored/settings", base)))
+    let resp = h(client.put(format!("{}/1/indexes/scored/settings", base)))
         .json(&json!({"attributesForFaceting": ["color"]}))
         .send()
         .await
         .unwrap();
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    wait_for_response_task(&client, &addr, resp).await;
 
     seed_index(
         &base,
@@ -2275,7 +2280,7 @@ async fn test_optional_filters_score_weight() {
 
 #[tokio::test]
 async fn test_enable_synonyms_false() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -2305,7 +2310,7 @@ async fn test_enable_synonyms_false() {
         "saving synonym should succeed, got {}",
         syn_res.status()
     );
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    wait_for_response_task(&client, &addr, syn_res).await;
 
     // Search "phone" WITH synonyms (default) — should find "phone case" at minimum
     let res = h(client.post(format!("{}/1/indexes/syn_test/query", base)))
@@ -2355,12 +2360,12 @@ async fn test_enable_synonyms_false() {
 
 #[tokio::test]
 async fn test_enable_rules_false() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
     // Add a rule that pins objectID "promo" to position 0
-    h(client.put(format!("{}/1/indexes/rule_test/rules/rule1", base)))
+    let resp = h(client.put(format!("{}/1/indexes/rule_test/rules/rule1", base)))
         .json(&json!({
             "objectID": "rule1",
             "conditions": [{"anchoring": "is", "pattern": "laptop"}],
@@ -2371,7 +2376,7 @@ async fn test_enable_rules_false() {
         .send()
         .await
         .unwrap();
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    wait_for_response_task(&client, &addr, resp).await;
 
     seed_index(
         &base,
@@ -2427,7 +2432,7 @@ async fn test_enable_rules_false() {
 
 #[tokio::test]
 async fn test_restrict_searchable_attributes() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -2474,7 +2479,7 @@ async fn test_restrict_searchable_attributes() {
 
 #[tokio::test]
 async fn test_rule_contexts() {
-    let (addr, _temp) = spawn_server().await;
+    let (addr, _dir) = spawn_server().await;
     let client = algolia_client();
     let base = format!("http://{}", addr);
 
@@ -2527,4 +2532,1063 @@ async fn test_rule_contexts() {
         body.get("processingTimeMS").is_some(),
         "response must contain processingTimeMS"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Merged from test_algolia_http.rs and test_http_algolia.rs
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_filter_string_via_http() {
+    let (addr, _dir) = spawn_server().await;
+    let client = algolia_client();
+
+    let resp = h(client.post(format!("http://{}/1/indexes/products/batch", addr)))
+        .json(&json!({
+            "requests": [
+                {"action": "addObject", "body": {"objectID": "1", "price": 1200}},
+                {"action": "addObject", "body": {"objectID": "2", "price": 25}}
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    wait_for_response_task(&client, &addr, resp).await;
+
+    let response = h(client.post(format!("http://{}/1/indexes/products/query", addr)))
+        .json(&json!({"query": "", "filters": "price > 100", "hitsPerPage": 10}))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        200,
+        "filter query failed: check filter parser"
+    );
+    let body: serde_json::Value = response.json().await.unwrap();
+    let hits = body["hits"].as_array().unwrap();
+    assert_eq!(hits.len(), 1, "Expected 1 hit for price > 100");
+    assert_eq!(hits[0]["objectID"], "1");
+}
+
+#[tokio::test]
+async fn test_multiword_prefix_search() {
+    let (addr, _dir) = spawn_server().await;
+    let client = algolia_client();
+
+    let resp = h(client.post(format!("http://{}/1/indexes/products/batch", addr)))
+        .json(&json!({
+            "requests": [
+                {"action": "addObject", "body": {"objectID": "1", "title": "Gaming Laptop"}},
+                {"action": "addObject", "body": {"objectID": "2", "title": "Laptop Stand"}},
+                {"action": "addObject", "body": {"objectID": "3", "title": "Gaming Mouse"}}
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    wait_for_response_task(&client, &addr, resp).await;
+
+    let response = h(client.post(format!("http://{}/1/indexes/products/query", addr)))
+        .json(&json!({"query": "gaming lap", "hitsPerPage": 10}))
+        .send()
+        .await
+        .unwrap();
+
+    let body: serde_json::Value = response.json().await.unwrap();
+    let hits = body["hits"].as_array().unwrap();
+    assert_eq!(
+        hits.len(),
+        1,
+        "Expected 'gaming lap' to match only 'Gaming Laptop'"
+    );
+    assert_eq!(hits[0]["objectID"], "1");
+}
+
+#[tokio::test]
+async fn test_complex_filter_precedence() {
+    let (addr, _dir) = spawn_server().await;
+    let client = algolia_client();
+
+    let resp = h(client.post(format!("http://{}/1/indexes/test/settings", addr)))
+        .json(&json!({"attributesForFaceting": ["category"]}))
+        .send()
+        .await
+        .unwrap();
+    wait_for_response_task(&client, &addr, resp).await;
+
+    let resp = h(client.post(format!("http://{}/1/indexes/test/batch", addr)))
+        .json(&json!({
+            "requests": [
+                {"action": "addObject", "body": {"objectID": "1", "category": "A", "stock": 10}},
+                {"action": "addObject", "body": {"objectID": "2", "category": "B", "stock": 0}},
+                {"action": "addObject", "body": {"objectID": "3", "category": "C", "stock": 5}},
+                {"action": "addObject", "body": {"objectID": "4", "category": "A", "stock": 0}}
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    wait_for_response_task(&client, &addr, resp).await;
+
+    let response = h(client.post(format!("http://{}/1/indexes/test/query", addr)))
+        .json(&json!({
+            "query": "",
+            "filters": "(category:A OR category:C) AND stock > 0",
+            "hitsPerPage": 100
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200, "Complex filter failed");
+    let body: serde_json::Value = response.json().await.unwrap();
+    let hits = body["hits"].as_array().unwrap();
+    let ids: Vec<String> = hits
+        .iter()
+        .map(|h| h["objectID"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(ids.len(), 2, "Expected 2 hits: (A OR C) AND stock>0");
+    assert!(ids.contains(&"1".to_string()));
+    assert!(ids.contains(&"3".to_string()));
+}
+
+#[tokio::test]
+async fn test_nbhits_not_capped_at_page_size() {
+    let (addr, _dir) = spawn_server().await;
+    let client = algolia_client();
+
+    let mut requests = Vec::new();
+    for i in 0..150 {
+        requests.push(json!({
+            "action": "addObject",
+            "body": {"objectID": format!("prod_{}", i), "name": "Samsung Galaxy Phone"}
+        }));
+    }
+
+    let resp = h(client.post(format!("http://{}/1/indexes/electronics/batch", addr)))
+        .json(&json!({"requests": requests}))
+        .send()
+        .await
+        .unwrap();
+
+    wait_for_response_task(&client, &addr, resp).await;
+
+    let body: serde_json::Value =
+        h(client.post(format!("http://{}/1/indexes/electronics/query", addr)))
+            .json(&json!({"query": "samsung", "hitsPerPage": 20}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+
+    let nb_hits = body["nbHits"].as_u64().unwrap();
+    let hits_len = body["hits"].as_array().unwrap().len();
+    assert!(
+        nb_hits >= 150,
+        "nbHits should reflect total corpus, got {}",
+        nb_hits
+    );
+    assert_eq!(hits_len, 20, "hits array must respect hitsPerPage");
+}
+
+#[tokio::test]
+async fn test_attributes_to_retrieve_filters_response() {
+    let (addr, _dir) = spawn_server().await;
+    let client = algolia_client();
+
+    let resp = h(client.post(format!("http://{}/1/indexes/items/batch", addr)))
+        .json(&json!({
+            "requests": [{"action": "addObject", "body": {
+                "objectID": "1",
+                "name": "Test Product",
+                "description": "long description",
+                "price": 99,
+                "category": "electronics",
+                "internal_notes": "secret"
+            }}]
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    wait_for_response_task(&client, &addr, resp).await;
+
+    let body: serde_json::Value = h(client.post(format!("http://{}/1/indexes/items/query", addr)))
+        .json(&json!({"query": "test", "attributesToRetrieve": ["name", "price"]}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    let hit = &body["hits"][0];
+    assert!(hit.get("name").is_some(), "name should be present");
+    assert!(hit.get("price").is_some(), "price should be present");
+    assert!(hit.get("objectID").is_some(), "objectID always present");
+    assert!(
+        hit.get("description").is_none(),
+        "description should be filtered out"
+    );
+    assert!(
+        hit.get("category").is_none(),
+        "category should be filtered out"
+    );
+    assert!(
+        hit.get("internal_notes").is_none(),
+        "internal_notes should be filtered out"
+    );
+}
+
+#[tokio::test]
+async fn test_attributes_to_highlight_empty_omits_highlight_result() {
+    let (addr, _dir) = spawn_server().await;
+    let client = algolia_client();
+
+    let resp = h(client.post(format!("http://{}/1/indexes/hl_test/batch", addr)))
+        .json(&json!({
+            "requests": [{"action": "addObject", "body": {"objectID": "1", "name": "Gaming Laptop", "brand": "Dell"}}]
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    wait_for_response_task(&client, &addr, resp).await;
+
+    let body: serde_json::Value =
+        h(client.post(format!("http://{}/1/indexes/hl_test/query", addr)))
+            .json(&json!({"query": "laptop", "attributesToHighlight": []}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+
+    let hit = &body["hits"][0];
+    assert!(
+        hit.get("_highlightResult").is_none(),
+        "should omit _highlightResult when attributesToHighlight=[]"
+    );
+    assert!(
+        hit.get("objectID").is_some(),
+        "should still include objectID"
+    );
+}
+
+#[tokio::test]
+async fn test_open_mode_no_auth_required() {
+    // Server with no admin key = open mode, all requests pass without auth headers
+    let (addr, _dir) = spawn_server().await;
+    let client = reqwest::Client::new();
+
+    let response = client
+        .post(format!("http://{}/1/indexes", addr))
+        .json(&json!({"uid": "test_open"}))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        200,
+        "Open mode must allow requests without auth headers"
+    );
+
+    let response = client
+        .post(format!("http://{}/1/indexes/test_open/batch", addr))
+        .json(&json!({"requests": [{"action": "addObject", "body": {"objectID": "1", "name": "test"}}]}))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        200,
+        "Open mode must allow requests with or without headers"
+    );
+}
+
+#[tokio::test]
+async fn test_secured_mode_rejects_bad_credentials() {
+    use common::spawn_server_with_key;
+    let (addr, _temp) = spawn_server_with_key(Some("admin_secret_123")).await;
+    let client = reqwest::Client::new();
+
+    // No headers → 403
+    let r = client
+        .post(format!("http://{}/1/indexes", addr))
+        .json(&json!({"uid": "products"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        r.status(),
+        403,
+        "Secured mode must reject requests without auth headers"
+    );
+
+    // Wrong key → 403
+    let r = client
+        .post(format!("http://{}/1/indexes/products/batch", addr))
+        .header("x-algolia-api-key", "wrong_key")
+        .header("x-algolia-application-id", "test")
+        .json(&json!({"requests": []}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 403, "Secured mode must reject invalid API key");
+
+    // Correct key → 200
+    let r = client
+        .post(format!("http://{}/1/indexes", addr))
+        .header("x-algolia-api-key", "admin_secret_123")
+        .header("x-algolia-application-id", "test")
+        .json(&json!({"uid": "products"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200, "Secured mode must accept valid admin key");
+}
+
+// ============================================================
+// ALGOLIA EQUIVALENCE TESTS (from test_algolia_equivalence.rs)
+// ============================================================
+
+mod algolia_equivalence {
+    use super::common::{self, spawn_server};
+    use serde::{Deserialize, Serialize};
+    use serde_json::Value;
+    use std::env;
+    use std::fs;
+    use std::path::Path;
+
+    #[derive(Debug, Serialize, Deserialize)]
+    struct AlgoliaFixture {
+        version: String,
+        captured_at: String,
+        test_data: Vec<Value>,
+        query: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        filters: Option<String>,
+        expected_hits: Vec<Value>,
+        expected_nb_hits: usize,
+    }
+
+    async fn capture_from_algolia(
+        app_id: &str,
+        api_key: &str,
+        index_name: &str,
+        test_data: Vec<Value>,
+        query: &str,
+        filters: Option<&str>,
+    ) -> AlgoliaFixture {
+        let client = reqwest::Client::new();
+
+        client
+            .put(format!(
+                "https://{}-dsn.algolia.net/1/indexes/{}/settings",
+                app_id, index_name
+            ))
+            .header("x-algolia-api-key", api_key)
+            .header("x-algolia-application-id", app_id)
+            .json(&serde_json::json!({
+                "attributesForFaceting": ["category", "author", "genre"]
+            }))
+            .send()
+            .await
+            .expect("Algolia settings update failed");
+
+        client
+            .post(format!(
+                "https://{}-dsn.algolia.net/1/indexes/{}/batch",
+                app_id, index_name
+            ))
+            .header("x-algolia-api-key", api_key)
+            .header("x-algolia-application-id", app_id)
+            .json(&serde_json::json!({
+                "requests": test_data.iter().map(|obj| {
+                    serde_json::json!({"action": "addObject", "body": obj})
+                }).collect::<Vec<_>>()
+            }))
+            .send()
+            .await
+            .expect("Algolia batch upload failed");
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
+
+        let mut search_body = serde_json::json!({
+            "query": query,
+            "hitsPerPage": 100
+        });
+        if let Some(f) = filters {
+            search_body["filters"] = serde_json::json!(f);
+        }
+
+        let response = client
+            .post(format!(
+                "https://{}-dsn.algolia.net/1/indexes/{}/query",
+                app_id, index_name
+            ))
+            .header("x-algolia-api-key", api_key)
+            .header("x-algolia-application-id", app_id)
+            .json(&search_body)
+            .send()
+            .await
+            .expect("Algolia search failed");
+
+        let status = response.status();
+        let response_text = response.text().await.expect("Failed to read response body");
+
+        if !status.is_success() {
+            panic!("Algolia API error ({}): {}", status, response_text);
+        }
+
+        let response: Value =
+            serde_json::from_str(&response_text).expect("Failed to parse Algolia response");
+
+        AlgoliaFixture {
+            version: "v1".to_string(),
+            captured_at: chrono::Utc::now().to_rfc3339(),
+            test_data,
+            query: query.to_string(),
+            filters: filters.map(String::from),
+            expected_hits: response["hits"].as_array().unwrap().clone(),
+            expected_nb_hits: response["nbHits"].as_u64().unwrap() as usize,
+        }
+    }
+
+    async fn get_or_capture_fixture(
+        fixture_name: &str,
+        test_data: Vec<Value>,
+        query: &str,
+        filters: Option<&str>,
+    ) -> AlgoliaFixture {
+        let fixture_path = format!("tests/fixtures/algolia/{}.json", fixture_name);
+
+        if Path::new(&fixture_path).exists() {
+            let json = fs::read_to_string(&fixture_path).unwrap();
+            return serde_json::from_str(&json).unwrap();
+        }
+
+        dotenv::from_path(".secret/.env.secret").ok();
+
+        let app_id = env::var("ALGOLIA_APP_ID")
+            .expect("Fixture missing and ALGOLIA_APP_ID not in .secret/.env.secret");
+        let api_key = env::var("ALGOLIA_ADMIN_KEY")
+            .expect("Fixture missing and ALGOLIA_ADMIN_KEY not in .secret/.env.secret");
+
+        let index_name = format!("flapjack_test_{}", uuid::Uuid::new_v4());
+
+        let fixture =
+            capture_from_algolia(&app_id, &api_key, &index_name, test_data, query, filters).await;
+
+        fs::create_dir_all("tests/fixtures/algolia").unwrap();
+        fs::write(
+            &fixture_path,
+            serde_json::to_string_pretty(&fixture).unwrap(),
+        )
+        .unwrap();
+
+        fixture
+    }
+
+    #[tokio::test]
+    async fn test_multiword_prefix_matches_algolia() {
+        let test_data = vec![
+            serde_json::json!({"objectID": "1", "title": "Gaming Laptop"}),
+            serde_json::json!({"objectID": "2", "title": "Laptop Stand"}),
+            serde_json::json!({"objectID": "3", "title": "Gaming Mouse"}),
+        ];
+
+        let fixture =
+            get_or_capture_fixture("multiword-prefix", test_data.clone(), "gaming lap", None).await;
+
+        let (addr, _dir) = spawn_server().await;
+        let client = reqwest::Client::new();
+
+        let resp = client
+            .post(format!("http://{}/1/indexes/products/settings", addr))
+            .header("x-algolia-api-key", "test")
+            .header("x-algolia-application-id", "test")
+            .json(&serde_json::json!({"attributesForFaceting": ["category"]}))
+            .send()
+            .await
+            .unwrap();
+        common::wait_for_response_task(&client, &addr, resp).await;
+
+        let resp = client
+            .post(format!("http://{}/1/indexes/products/batch", addr))
+            .header("x-algolia-api-key", "test")
+            .header("x-algolia-application-id", "test")
+            .json(&serde_json::json!({
+                "requests": test_data.iter().map(|obj| {
+                    serde_json::json!({"action": "addObject", "body": obj})
+                }).collect::<Vec<_>>()
+            }))
+            .send()
+            .await
+            .unwrap();
+
+        common::wait_for_response_task(&client, &addr, resp).await;
+
+        let response = client
+            .post(format!("http://{}/1/indexes/products/query", addr))
+            .header("x-algolia-api-key", "test")
+            .header("x-algolia-application-id", "test")
+            .json(&serde_json::json!({"query": fixture.query, "hitsPerPage": 100}))
+            .send()
+            .await
+            .unwrap()
+            .json::<Value>()
+            .await
+            .unwrap();
+
+        let flapjack_hits = response["hits"].as_array().unwrap().len();
+        assert_eq!(
+            flapjack_hits, fixture.expected_nb_hits,
+            "Hit count mismatch for '{}': Flapjack={}, Algolia={}",
+            fixture.query, flapjack_hits, fixture.expected_nb_hits
+        );
+
+        let flapjack_ids: Vec<String> = response["hits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|h| h["objectID"].as_str().unwrap().to_string())
+            .collect();
+
+        let algolia_ids: Vec<String> = fixture
+            .expected_hits
+            .iter()
+            .map(|h| h["objectID"].as_str().unwrap().to_string())
+            .collect();
+
+        assert_eq!(
+            flapjack_ids, algolia_ids,
+            "Hit IDs mismatch for '{}': Flapjack={:?}, Algolia={:?}",
+            fixture.query, flapjack_ids, algolia_ids
+        );
+    }
+
+    #[tokio::test]
+    async fn test_complex_filter_precedence_matches_algolia() {
+        let test_data = vec![
+            serde_json::json!({"objectID": "1", "category": "A", "stock": 10}),
+            serde_json::json!({"objectID": "2", "category": "B", "stock": 0}),
+            serde_json::json!({"objectID": "3", "category": "C", "stock": 5}),
+            serde_json::json!({"objectID": "4", "category": "A", "stock": 0}),
+        ];
+
+        let fixture = get_or_capture_fixture(
+            "complex-filter",
+            test_data.clone(),
+            "",
+            Some("(category:A OR category:C) AND stock > 0"),
+        )
+        .await;
+
+        let (addr, _dir) = spawn_server().await;
+        let client = reqwest::Client::new();
+
+        let resp = client
+            .post(format!("http://{}/1/indexes/products/settings", addr))
+            .header("x-algolia-api-key", "test")
+            .header("x-algolia-application-id", "test")
+            .json(&serde_json::json!({"attributesForFaceting": ["category"]}))
+            .send()
+            .await
+            .unwrap();
+        common::wait_for_response_task(&client, &addr, resp).await;
+
+        let resp = client
+            .post(format!("http://{}/1/indexes/products/batch", addr))
+            .header("x-algolia-api-key", "test")
+            .header("x-algolia-application-id", "test")
+            .json(&serde_json::json!({
+                "requests": test_data.iter().map(|obj| {
+                    serde_json::json!({"action": "addObject", "body": obj})
+                }).collect::<Vec<_>>()
+            }))
+            .send()
+            .await
+            .unwrap();
+
+        common::wait_for_response_task(&client, &addr, resp).await;
+
+        let response = client
+            .post(format!("http://{}/1/indexes/products/query", addr))
+            .header("x-algolia-api-key", "test")
+            .header("x-algolia-application-id", "test")
+            .json(&serde_json::json!({
+                "query": fixture.query,
+                "filters": fixture.filters,
+                "hitsPerPage": 100
+            }))
+            .send()
+            .await
+            .unwrap()
+            .json::<Value>()
+            .await
+            .unwrap();
+
+        let flapjack_hits = response["hits"].as_array().unwrap().len();
+        assert_eq!(
+            flapjack_hits, fixture.expected_nb_hits,
+            "Filter precedence mismatch: Flapjack={}, Algolia={}",
+            flapjack_hits, fixture.expected_nb_hits
+        );
+    }
+
+    #[tokio::test]
+    async fn test_float_exclusive_bounds_matches_algolia() {
+        let test_data = vec![
+            serde_json::json!({"objectID": "1", "price": 100.5}),
+            serde_json::json!({"objectID": "2", "price": 150.75}),
+            serde_json::json!({"objectID": "3", "price": 99.99}),
+        ];
+
+        let fixture = get_or_capture_fixture(
+            "float-exclusive-bounds",
+            test_data.clone(),
+            "",
+            Some("price > 100.5"),
+        )
+        .await;
+
+        let (addr, _dir) = spawn_server().await;
+        let client = reqwest::Client::new();
+
+        let resp = client
+            .post(format!("http://{}/1/indexes/products/settings", addr))
+            .header("x-algolia-api-key", "test")
+            .header("x-algolia-application-id", "test")
+            .json(&serde_json::json!({"attributesForFaceting": ["category"]}))
+            .send()
+            .await
+            .unwrap();
+        common::wait_for_response_task(&client, &addr, resp).await;
+
+        let resp = client
+            .post(format!("http://{}/1/indexes/products/batch", addr))
+            .header("x-algolia-api-key", "test")
+            .header("x-algolia-application-id", "test")
+            .json(&serde_json::json!({
+                "requests": test_data.iter().map(|obj| {
+                    serde_json::json!({"action": "addObject", "body": obj})
+                }).collect::<Vec<_>>()
+            }))
+            .send()
+            .await
+            .unwrap();
+        common::wait_for_response_task(&client, &addr, resp).await;
+
+        let response = client
+            .post(format!("http://{}/1/indexes/products/query", addr))
+            .header("x-algolia-api-key", "test")
+            .header("x-algolia-application-id", "test")
+            .json(&serde_json::json!({
+                "query": "",
+                "filters": fixture.filters,
+                "hitsPerPage": 100
+            }))
+            .send()
+            .await;
+
+        let status = response
+            .as_ref()
+            .map(|r| r.status())
+            .unwrap_or(reqwest::StatusCode::INTERNAL_SERVER_ERROR);
+
+        if status == 400 {
+            println!("Flapjack correctly rejects 'price > 100.5' (documented limitation)");
+            println!("  Algolia returned {} hits", fixture.expected_nb_hits);
+            println!("  Workaround: Use 'price >= 100.51' or 'price:100.51 TO *'");
+        } else {
+            panic!(
+                "Expected 400 error for float exclusive bound, got {}",
+                status
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_empty_query_with_filter_matches_algolia() {
+        let test_data = vec![
+            serde_json::json!({"objectID": "1", "price": 50}),
+            serde_json::json!({"objectID": "2", "price": 150}),
+            serde_json::json!({"objectID": "3", "price": 250}),
+        ];
+
+        let fixture = get_or_capture_fixture(
+            "empty-query-filter",
+            test_data.clone(),
+            "",
+            Some("price > 100"),
+        )
+        .await;
+
+        let (addr, _dir) = spawn_server().await;
+        let client = reqwest::Client::new();
+
+        let resp = client
+            .post(format!("http://{}/1/indexes/products/settings", addr))
+            .header("x-algolia-api-key", "test")
+            .header("x-algolia-application-id", "test")
+            .json(&serde_json::json!({"attributesForFaceting": ["category"]}))
+            .send()
+            .await
+            .unwrap();
+        common::wait_for_response_task(&client, &addr, resp).await;
+
+        let resp = client
+            .post(format!("http://{}/1/indexes/products/batch", addr))
+            .header("x-algolia-api-key", "test")
+            .header("x-algolia-application-id", "test")
+            .json(&serde_json::json!({
+                "requests": test_data.iter().map(|obj| {
+                    serde_json::json!({"action": "addObject", "body": obj})
+                }).collect::<Vec<_>>()
+            }))
+            .send()
+            .await
+            .unwrap();
+        common::wait_for_response_task(&client, &addr, resp).await;
+
+        let response = client
+            .post(format!("http://{}/1/indexes/products/query", addr))
+            .header("x-algolia-api-key", "test")
+            .header("x-algolia-application-id", "test")
+            .json(&serde_json::json!({
+                "query": "",
+                "filters": fixture.filters,
+                "hitsPerPage": 100
+            }))
+            .send()
+            .await
+            .unwrap()
+            .json::<Value>()
+            .await
+            .unwrap();
+
+        let flapjack_hits = response["hits"].as_array().unwrap().len();
+        assert_eq!(
+            flapjack_hits, fixture.expected_nb_hits,
+            "Empty query + filter mismatch: Flapjack={}, Algolia={}",
+            flapjack_hits, fixture.expected_nb_hits
+        );
+    }
+
+    #[derive(Debug, Serialize, Deserialize)]
+    struct AlgoliaSynonymFixture {
+        version: String,
+        captured_at: String,
+        test_data: Vec<Value>,
+        synonyms: Vec<Value>,
+        query: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        replace_synonyms_in_highlight: Option<bool>,
+        expected_response: Value,
+    }
+
+    async fn capture_synonym_test_from_algolia(
+        app_id: &str,
+        api_key: &str,
+        index_name: &str,
+        test_data: Vec<Value>,
+        synonyms: Vec<Value>,
+        query: &str,
+        replace_synonyms_in_highlight: Option<bool>,
+    ) -> AlgoliaSynonymFixture {
+        let client = reqwest::Client::new();
+
+        for synonym in &synonyms {
+            let response = client
+                .put(format!(
+                    "https://{}-dsn.algolia.net/1/indexes/{}/synonyms/{}",
+                    app_id,
+                    index_name,
+                    synonym["objectID"].as_str().unwrap()
+                ))
+                .header("x-algolia-api-key", api_key)
+                .header("x-algolia-application-id", app_id)
+                .json(synonym)
+                .send()
+                .await
+                .expect("Algolia synonym creation failed");
+
+            if !response.status().is_success() {
+                let error_text = response.text().await.unwrap();
+                panic!("Algolia synonym creation failed: {}", error_text);
+            }
+        }
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+
+        client
+            .post(format!(
+                "https://{}-dsn.algolia.net/1/indexes/{}/batch",
+                app_id, index_name
+            ))
+            .header("x-algolia-api-key", api_key)
+            .header("x-algolia-application-id", app_id)
+            .json(&serde_json::json!({
+                "requests": test_data.iter().map(|obj| {
+                    serde_json::json!({"action": "addObject", "body": obj})
+                }).collect::<Vec<_>>()
+            }))
+            .send()
+            .await
+            .expect("Algolia batch upload failed");
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
+
+        let mut search_body = serde_json::json!({
+            "query": query,
+            "hitsPerPage": 100,
+        });
+
+        if let Some(replace) = replace_synonyms_in_highlight {
+            search_body["replaceSynonymsInHighlight"] = serde_json::json!(replace);
+        }
+
+        let response = client
+            .post(format!(
+                "https://{}-dsn.algolia.net/1/indexes/{}/query",
+                app_id, index_name
+            ))
+            .header("x-algolia-api-key", api_key)
+            .header("x-algolia-application-id", app_id)
+            .json(&search_body)
+            .send()
+            .await
+            .expect("Algolia search failed");
+
+        let status = response.status();
+        let response_text = response.text().await.expect("Failed to read response body");
+
+        if !status.is_success() {
+            panic!("Algolia API error ({}): {}", status, response_text);
+        }
+
+        let algolia_response: Value =
+            serde_json::from_str(&response_text).expect("Failed to parse Algolia response");
+
+        AlgoliaSynonymFixture {
+            version: "v1".to_string(),
+            captured_at: chrono::Utc::now().to_rfc3339(),
+            test_data,
+            synonyms,
+            query: query.to_string(),
+            replace_synonyms_in_highlight,
+            expected_response: algolia_response,
+        }
+    }
+
+    async fn get_or_capture_synonym_fixture(
+        fixture_name: &str,
+        test_data: Vec<Value>,
+        synonyms: Vec<Value>,
+        query: &str,
+        replace_synonyms_in_highlight: Option<bool>,
+    ) -> AlgoliaSynonymFixture {
+        let fixture_path = format!("tests/fixtures/algolia/{}.json", fixture_name);
+
+        if Path::new(&fixture_path).exists() {
+            let json = fs::read_to_string(&fixture_path).unwrap();
+            return serde_json::from_str(&json).unwrap();
+        }
+
+        dotenv::from_path(".secret/.env.secret").ok();
+
+        let app_id = env::var("ALGOLIA_APP_ID")
+            .expect("Fixture missing and ALGOLIA_APP_ID not in .secret/.env.secret");
+        let api_key = env::var("ALGOLIA_ADMIN_KEY")
+            .expect("Fixture missing and ALGOLIA_ADMIN_KEY not in .secret/.env.secret");
+
+        let index_name = format!("flapjack_test_{}", uuid::Uuid::new_v4());
+
+        let fixture = capture_synonym_test_from_algolia(
+            &app_id,
+            &api_key,
+            &index_name,
+            test_data,
+            synonyms,
+            query,
+            replace_synonyms_in_highlight,
+        )
+        .await;
+
+        fs::create_dir_all("tests/fixtures/algolia").unwrap();
+        fs::write(
+            &fixture_path,
+            serde_json::to_string_pretty(&fixture).unwrap(),
+        )
+        .unwrap();
+
+        fixture
+    }
+
+    #[tokio::test]
+    async fn test_synonym_highlighting_default_matches_algolia() {
+        let test_data = vec![
+            serde_json::json!({"objectID": "1", "title": "Gaming Laptop", "description": "Powerful laptop for gaming"}),
+            serde_json::json!({"objectID": "2", "title": "Notebook Stand", "description": "Stand for your notebook"}),
+            serde_json::json!({"objectID": "3", "title": "Computer Mouse", "description": "Wireless mouse"}),
+        ];
+
+        let synonyms = vec![serde_json::json!({
+            "objectID": "notebook-laptop-synonym",
+            "type": "synonym",
+            "synonyms": ["notebook", "laptop", "computer"]
+        })];
+
+        let fixture = get_or_capture_synonym_fixture(
+            "synonym-highlight-default",
+            test_data.clone(),
+            synonyms.clone(),
+            "notebook",
+            None,
+        )
+        .await;
+
+        let (addr, _dir) = spawn_server().await;
+        let client = reqwest::Client::new();
+
+        for synonym in &synonyms {
+            let resp = client
+                .put(format!(
+                    "http://{}/1/indexes/products/synonyms/{}",
+                    addr,
+                    synonym["objectID"].as_str().unwrap()
+                ))
+                .header("x-algolia-api-key", "test")
+                .header("x-algolia-application-id", "test")
+                .json(synonym)
+                .send()
+                .await
+                .unwrap();
+            common::wait_for_response_task(&client, &addr, resp).await;
+        }
+
+        let resp = client
+            .post(format!("http://{}/1/indexes/products/batch", addr))
+            .header("x-algolia-api-key", "test")
+            .header("x-algolia-application-id", "test")
+            .json(&serde_json::json!({
+                "requests": test_data.iter().map(|obj| {
+                    serde_json::json!({"action": "addObject", "body": obj})
+                }).collect::<Vec<_>>()
+            }))
+            .send()
+            .await
+            .unwrap();
+
+        common::wait_for_response_task(&client, &addr, resp).await;
+
+        let flapjack_response = client
+            .post(format!("http://{}/1/indexes/products/query", addr))
+            .header("x-algolia-api-key", "test")
+            .header("x-algolia-application-id", "test")
+            .json(&serde_json::json!({"query": fixture.query, "hitsPerPage": 100}))
+            .send()
+            .await
+            .unwrap()
+            .json::<Value>()
+            .await
+            .unwrap();
+
+        let flapjack_nb_hits = flapjack_response["nbHits"].as_u64().unwrap();
+        let algolia_nb_hits = fixture.expected_response["nbHits"].as_u64().unwrap();
+
+        assert_eq!(
+            flapjack_nb_hits, algolia_nb_hits,
+            "Hit count mismatch for synonym query '{}': Flapjack={}, Algolia={}",
+            fixture.query, flapjack_nb_hits, algolia_nb_hits
+        );
+
+        let flapjack_hits = flapjack_response["hits"].as_array().unwrap();
+        let algolia_hits = fixture.expected_response["hits"].as_array().unwrap();
+
+        assert_eq!(
+            flapjack_hits.len(),
+            algolia_hits.len(),
+            "Number of hits don't match"
+        );
+
+        let algolia_map: std::collections::HashMap<&str, &serde_json::Value> = algolia_hits
+            .iter()
+            .map(|hit| (hit["objectID"].as_str().unwrap(), hit))
+            .collect();
+
+        for fj_hit in flapjack_hits.iter() {
+            let object_id = fj_hit["objectID"].as_str().unwrap();
+            let alg_hit = algolia_map.get(object_id).unwrap_or_else(|| {
+                panic!(
+                    "Flapjack returned objectID {} but Algolia didn't",
+                    object_id
+                )
+            });
+
+            let fj_highlight = &fj_hit["_highlightResult"];
+            let alg_highlight = &alg_hit["_highlightResult"];
+
+            if let (Some(fj_obj), Some(alg_obj)) =
+                (fj_highlight.as_object(), alg_highlight.as_object())
+            {
+                for (field_name, alg_field_highlight) in alg_obj {
+                    let fj_field_highlight = fj_obj.get(field_name).unwrap_or_else(|| {
+                        panic!(
+                            "objectID {}: Flapjack missing _highlightResult field '{}'",
+                            object_id, field_name
+                        )
+                    });
+
+                    let alg_value = alg_field_highlight["value"].as_str().unwrap();
+                    let fj_value = fj_field_highlight["value"].as_str().unwrap();
+
+                    assert_eq!(
+                        fj_value, alg_value,
+                        "objectID {}: _highlightResult.{}.value mismatch\nFlapjack: {}\nAlgolia:  {}",
+                        object_id, field_name, fj_value, alg_value
+                    );
+
+                    let alg_match_level = alg_field_highlight["matchLevel"].as_str().unwrap();
+                    let fj_match_level = fj_field_highlight["matchLevel"].as_str().unwrap();
+
+                    assert_eq!(
+                        fj_match_level, alg_match_level,
+                        "objectID {}: _highlightResult.{}.matchLevel mismatch: Flapjack={}, Algolia={}",
+                        object_id, field_name, fj_match_level, alg_match_level
+                    );
+
+                    let alg_matched_words = alg_field_highlight["matchedWords"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|v| v.as_str().unwrap())
+                        .collect::<Vec<_>>();
+                    let fj_matched_words = fj_field_highlight["matchedWords"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|v| v.as_str().unwrap())
+                        .collect::<Vec<_>>();
+
+                    assert_eq!(
+                        fj_matched_words, alg_matched_words,
+                        "objectID {}: _highlightResult.{}.matchedWords mismatch",
+                        object_id, field_name
+                    );
+                }
+            }
+        }
+    }
 }

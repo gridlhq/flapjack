@@ -61,6 +61,72 @@ pub fn cleanup_old_partitions(analytics_dir: &Path, retention_days: u32) -> Resu
     Ok(removed)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn cleanup_nonexistent_dir_returns_zero() {
+        let dir = std::env::temp_dir().join("fj_retention_test_nonexistent");
+        let _ = fs::remove_dir_all(&dir); // ensure it doesn't exist
+        assert_eq!(cleanup_old_partitions(&dir, 30).unwrap(), 0);
+    }
+
+    #[test]
+    fn cleanup_removes_old_partitions() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        // Create: base/myindex/searches/date=2020-01-01/  (very old)
+        let old_part = base.join("myindex/searches/date=2020-01-01");
+        fs::create_dir_all(&old_part).unwrap();
+        fs::write(old_part.join("data.parquet"), b"fake").unwrap();
+
+        let removed = cleanup_old_partitions(base, 30).unwrap();
+        assert_eq!(removed, 1);
+        assert!(!old_part.exists());
+    }
+
+    #[test]
+    fn cleanup_keeps_recent_partitions() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        let recent_part = base.join(format!("myindex/searches/date={}", today));
+        fs::create_dir_all(&recent_part).unwrap();
+        fs::write(recent_part.join("data.parquet"), b"fake").unwrap();
+
+        let removed = cleanup_old_partitions(base, 30).unwrap();
+        assert_eq!(removed, 0);
+        assert!(recent_part.exists());
+    }
+
+    #[test]
+    fn cleanup_skips_non_date_dirs() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let non_date = base.join("myindex/searches/not_a_date_dir");
+        fs::create_dir_all(&non_date).unwrap();
+
+        let removed = cleanup_old_partitions(base, 30).unwrap();
+        assert_eq!(removed, 0);
+        assert!(non_date.exists());
+    }
+
+    #[test]
+    fn cleanup_handles_multiple_indexes() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let old1 = base.join("idx_a/searches/date=2020-01-01");
+        let old2 = base.join("idx_b/events/date=2020-06-15");
+        fs::create_dir_all(&old1).unwrap();
+        fs::create_dir_all(&old2).unwrap();
+
+        let removed = cleanup_old_partitions(base, 30).unwrap();
+        assert_eq!(removed, 2);
+    }
+}
+
 /// Run retention cleanup as a background task (daily).
 pub async fn run_retention_loop(analytics_dir: std::path::PathBuf, retention_days: u32) {
     // Run once at startup

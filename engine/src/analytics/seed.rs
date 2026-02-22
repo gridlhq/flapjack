@@ -375,6 +375,9 @@ pub fn seed_analytics(
                 has_results,
                 country: Some(country_code.to_string()),
                 region: region.map(|r| r.to_string()),
+                experiment_id: None,
+                variant_id: None,
+                assignment_method: None,
             });
 
             // Generate click events (~35% CTR for searches with results)
@@ -484,112 +487,202 @@ fn write_search_events_to_partition(
     events: &[SearchEvent],
     partition_dir: &std::path::Path,
 ) -> Result<(), String> {
-    use arrow::array::{ArrayRef, BooleanBuilder, Int64Builder, StringBuilder, UInt32Builder};
-    use arrow::record_batch::RecordBatch;
-    use parquet::arrow::ArrowWriter;
-    use parquet::basic::Compression;
-    use parquet::file::properties::WriterProperties;
-    use std::sync::Arc;
-
     let schema = super::schema::search_event_schema();
-    let len = events.len();
+    let batch = super::writer::search_events_to_batch(events, &schema)?;
+    let path = partition_dir.join("seed_searches.parquet");
+    super::writer::write_parquet_file(&path, batch)
+}
 
-    let mut timestamp_ms = Int64Builder::with_capacity(len);
-    let mut query = StringBuilder::with_capacity(len, len * 20);
-    let mut query_id = StringBuilder::with_capacity(len, len * 32);
-    let mut index_name = StringBuilder::with_capacity(len, len * 20);
-    let mut nb_hits = UInt32Builder::with_capacity(len);
-    let mut processing_time_ms = UInt32Builder::with_capacity(len);
-    let mut user_token = StringBuilder::with_capacity(len, len * 20);
-    let mut user_ip = StringBuilder::with_capacity(len, len * 15);
-    let mut filters = StringBuilder::with_capacity(len, len * 30);
-    let mut facets = StringBuilder::with_capacity(len, len * 30);
-    let mut analytics_tags = StringBuilder::with_capacity(len, len * 20);
-    let mut page = UInt32Builder::with_capacity(len);
-    let mut hits_per_page = UInt32Builder::with_capacity(len);
-    let mut has_results = BooleanBuilder::with_capacity(len);
-    let mut country = StringBuilder::with_capacity(len, len * 2);
-    let mut region = StringBuilder::with_capacity(len, len * 10);
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    for e in events {
-        timestamp_ms.append_value(e.timestamp_ms);
-        query.append_value(&e.query);
-        match &e.query_id {
-            Some(qid) => query_id.append_value(qid),
-            None => query_id.append_null(),
-        }
-        index_name.append_value(&e.index_name);
-        nb_hits.append_value(e.nb_hits);
-        processing_time_ms.append_value(e.processing_time_ms);
-        match &e.user_token {
-            Some(t) => user_token.append_value(t),
-            None => user_token.append_null(),
-        }
-        match &e.user_ip {
-            Some(ip) => user_ip.append_value(ip),
-            None => user_ip.append_null(),
-        }
-        match &e.filters {
-            Some(f) => filters.append_value(f),
-            None => filters.append_null(),
-        }
-        match &e.facets {
-            Some(f) => facets.append_value(f),
-            None => facets.append_null(),
-        }
-        match &e.analytics_tags {
-            Some(t) => analytics_tags.append_value(t),
-            None => analytics_tags.append_null(),
-        }
-        page.append_value(e.page);
-        hits_per_page.append_value(e.hits_per_page);
-        has_results.append_value(e.has_results);
-        match &e.country {
-            Some(c) => country.append_value(c),
-            None => country.append_null(),
-        }
-        match &e.region {
-            Some(r) => region.append_value(r),
-            None => region.append_null(),
+    // --- Rng tests ---
+
+    #[test]
+    fn rng_zero_seed_becomes_one() {
+        let rng = Rng::new(0);
+        assert_eq!(rng.state, 1);
+    }
+
+    #[test]
+    fn rng_nonzero_seed_kept() {
+        let rng = Rng::new(42);
+        assert_eq!(rng.state, 42);
+    }
+
+    #[test]
+    fn rng_deterministic() {
+        let mut a = Rng::new(42);
+        let mut b = Rng::new(42);
+        for _ in 0..100 {
+            assert_eq!(a.next_u32(), b.next_u32());
         }
     }
 
-    let columns: Vec<ArrayRef> = vec![
-        Arc::new(timestamp_ms.finish()),
-        Arc::new(query.finish()),
-        Arc::new(query_id.finish()),
-        Arc::new(index_name.finish()),
-        Arc::new(nb_hits.finish()),
-        Arc::new(processing_time_ms.finish()),
-        Arc::new(user_token.finish()),
-        Arc::new(user_ip.finish()),
-        Arc::new(filters.finish()),
-        Arc::new(facets.finish()),
-        Arc::new(analytics_tags.finish()),
-        Arc::new(page.finish()),
-        Arc::new(hits_per_page.finish()),
-        Arc::new(has_results.finish()),
-        Arc::new(country.finish()),
-        Arc::new(region.finish()),
-    ];
+    #[test]
+    fn rng_next_f64_in_range() {
+        let mut rng = Rng::new(123);
+        for _ in 0..1000 {
+            let v = rng.next_f64();
+            assert!(v >= 0.0 && v < 1.0, "next_f64 out of range: {}", v);
+        }
+    }
 
-    let batch = RecordBatch::try_new(schema.clone(), columns)
-        .map_err(|e| format!("RecordBatch error: {}", e))?;
+    #[test]
+    fn rng_range_within_bounds() {
+        let mut rng = Rng::new(99);
+        for _ in 0..500 {
+            let v = rng.range(5, 10);
+            assert!(v >= 5 && v <= 10, "range out of bounds: {}", v);
+        }
+    }
 
-    let props = WriterProperties::builder()
-        .set_compression(Compression::ZSTD(Default::default()))
-        .set_max_row_group_size(100_000)
-        .build();
+    #[test]
+    fn rng_range_lo_equals_hi() {
+        let mut rng = Rng::new(1);
+        assert_eq!(rng.range(7, 7), 7);
+    }
 
-    let path = partition_dir.join("seed_searches.parquet");
-    let file = std::fs::File::create(&path)
-        .map_err(|e| format!("Failed to create parquet file: {}", e))?;
-    let mut w = ArrowWriter::try_new(file, schema, Some(props))
-        .map_err(|e| format!("Failed to create arrow writer: {}", e))?;
-    w.write(&batch).map_err(|e| format!("Write error: {}", e))?;
-    w.close().map_err(|e| format!("Close error: {}", e))?;
+    #[test]
+    fn rng_range_lo_greater_than_hi() {
+        let mut rng = Rng::new(1);
+        assert_eq!(rng.range(10, 5), 10);
+    }
 
-    Ok(())
+    #[test]
+    fn rng_weighted_pick_single_weight() {
+        let mut rng = Rng::new(42);
+        // Only one weight — always picks index 0
+        for _ in 0..10 {
+            assert_eq!(rng.weighted_pick(&[1.0]), 0);
+        }
+    }
+
+    #[test]
+    fn rng_weighted_pick_extreme_weights() {
+        let mut rng = Rng::new(42);
+        // First weight is 0, second is 1 — index 0 can never be picked
+        // because r is in [0,1) and the condition `r < 0.0` is always false.
+        let mut counts = [0u32; 2];
+        for _ in 0..100 {
+            counts[rng.weighted_pick(&[0.0, 1.0])] += 1;
+        }
+        assert_eq!(counts[0], 0, "weight-0 index should never be picked");
+        assert_eq!(counts[1], 100, "weight-1 index should always be picked");
+    }
+
+    // --- generate_query_id ---
+
+    #[test]
+    fn generate_query_id_length_and_hex() {
+        let mut rng = Rng::new(42);
+        let id = generate_query_id(&mut rng);
+        assert_eq!(id.len(), 32);
+        assert!(id.chars().all(|c| c.is_ascii_hexdigit()), "not hex: {}", id);
+    }
+
+    // --- queries_for_index ---
+
+    #[test]
+    fn queries_for_index_movie() {
+        let q = queries_for_index("my_movies");
+        assert_eq!(q.len(), MOVIE_QUERIES.len());
+        assert_eq!(q[1].0, "batman");
+    }
+
+    #[test]
+    fn queries_for_index_product() {
+        let q = queries_for_index("bestbuy_products");
+        assert_eq!(q.len(), PRODUCT_QUERIES.len());
+        assert_eq!(q[1].0, "samsung");
+    }
+
+    #[test]
+    fn queries_for_index_default() {
+        let q = queries_for_index("random_index");
+        assert_eq!(q.len(), DEFAULT_QUERIES.len());
+        assert_eq!(q[1].0, "shoes");
+    }
+
+    #[test]
+    fn queries_for_index_case_insensitive() {
+        let m = queries_for_index("MOVIES");
+        assert_eq!(m.len(), MOVIE_QUERIES.len());
+        let s = queries_for_index("MyShop");
+        assert_eq!(s.len(), PRODUCT_QUERIES.len());
+    }
+
+    // --- generate_users / generate_object_ids ---
+
+    #[test]
+    fn generate_users_format() {
+        let mut rng = Rng::new(42);
+        let users = generate_users(&mut rng, 5);
+        assert_eq!(users.len(), 5);
+        for u in &users {
+            assert!(u.starts_with("user-"), "bad format: {}", u);
+            assert_eq!(u.len(), 13); // "user-" + 8 hex chars
+        }
+    }
+
+    #[test]
+    fn generate_object_ids_format() {
+        let mut rng = Rng::new(42);
+        let oids = generate_object_ids(&mut rng, 3);
+        assert_eq!(oids.len(), 3);
+        for o in &oids {
+            assert!(o.starts_with("obj-"), "bad format: {}", o);
+            assert_eq!(o.len(), 10); // "obj-" + 6 hex chars
+        }
+    }
+
+    // --- generate_click_position ---
+
+    #[test]
+    fn generate_click_position_in_range() {
+        let mut rng = Rng::new(42);
+        for _ in 0..500 {
+            let pos = generate_click_position(&mut rng);
+            assert!(pos >= 1 && pos <= 12, "position out of range: {}", pos);
+        }
+    }
+
+    // --- generate_time_of_day_ms ---
+
+    #[test]
+    fn generate_time_of_day_ms_in_range() {
+        let mut rng = Rng::new(42);
+        let day_ms = 24 * 60 * 60 * 1000;
+        for _ in 0..500 {
+            let t = generate_time_of_day_ms(&mut rng);
+            assert!(t >= 0 && t < day_ms, "time out of range: {}", t);
+        }
+    }
+
+    // --- constant arrays ---
+
+    #[test]
+    fn geo_distribution_weights_sum_roughly_one() {
+        let sum: f64 = GEO_DISTRIBUTION.iter().map(|(_, _, w, _)| w).sum();
+        assert!((sum - 1.0).abs() < 0.05, "geo weights sum = {}", sum);
+    }
+
+    #[test]
+    fn device_tags_weights_sum_one() {
+        let sum: f64 = DEVICE_TAGS.iter().map(|d| d.1).sum();
+        assert!((sum - 1.0).abs() < 0.01, "device weights sum = {}", sum);
+    }
+
+    #[test]
+    fn all_query_sets_have_no_result_entries() {
+        for queries in [DEFAULT_QUERIES, MOVIE_QUERIES, PRODUCT_QUERIES] {
+            assert!(
+                queries.iter().any(|(_, _, has_results)| !has_results),
+                "query set should have some no-result entries"
+            );
+        }
+    }
 }
 
 /// Write insight events to a specific date partition.
@@ -597,99 +690,8 @@ fn write_insight_events_to_partition(
     events: &[InsightEvent],
     partition_dir: &std::path::Path,
 ) -> Result<(), String> {
-    use arrow::array::{ArrayRef, Float64Builder, Int64Builder, StringBuilder};
-    use arrow::record_batch::RecordBatch;
-    use parquet::arrow::ArrowWriter;
-    use parquet::basic::Compression;
-    use parquet::file::properties::WriterProperties;
-    use std::sync::Arc;
-
     let schema = super::schema::insight_event_schema();
-    let len = events.len();
-
-    let mut timestamp_ms = Int64Builder::with_capacity(len);
-    let mut event_type = StringBuilder::with_capacity(len, len * 10);
-    let mut event_subtype = StringBuilder::with_capacity(len, len * 10);
-    let mut event_name = StringBuilder::with_capacity(len, len * 30);
-    let mut index_name_b = StringBuilder::with_capacity(len, len * 20);
-    let mut user_token = StringBuilder::with_capacity(len, len * 20);
-    let mut auth_user_token = StringBuilder::with_capacity(len, len * 20);
-    let mut query_id = StringBuilder::with_capacity(len, len * 32);
-    let mut object_ids = StringBuilder::with_capacity(len, len * 50);
-    let mut positions = StringBuilder::with_capacity(len, len * 20);
-    let mut value = Float64Builder::with_capacity(len);
-    let mut currency = StringBuilder::with_capacity(len, len * 3);
-
-    for e in events {
-        let ts = e
-            .timestamp
-            .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
-        timestamp_ms.append_value(ts);
-        event_type.append_value(&e.event_type);
-        match &e.event_subtype {
-            Some(s) => event_subtype.append_value(s),
-            None => event_subtype.append_null(),
-        }
-        event_name.append_value(&e.event_name);
-        index_name_b.append_value(&e.index);
-        user_token.append_value(&e.user_token);
-        match &e.authenticated_user_token {
-            Some(t) => auth_user_token.append_value(t),
-            None => auth_user_token.append_null(),
-        }
-        match &e.query_id {
-            Some(qid) => query_id.append_value(qid),
-            None => query_id.append_null(),
-        }
-        let oids_json = serde_json::to_string(e.effective_object_ids()).unwrap_or_default();
-        object_ids.append_value(&oids_json);
-        match &e.positions {
-            Some(p) => {
-                let pos_json = serde_json::to_string(p).unwrap_or_default();
-                positions.append_value(&pos_json);
-            }
-            None => positions.append_null(),
-        }
-        match e.value {
-            Some(v) => value.append_value(v),
-            None => value.append_null(),
-        }
-        match &e.currency {
-            Some(c) => currency.append_value(c),
-            None => currency.append_null(),
-        }
-    }
-
-    let columns: Vec<ArrayRef> = vec![
-        Arc::new(timestamp_ms.finish()),
-        Arc::new(event_type.finish()),
-        Arc::new(event_subtype.finish()),
-        Arc::new(event_name.finish()),
-        Arc::new(index_name_b.finish()),
-        Arc::new(user_token.finish()),
-        Arc::new(auth_user_token.finish()),
-        Arc::new(query_id.finish()),
-        Arc::new(object_ids.finish()),
-        Arc::new(positions.finish()),
-        Arc::new(value.finish()),
-        Arc::new(currency.finish()),
-    ];
-
-    let batch = RecordBatch::try_new(schema.clone(), columns)
-        .map_err(|e| format!("RecordBatch error: {}", e))?;
-
-    let props = WriterProperties::builder()
-        .set_compression(Compression::ZSTD(Default::default()))
-        .set_max_row_group_size(100_000)
-        .build();
-
+    let batch = super::writer::insight_events_to_batch(events, &schema)?;
     let path = partition_dir.join("seed_events.parquet");
-    let file = std::fs::File::create(&path)
-        .map_err(|e| format!("Failed to create parquet file: {}", e))?;
-    let mut w = ArrowWriter::try_new(file, schema, Some(props))
-        .map_err(|e| format!("Failed to create arrow writer: {}", e))?;
-    w.write(&batch).map_err(|e| format!("Write error: {}", e))?;
-    w.close().map_err(|e| format!("Close error: {}", e))?;
-
-    Ok(())
+    super::writer::write_parquet_file(&path, batch)
 }

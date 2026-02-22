@@ -3,13 +3,8 @@
  * Runs ONCE after all e2e-ui tests complete.
  */
 import { test as teardown } from '@playwright/test';
-
-const API = 'http://localhost:7700';
-const H = {
-  'x-algolia-application-id': 'flapjack',
-  'x-algolia-api-key': 'fj_devtestadminkey000000',
-  'Content-Type': 'application/json',
-};
+import { API_BASE as API, API_HEADERS as H } from '../fixtures/local-instance';
+import { deleteExperimentsByPrefix } from '../fixtures/api-helpers';
 
 teardown('cleanup test data', async ({ request }) => {
   // Delete seeded test index
@@ -23,4 +18,7 @@ teardown('cleanup test data', async ({ request }) => {
     headers: H,
     params: { index: 'e2e-products' },
   }).catch(() => {});
+
+  // Clean up seeded and per-test experiments (including running experiments).
+  await deleteExperimentsByPrefix(request, 'e2e-');
 });

@@ -48,7 +48,7 @@ function extractHitCount(entry: ApiLogEntry): number | null {
 }
 
 function entryToCurl(entry: ApiLogEntry): string {
-  const fullUrl = entry.url.startsWith('http') ? entry.url : `http://localhost:7700${entry.url}`;
+  const fullUrl = entry.url.startsWith('http') ? entry.url : `${__BACKEND_URL__}${entry.url}`;
   const headers = Object.entries(entry.headers || {})
     .filter(([k]) => k !== 'x-request-id')
     .map(([k, v]) => `  -H "${k}: ${v}"`)

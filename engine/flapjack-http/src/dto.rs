@@ -129,6 +129,34 @@ pub struct DocFailureDto {
     pub message: String,
 }
 
+fn default_semantic_ratio() -> f64 {
+    0.5
+}
+
+fn default_embedder_name() -> String {
+    "default".to_string()
+}
+
+/// Parameters for hybrid (keyword + vector) search.
+///
+/// Meilisearch-style: `"hybrid": {"semanticRatio": 0.8, "embedder": "mymodel"}`
+/// Algolia-style: synthesized internally when `mode: "neuralSearch"`.
+#[derive(Debug, Deserialize, Clone, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct HybridSearchParams {
+    #[serde(default = "default_semantic_ratio")]
+    pub semantic_ratio: f64,
+    #[serde(default = "default_embedder_name")]
+    pub embedder: String,
+}
+
+impl HybridSearchParams {
+    /// Clamp `semantic_ratio` to [0.0, 1.0].
+    pub fn clamp_ratio(&mut self) {
+        self.semantic_ratio = self.semantic_ratio.clamp(0.0, 1.0);
+    }
+}
+
 #[derive(Debug, Default, Deserialize, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchRequest {
@@ -233,11 +261,22 @@ pub struct SearchRequest {
     pub ignore_plurals: Option<flapjack::query::plurals::IgnorePluralsValue>,
     #[serde(default, rename = "queryLanguages")]
     pub query_languages: Option<Vec<String>>,
+    #[serde(default)]
+    pub mode: Option<flapjack::index::settings::IndexMode>,
+    #[serde(default)]
+    pub hybrid: Option<HybridSearchParams>,
 }
 
 impl SearchRequest {
     pub fn effective_hits_per_page(&self) -> usize {
         self.hits_per_page.unwrap_or(20)
+    }
+
+    /// Clamp hybrid search ratio to [0.0, 1.0] if present.
+    pub fn clamp_hybrid_ratio(&mut self) {
+        if let Some(ref mut h) = self.hybrid {
+            h.clamp_ratio();
+        }
     }
 
     pub fn apply_params_string(&mut self) {
@@ -513,6 +552,27 @@ impl SearchRequest {
                     if self.query_languages.is_none() {
                         if let Ok(v) = serde_json::from_str::<Vec<String>>(&value) {
                             self.query_languages = Some(v);
+                        }
+                    }
+                }
+                "mode" => {
+                    if self.mode.is_none() {
+                        self.mode = match value.as_ref() {
+                            "neuralSearch" => {
+                                Some(flapjack::index::settings::IndexMode::NeuralSearch)
+                            }
+                            "keywordSearch" => {
+                                Some(flapjack::index::settings::IndexMode::KeywordSearch)
+                            }
+                            _ => None,
+                        };
+                    }
+                }
+                "hybrid" => {
+                    if self.hybrid.is_none() {
+                        if let Ok(mut h) = serde_json::from_str::<HybridSearchParams>(&value) {
+                            h.clamp_ratio();
+                            self.hybrid = Some(h);
                         }
                     }
                 }
@@ -933,6 +993,722 @@ pub struct SearchFacetValuesRequest {
 
 fn default_max_facet_hits() -> usize {
     10
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── effective_hits_per_page ──
+
+    #[test]
+    fn effective_hits_per_page_default() {
+        let req = SearchRequest::default();
+        assert_eq!(req.effective_hits_per_page(), 20);
+    }
+
+    #[test]
+    fn effective_hits_per_page_custom() {
+        let req = SearchRequest {
+            hits_per_page: Some(50),
+            ..Default::default()
+        };
+        assert_eq!(req.effective_hits_per_page(), 50);
+    }
+
+    // ── apply_params_string ──
+
+    #[test]
+    fn apply_params_string_sets_query() {
+        let mut req = SearchRequest::default();
+        req.params = Some("query=hello".to_string());
+        req.apply_params_string();
+        assert_eq!(req.query, "hello");
+    }
+
+    #[test]
+    fn apply_params_string_does_not_override_existing_query() {
+        let mut req = SearchRequest {
+            query: "existing".to_string(),
+            params: Some("query=new".to_string()),
+            ..Default::default()
+        };
+        req.apply_params_string();
+        assert_eq!(req.query, "existing");
+    }
+
+    #[test]
+    fn apply_params_string_sets_hits_per_page() {
+        let mut req = SearchRequest::default();
+        req.params = Some("hitsPerPage=5".to_string());
+        req.apply_params_string();
+        assert_eq!(req.hits_per_page, Some(5));
+    }
+
+    #[test]
+    fn apply_params_string_sets_page() {
+        let mut req = SearchRequest::default();
+        req.params = Some("page=3".to_string());
+        req.apply_params_string();
+        assert_eq!(req.page, 3);
+    }
+
+    #[test]
+    fn apply_params_string_sets_filters() {
+        let mut req = SearchRequest::default();
+        req.params = Some("filters=brand%3ANike".to_string());
+        req.apply_params_string();
+        assert_eq!(req.filters, Some("brand:Nike".to_string()));
+    }
+
+    #[test]
+    fn apply_params_string_empty_noop() {
+        let mut req = SearchRequest::default();
+        req.params = Some("".to_string());
+        req.apply_params_string();
+        assert!(req.query.is_empty());
+    }
+
+    #[test]
+    fn apply_params_string_none_noop() {
+        let mut req = SearchRequest::default();
+        req.apply_params_string();
+        assert!(req.query.is_empty());
+    }
+
+    #[test]
+    fn apply_params_string_multiple_fields() {
+        let mut req = SearchRequest::default();
+        req.params = Some("query=test&hitsPerPage=10&page=2&analytics=true".to_string());
+        req.apply_params_string();
+        assert_eq!(req.query, "test");
+        assert_eq!(req.hits_per_page, Some(10));
+        assert_eq!(req.page, 2);
+        assert_eq!(req.analytics, Some(true));
+    }
+
+    // ── parse_facet_filter_string ──
+
+    #[test]
+    fn parse_facet_filter_basic() {
+        let f = parse_facet_filter_string("brand:Nike").unwrap();
+        match f {
+            flapjack::types::Filter::Equals { field, value } => {
+                assert_eq!(field, "brand");
+                assert_eq!(value, flapjack::types::FieldValue::Text("Nike".to_string()));
+            }
+            _ => panic!("expected Equals"),
+        }
+    }
+
+    #[test]
+    fn parse_facet_filter_negated() {
+        let f = parse_facet_filter_string("-brand:Nike").unwrap();
+        match f {
+            flapjack::types::Filter::Not(inner) => match *inner {
+                flapjack::types::Filter::Equals { field, value } => {
+                    assert_eq!(field, "brand");
+                    assert_eq!(value, flapjack::types::FieldValue::Text("Nike".to_string()));
+                }
+                _ => panic!("expected Equals inside Not"),
+            },
+            _ => panic!("expected Not"),
+        }
+    }
+
+    #[test]
+    fn parse_facet_filter_quoted_value() {
+        let f = parse_facet_filter_string("brand:\"Air Max\"").unwrap();
+        match f {
+            flapjack::types::Filter::Equals { value, .. } => {
+                assert_eq!(
+                    value,
+                    flapjack::types::FieldValue::Text("Air Max".to_string())
+                );
+            }
+            _ => panic!("expected Equals"),
+        }
+    }
+
+    #[test]
+    fn parse_facet_filter_no_colon() {
+        assert!(parse_facet_filter_string("nocolon").is_none());
+    }
+
+    // ── parse_numeric_filter_string ──
+
+    #[test]
+    fn parse_numeric_equals() {
+        let f = parse_numeric_filter_string("price=100").unwrap();
+        match f {
+            flapjack::types::Filter::Equals { field, value } => {
+                assert_eq!(field, "price");
+                assert_eq!(value, flapjack::types::FieldValue::Integer(100));
+            }
+            _ => panic!("expected Equals"),
+        }
+    }
+
+    #[test]
+    fn parse_numeric_gte() {
+        let f = parse_numeric_filter_string("price>=50").unwrap();
+        match f {
+            flapjack::types::Filter::GreaterThanOrEqual { field, value } => {
+                assert_eq!(field, "price");
+                assert_eq!(value, flapjack::types::FieldValue::Integer(50));
+            }
+            _ => panic!("expected GreaterThanOrEqual"),
+        }
+    }
+
+    #[test]
+    fn parse_numeric_lt() {
+        let f = parse_numeric_filter_string("price<200").unwrap();
+        match f {
+            flapjack::types::Filter::LessThan { field, value } => {
+                assert_eq!(field, "price");
+                assert_eq!(value, flapjack::types::FieldValue::Integer(200));
+            }
+            _ => panic!("expected LessThan"),
+        }
+    }
+
+    #[test]
+    fn parse_numeric_float() {
+        let f = parse_numeric_filter_string("rating>=4.5").unwrap();
+        match f {
+            flapjack::types::Filter::GreaterThanOrEqual { field, value } => {
+                assert_eq!(field, "rating");
+                assert_eq!(value, flapjack::types::FieldValue::Float(4.5));
+            }
+            _ => panic!("expected GreaterThanOrEqual"),
+        }
+    }
+
+    #[test]
+    fn parse_numeric_not_equals() {
+        let f = parse_numeric_filter_string("status!=0").unwrap();
+        match f {
+            flapjack::types::Filter::NotEquals { field, value } => {
+                assert_eq!(field, "status");
+                assert_eq!(value, flapjack::types::FieldValue::Integer(0));
+            }
+            _ => panic!("expected NotEquals"),
+        }
+    }
+
+    #[test]
+    fn parse_numeric_invalid_value() {
+        assert!(parse_numeric_filter_string("price=abc").is_none());
+    }
+
+    // ── facet_filters_to_ast ──
+
+    #[test]
+    fn facet_filters_single_string() {
+        let v = serde_json::json!("brand:Nike");
+        let f = facet_filters_to_ast(&v).unwrap();
+        match f {
+            flapjack::types::Filter::Equals { field, value } => {
+                assert_eq!(field, "brand");
+                assert_eq!(value, flapjack::types::FieldValue::Text("Nike".to_string()));
+            }
+            _ => panic!("expected Equals"),
+        }
+    }
+
+    #[test]
+    fn facet_filters_array_and() {
+        let v = serde_json::json!(["brand:Nike", "color:Red"]);
+        let f = facet_filters_to_ast(&v).unwrap();
+        match f {
+            flapjack::types::Filter::And(parts) => {
+                assert_eq!(parts.len(), 2);
+                // Verify both filters parsed correctly
+                match &parts[0] {
+                    flapjack::types::Filter::Equals { field, value } => {
+                        assert_eq!(field, "brand");
+                        assert_eq!(
+                            *value,
+                            flapjack::types::FieldValue::Text("Nike".to_string())
+                        );
+                    }
+                    _ => panic!("expected Equals for first filter"),
+                }
+            }
+            _ => panic!("expected And"),
+        }
+    }
+
+    #[test]
+    fn facet_filters_nested_or() {
+        let v = serde_json::json!([["brand:Nike", "brand:Adidas"], "color:Red"]);
+        let f = facet_filters_to_ast(&v).unwrap();
+        match f {
+            flapjack::types::Filter::And(parts) => {
+                assert_eq!(parts.len(), 2);
+                match &parts[0] {
+                    flapjack::types::Filter::Or(or_parts) => assert_eq!(or_parts.len(), 2),
+                    _ => panic!("expected Or"),
+                }
+            }
+            _ => panic!("expected And"),
+        }
+    }
+
+    #[test]
+    fn facet_filters_empty_array() {
+        let v = serde_json::json!([]);
+        assert!(facet_filters_to_ast(&v).is_none());
+    }
+
+    // ── numeric_filters_to_ast ──
+
+    #[test]
+    fn numeric_filters_single_string() {
+        let v = serde_json::json!("price>=10");
+        let f = numeric_filters_to_ast(&v).unwrap();
+        match f {
+            flapjack::types::Filter::GreaterThanOrEqual { field, value } => {
+                assert_eq!(field, "price");
+                assert_eq!(value, flapjack::types::FieldValue::Integer(10));
+            }
+            _ => panic!("expected GreaterThanOrEqual"),
+        }
+    }
+
+    #[test]
+    fn numeric_filters_array_and() {
+        let v = serde_json::json!(["price>=10", "price<=100"]);
+        let f = numeric_filters_to_ast(&v).unwrap();
+        match f {
+            flapjack::types::Filter::And(parts) => {
+                assert_eq!(parts.len(), 2);
+                match &parts[0] {
+                    flapjack::types::Filter::GreaterThanOrEqual { field, value } => {
+                        assert_eq!(field, "price");
+                        assert_eq!(*value, flapjack::types::FieldValue::Integer(10));
+                    }
+                    _ => panic!("expected GreaterThanOrEqual"),
+                }
+                match &parts[1] {
+                    flapjack::types::Filter::LessThanOrEqual { field, value } => {
+                        assert_eq!(field, "price");
+                        assert_eq!(*value, flapjack::types::FieldValue::Integer(100));
+                    }
+                    _ => panic!("expected LessThanOrEqual"),
+                }
+            }
+            _ => panic!("expected And"),
+        }
+    }
+
+    // ── tag_filters_to_ast ──
+
+    #[test]
+    fn tag_filters_single_string() {
+        let v = serde_json::json!("electronics");
+        let f = tag_filters_to_ast(&v).unwrap();
+        match f {
+            flapjack::types::Filter::Equals { field, value } => {
+                assert_eq!(field, "_tags");
+                assert_eq!(
+                    value,
+                    flapjack::types::FieldValue::Text("electronics".to_string())
+                );
+            }
+            _ => panic!("expected Equals"),
+        }
+    }
+
+    #[test]
+    fn tag_filters_array_and() {
+        let v = serde_json::json!(["electronics", "sale"]);
+        let f = tag_filters_to_ast(&v).unwrap();
+        match f {
+            flapjack::types::Filter::And(parts) => assert_eq!(parts.len(), 2),
+            _ => panic!("expected And"),
+        }
+    }
+
+    #[test]
+    fn tag_filters_nested_or() {
+        let v = serde_json::json!([["electronics", "books"], "sale"]);
+        let f = tag_filters_to_ast(&v).unwrap();
+        match f {
+            flapjack::types::Filter::And(parts) => {
+                assert_eq!(parts.len(), 2);
+                match &parts[0] {
+                    flapjack::types::Filter::Or(or_parts) => assert_eq!(or_parts.len(), 2),
+                    _ => panic!("expected Or"),
+                }
+            }
+            _ => panic!("expected And"),
+        }
+    }
+
+    // ── parse_optional_filters ──
+
+    #[test]
+    fn optional_filters_single_string() {
+        let v = serde_json::json!("category:Book");
+        let specs = parse_optional_filters(&v);
+        assert_eq!(specs.len(), 1);
+        assert_eq!(specs[0].0, "category");
+        assert_eq!(specs[0].1, "Book");
+        assert_eq!(specs[0].2, 1.0);
+    }
+
+    #[test]
+    fn optional_filters_with_score() {
+        let v = serde_json::json!("category:Book<score=2>");
+        let specs = parse_optional_filters(&v);
+        assert_eq!(specs[0].2, 2.0);
+    }
+
+    #[test]
+    fn optional_filters_flat_array() {
+        let v = serde_json::json!(["category:Book", "author:John"]);
+        let specs = parse_optional_filters(&v);
+        assert_eq!(specs.len(), 2);
+    }
+
+    #[test]
+    fn optional_filters_nested_or() {
+        let v = serde_json::json!([["category:Book", "category:Movie"], "author:John"]);
+        let specs = parse_optional_filters(&v);
+        assert_eq!(specs.len(), 3);
+    }
+
+    #[test]
+    fn optional_filters_negated() {
+        let v = serde_json::json!("-category:Book");
+        let specs = parse_optional_filters(&v);
+        assert_eq!(specs.len(), 1);
+        assert_eq!(specs[0].0, "category");
+    }
+
+    #[test]
+    fn optional_filters_empty_value() {
+        let v = serde_json::json!(null);
+        let specs = parse_optional_filters(&v);
+        assert!(specs.is_empty());
+    }
+
+    // ── deserialize_string_or_vec ──
+
+    #[test]
+    fn search_request_facets_string() {
+        let json = r#"{"facets": "brand"}"#;
+        let req: SearchRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.facets, Some(vec!["brand".to_string()]));
+    }
+
+    #[test]
+    fn search_request_facets_array() {
+        let json = r#"{"facets": ["brand", "category"]}"#;
+        let req: SearchRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            req.facets,
+            Some(vec!["brand".to_string(), "category".to_string()])
+        );
+    }
+
+    #[test]
+    fn search_request_facets_null() {
+        let json = r#"{"facets": null}"#;
+        let req: SearchRequest = serde_json::from_str(json).unwrap();
+        assert!(req.facets.is_none());
+    }
+
+    #[test]
+    fn search_request_facets_missing() {
+        let json = r#"{}"#;
+        let req: SearchRequest = serde_json::from_str(json).unwrap();
+        assert!(req.facets.is_none());
+    }
+
+    // ── build_combined_filter ──
+
+    #[test]
+    fn build_combined_filter_none_when_empty() {
+        let req = SearchRequest::default();
+        assert!(req.build_combined_filter().is_none());
+    }
+
+    #[test]
+    fn build_combined_filter_filters_only() {
+        let req = SearchRequest {
+            filters: Some("brand:Nike".to_string()),
+            ..Default::default()
+        };
+        let f = req.build_combined_filter().unwrap();
+        // Should be a single filter, not wrapped in And
+        match f {
+            flapjack::types::Filter::Equals { field, .. } => assert_eq!(field, "brand"),
+            _ => panic!("expected Equals from filter string, got {:?}", f),
+        }
+    }
+
+    #[test]
+    fn build_combined_filter_facet_filters_only() {
+        let req = SearchRequest {
+            facet_filters: Some(serde_json::json!("color:Red")),
+            ..Default::default()
+        };
+        let f = req.build_combined_filter().unwrap();
+        match f {
+            flapjack::types::Filter::Equals { field, .. } => assert_eq!(field, "color"),
+            _ => panic!("expected Equals from facet filter"),
+        }
+    }
+
+    #[test]
+    fn build_combined_filter_combines_multiple_with_and() {
+        let req = SearchRequest {
+            filters: Some("brand:Nike".to_string()),
+            facet_filters: Some(serde_json::json!("color:Red")),
+            ..Default::default()
+        };
+        let f = req.build_combined_filter().unwrap();
+        match f {
+            flapjack::types::Filter::And(parts) => assert_eq!(parts.len(), 2),
+            _ => panic!("expected And when combining filters + facet_filters"),
+        }
+    }
+
+    #[test]
+    fn build_combined_filter_all_three_types() {
+        let req = SearchRequest {
+            filters: Some("brand:Nike".to_string()),
+            facet_filters: Some(serde_json::json!("color:Red")),
+            numeric_filters: Some(serde_json::json!("price>=10")),
+            ..Default::default()
+        };
+        let f = req.build_combined_filter().unwrap();
+        match f {
+            flapjack::types::Filter::And(parts) => assert_eq!(parts.len(), 3),
+            _ => panic!("expected And with 3 parts"),
+        }
+    }
+
+    #[test]
+    fn build_combined_filter_with_tag_filters() {
+        let req = SearchRequest {
+            tag_filters: Some(serde_json::json!("electronics")),
+            ..Default::default()
+        };
+        let f = req.build_combined_filter().unwrap();
+        match f {
+            flapjack::types::Filter::Equals { field, .. } => assert_eq!(field, "_tags"),
+            _ => panic!("expected Equals from tag filter"),
+        }
+    }
+
+    #[test]
+    fn build_combined_filter_invalid_filter_string_skipped() {
+        let req = SearchRequest {
+            filters: Some(":::invalid:::".to_string()),
+            facet_filters: Some(serde_json::json!("color:Red")),
+            ..Default::default()
+        };
+        // Invalid filters string should be skipped, facet filter should still work
+        let f = req.build_combined_filter();
+        assert!(f.is_some());
+    }
+
+    // ── parse_numeric_filter_string edge cases ──
+
+    #[test]
+    fn parse_numeric_negative_value() {
+        let f = parse_numeric_filter_string("temp=-10").unwrap();
+        match f {
+            flapjack::types::Filter::Equals { field, value } => {
+                assert_eq!(field, "temp");
+                assert_eq!(value, flapjack::types::FieldValue::Integer(-10));
+            }
+            _ => panic!("expected Equals"),
+        }
+    }
+
+    #[test]
+    fn parse_numeric_negative_float() {
+        let f = parse_numeric_filter_string("rating>=-1.5").unwrap();
+        match f {
+            flapjack::types::Filter::GreaterThanOrEqual { field, value } => {
+                assert_eq!(field, "rating");
+                assert_eq!(value, flapjack::types::FieldValue::Float(-1.5));
+            }
+            _ => panic!("expected GreaterThanOrEqual"),
+        }
+    }
+
+    #[test]
+    fn parse_numeric_no_operator() {
+        assert!(parse_numeric_filter_string("justanumber").is_none());
+    }
+
+    #[test]
+    fn parse_numeric_gt() {
+        let f = parse_numeric_filter_string("count>5").unwrap();
+        match f {
+            flapjack::types::Filter::GreaterThan { field, value } => {
+                assert_eq!(field, "count");
+                assert_eq!(value, flapjack::types::FieldValue::Integer(5));
+            }
+            _ => panic!("expected GreaterThan"),
+        }
+    }
+
+    #[test]
+    fn parse_numeric_lte() {
+        let f = parse_numeric_filter_string("count<=99").unwrap();
+        match f {
+            flapjack::types::Filter::LessThanOrEqual { field, value } => {
+                assert_eq!(field, "count");
+                assert_eq!(value, flapjack::types::FieldValue::Integer(99));
+            }
+            _ => panic!("expected LessThanOrEqual"),
+        }
+    }
+
+    // ── malformed input edge cases ──
+
+    #[test]
+    fn parse_facet_filter_empty_string() {
+        assert!(parse_facet_filter_string("").is_none());
+    }
+
+    #[test]
+    fn parse_facet_filter_multiple_colons() {
+        // "a:b:c" — should take first colon, value is "b:c"
+        let f = parse_facet_filter_string("a:b:c").unwrap();
+        match f {
+            flapjack::types::Filter::Equals { field, value } => {
+                assert_eq!(field, "a");
+                assert_eq!(value, flapjack::types::FieldValue::Text("b:c".to_string()));
+            }
+            _ => panic!("expected Equals"),
+        }
+    }
+
+    #[test]
+    fn facet_filters_non_string_in_array_skipped() {
+        // Arrays with non-string values should be silently skipped
+        let v = serde_json::json!([123, "brand:Nike"]);
+        let f = facet_filters_to_ast(&v);
+        // Should still produce a result (the valid string filter)
+        assert!(f.is_some());
+    }
+
+    #[test]
+    fn numeric_filters_empty_array() {
+        let v = serde_json::json!([]);
+        assert!(numeric_filters_to_ast(&v).is_none());
+    }
+
+    #[test]
+    fn tag_filters_empty_array() {
+        let v = serde_json::json!([]);
+        assert!(tag_filters_to_ast(&v).is_none());
+    }
+
+    #[test]
+    fn search_request_facets_empty_array() {
+        let json = r#"{"facets": []}"#;
+        let req: SearchRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.facets, Some(vec![]));
+    }
+
+    // ── HybridSearchParams tests (6.1) ──
+
+    #[test]
+    fn test_search_request_hybrid_from_json() {
+        let json = r#"{"query": "test", "hybrid": {"semanticRatio": 0.8, "embedder": "mymodel"}}"#;
+        let req: SearchRequest = serde_json::from_str(json).unwrap();
+        let hybrid = req.hybrid.unwrap();
+        assert!((hybrid.semantic_ratio - 0.8).abs() < f64::EPSILON);
+        assert_eq!(hybrid.embedder, "mymodel");
+    }
+
+    #[test]
+    fn test_search_request_hybrid_defaults() {
+        let json = r#"{"query": "test", "hybrid": {}}"#;
+        let req: SearchRequest = serde_json::from_str(json).unwrap();
+        let hybrid = req.hybrid.unwrap();
+        assert!((hybrid.semantic_ratio - 0.5).abs() < f64::EPSILON);
+        assert_eq!(hybrid.embedder, "default");
+    }
+
+    #[test]
+    fn test_search_request_hybrid_none_by_default() {
+        let json = r#"{"query": "test"}"#;
+        let req: SearchRequest = serde_json::from_str(json).unwrap();
+        assert!(req.hybrid.is_none());
+    }
+
+    #[test]
+    fn test_search_request_hybrid_from_params_string() {
+        let mut req: SearchRequest = serde_json::from_str(
+            r#"{"params": "query=test&hybrid=%7B%22semanticRatio%22%3A0.7%7D"}"#,
+        )
+        .unwrap();
+        req.apply_params_string();
+        let hybrid = req.hybrid.unwrap();
+        assert!((hybrid.semantic_ratio - 0.7).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_search_request_hybrid_semantic_ratio_clamped() {
+        // > 1.0 clamped to 1.0
+        let json = r#"{"query": "test", "hybrid": {"semanticRatio": 1.5}}"#;
+        let mut req: SearchRequest = serde_json::from_str(json).unwrap();
+        req.clamp_hybrid_ratio();
+        let hybrid = req.hybrid.unwrap();
+        assert!((hybrid.semantic_ratio - 1.0).abs() < f64::EPSILON);
+
+        // < 0.0 clamped to 0.0
+        let json = r#"{"query": "test", "hybrid": {"semanticRatio": -0.5}}"#;
+        let mut req: SearchRequest = serde_json::from_str(json).unwrap();
+        req.clamp_hybrid_ratio();
+        let hybrid = req.hybrid.unwrap();
+        assert!(hybrid.semantic_ratio.abs() < f64::EPSILON);
+    }
+
+    // ── SearchRequest mode tests (5.12) ──
+
+    #[test]
+    fn test_search_request_mode_from_json() {
+        use flapjack::index::settings::IndexMode;
+        let json = r#"{"query": "test", "mode": "neuralSearch"}"#;
+        let req: SearchRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.mode, Some(IndexMode::NeuralSearch));
+    }
+
+    #[test]
+    fn test_search_request_mode_default_none() {
+        let json = r#"{"query": "test"}"#;
+        let req: SearchRequest = serde_json::from_str(json).unwrap();
+        assert!(req.mode.is_none());
+    }
+
+    #[test]
+    fn test_search_request_mode_from_params_string() {
+        use flapjack::index::settings::IndexMode;
+        let mut req: SearchRequest =
+            serde_json::from_str(r#"{"params": "query=test&mode=neuralSearch"}"#).unwrap();
+        req.apply_params_string();
+        assert_eq!(req.mode, Some(IndexMode::NeuralSearch));
+    }
+
+    #[test]
+    fn test_search_request_mode_keyword_from_params() {
+        use flapjack::index::settings::IndexMode;
+        let mut req: SearchRequest =
+            serde_json::from_str(r#"{"params": "mode=keywordSearch"}"#).unwrap();
+        req.apply_params_string();
+        assert_eq!(req.mode, Some(IndexMode::KeywordSearch));
+    }
 }
 
 #[derive(Debug, Serialize, ToSchema)]

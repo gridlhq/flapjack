@@ -286,7 +286,7 @@ impl KeyStore {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SecuredKeyRestrictions {
     pub filters: Option<String>,
     pub valid_until: Option<i64>,
@@ -650,8 +650,9 @@ pub async fn authenticate_and_authorize(
 
     let path = request.uri().path().to_string();
 
-    // Skip auth for public endpoints: health check, dashboard UI, API docs
+    // Skip auth for public endpoints: health check, metrics, dashboard UI, API docs
     if path == "/health"
+        || path == "/metrics"
         || path.starts_with("/dashboard")
         || path.starts_with("/swagger-ui")
         || path.starts_with("/api-docs")
@@ -736,4 +737,336 @@ pub async fn authenticate_and_authorize(
     }
 
     Ok(next.run(request).await)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── hash_key / verify_key ──
+
+    #[test]
+    fn hash_and_verify_roundtrip() {
+        let salt = "test_salt_123";
+        let key = "my_secret_key";
+        let hash = hash_key(key, salt);
+        assert!(verify_key(key, &hash, salt));
+    }
+
+    #[test]
+    fn verify_wrong_key_fails() {
+        let salt = "salt";
+        let hash = hash_key("correct_key", salt);
+        assert!(!verify_key("wrong_key", &hash, salt));
+    }
+
+    #[test]
+    fn verify_wrong_salt_fails() {
+        let hash = hash_key("key", "salt1");
+        assert!(!verify_key("key", &hash, "salt2"));
+    }
+
+    #[test]
+    fn hash_is_hex_64_chars() {
+        let hash = hash_key("key", "salt");
+        assert_eq!(hash.len(), 64); // SHA-256 = 32 bytes = 64 hex chars
+        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn hash_deterministic() {
+        let h1 = hash_key("key", "salt");
+        let h2 = hash_key("key", "salt");
+        assert_eq!(h1, h2);
+    }
+
+    // ── generate_hex_key ──
+
+    #[test]
+    fn generate_hex_key_format() {
+        let key = generate_hex_key();
+        assert_eq!(key.len(), 32); // 16 bytes = 32 hex chars
+        assert!(key.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn generate_hex_key_unique() {
+        let k1 = generate_hex_key();
+        let k2 = generate_hex_key();
+        assert_ne!(k1, k2);
+    }
+
+    // ── generate_admin_key ──
+
+    #[test]
+    fn generate_admin_key_prefix() {
+        let key = generate_admin_key();
+        assert!(key.starts_with("fj_admin_"));
+        assert_eq!(key.len(), 9 + 32); // prefix + 32 hex chars
+    }
+
+    // ── index_pattern_matches ──
+
+    #[test]
+    fn index_pattern_empty_matches_all() {
+        assert!(index_pattern_matches(&[], "anything"));
+    }
+
+    #[test]
+    fn index_pattern_exact_match() {
+        let patterns = vec!["products".to_string()];
+        assert!(index_pattern_matches(&patterns, "products"));
+        assert!(!index_pattern_matches(&patterns, "users"));
+    }
+
+    #[test]
+    fn index_pattern_star_matches_all() {
+        let patterns = vec!["*".to_string()];
+        assert!(index_pattern_matches(&patterns, "anything"));
+    }
+
+    #[test]
+    fn index_pattern_prefix_wildcard() {
+        let patterns = vec!["prod_*".to_string()];
+        assert!(index_pattern_matches(&patterns, "prod_us"));
+        assert!(index_pattern_matches(&patterns, "prod_eu"));
+        assert!(!index_pattern_matches(&patterns, "dev_us"));
+    }
+
+    #[test]
+    fn index_pattern_suffix_wildcard() {
+        let patterns = vec!["*_prod".to_string()];
+        assert!(index_pattern_matches(&patterns, "us_prod"));
+        assert!(!index_pattern_matches(&patterns, "us_dev"));
+    }
+
+    #[test]
+    fn index_pattern_contains_wildcard() {
+        let patterns = vec!["*prod*".to_string()];
+        assert!(index_pattern_matches(&patterns, "my_prod_index"));
+        assert!(index_pattern_matches(&patterns, "production"));
+        assert!(!index_pattern_matches(&patterns, "development"));
+    }
+
+    #[test]
+    fn index_pattern_multiple_any_match() {
+        let patterns = vec!["products".to_string(), "users".to_string()];
+        assert!(index_pattern_matches(&patterns, "products"));
+        assert!(index_pattern_matches(&patterns, "users"));
+        assert!(!index_pattern_matches(&patterns, "orders"));
+    }
+
+    // ── extract_index_name ──
+
+    #[test]
+    fn extract_index_name_valid() {
+        assert_eq!(
+            extract_index_name("/1/indexes/products/query"),
+            Some("products".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_index_name_just_index() {
+        assert_eq!(
+            extract_index_name("/1/indexes/myindex"),
+            Some("myindex".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_index_name_queries_excluded() {
+        assert_eq!(extract_index_name("/1/indexes/queries"), None);
+    }
+
+    #[test]
+    fn extract_index_name_objects_excluded() {
+        assert_eq!(extract_index_name("/1/indexes/objects"), None);
+    }
+
+    #[test]
+    fn extract_index_name_too_short() {
+        assert_eq!(extract_index_name("/1/indexes"), None);
+    }
+
+    #[test]
+    fn extract_index_name_wrong_prefix() {
+        assert_eq!(extract_index_name("/2/indexes/foo"), None);
+    }
+
+    // ── required_acl_for_route ──
+
+    #[test]
+    fn acl_keys_admin() {
+        assert_eq!(
+            required_acl_for_route(&Method::GET, "/1/keys"),
+            Some("admin")
+        );
+        assert_eq!(
+            required_acl_for_route(&Method::POST, "/1/keys"),
+            Some("admin")
+        );
+    }
+
+    #[test]
+    fn acl_analytics_endpoint() {
+        assert_eq!(
+            required_acl_for_route(&Method::GET, "/2/searches"),
+            Some("analytics")
+        );
+    }
+
+    #[test]
+    fn acl_events_search() {
+        assert_eq!(
+            required_acl_for_route(&Method::POST, "/1/events"),
+            Some("search")
+        );
+    }
+
+    #[test]
+    fn acl_list_indexes() {
+        assert_eq!(
+            required_acl_for_route(&Method::GET, "/1/indexes"),
+            Some("listIndexes")
+        );
+    }
+
+    #[test]
+    fn acl_search_query() {
+        assert_eq!(
+            required_acl_for_route(&Method::POST, "/1/indexes/products/query"),
+            Some("search")
+        );
+    }
+
+    #[test]
+    fn acl_browse() {
+        assert_eq!(
+            required_acl_for_route(&Method::POST, "/1/indexes/products/browse"),
+            Some("browse")
+        );
+    }
+
+    #[test]
+    fn acl_batch_add_object() {
+        assert_eq!(
+            required_acl_for_route(&Method::POST, "/1/indexes/products/batch"),
+            Some("addObject")
+        );
+    }
+
+    #[test]
+    fn acl_settings_get() {
+        assert_eq!(
+            required_acl_for_route(&Method::GET, "/1/indexes/products/settings"),
+            Some("settings")
+        );
+    }
+
+    #[test]
+    fn acl_settings_put() {
+        assert_eq!(
+            required_acl_for_route(&Method::PUT, "/1/indexes/products/settings"),
+            Some("editSettings")
+        );
+    }
+
+    #[test]
+    fn acl_delete_index() {
+        assert_eq!(
+            required_acl_for_route(&Method::DELETE, "/1/indexes/products"),
+            Some("deleteIndex")
+        );
+    }
+
+    #[test]
+    fn acl_clear_delete_object() {
+        assert_eq!(
+            required_acl_for_route(&Method::POST, "/1/indexes/products/clear"),
+            Some("deleteObject")
+        );
+    }
+
+    #[test]
+    fn acl_tasks() {
+        assert_eq!(
+            required_acl_for_route(&Method::GET, "/1/tasks/123"),
+            Some("search")
+        );
+    }
+
+    // ── SecuredKeyRestrictions::from_params ──
+
+    #[test]
+    fn secured_key_restrictions_filters() {
+        let r = SecuredKeyRestrictions::from_params("filters=brand%3ANike");
+        assert_eq!(r.filters, Some("brand:Nike".to_string()));
+    }
+
+    #[test]
+    fn secured_key_restrictions_valid_until() {
+        let r = SecuredKeyRestrictions::from_params("validUntil=1700000000");
+        assert_eq!(r.valid_until, Some(1700000000));
+    }
+
+    #[test]
+    fn secured_key_restrictions_restrict_indices_csv() {
+        let r = SecuredKeyRestrictions::from_params("restrictIndices=prod,staging");
+        let indices = r.restrict_indices.unwrap();
+        assert_eq!(indices, vec!["prod", "staging"]);
+    }
+
+    #[test]
+    fn secured_key_restrictions_restrict_indices_json() {
+        let r =
+            SecuredKeyRestrictions::from_params("restrictIndices=%5B%22prod%22%2C%22staging%22%5D");
+        let indices = r.restrict_indices.unwrap();
+        assert_eq!(indices, vec!["prod", "staging"]);
+    }
+
+    #[test]
+    fn secured_key_restrictions_user_token() {
+        let r = SecuredKeyRestrictions::from_params("userToken=user123");
+        assert_eq!(r.user_token, Some("user123".to_string()));
+    }
+
+    #[test]
+    fn secured_key_restrictions_hits_per_page() {
+        let r = SecuredKeyRestrictions::from_params("hitsPerPage=5");
+        assert_eq!(r.hits_per_page, Some(5));
+    }
+
+    #[test]
+    fn secured_key_restrictions_empty() {
+        let r = SecuredKeyRestrictions::from_params("");
+        assert!(r.filters.is_none());
+        assert!(r.valid_until.is_none());
+        assert!(r.restrict_indices.is_none());
+        assert!(r.user_token.is_none());
+        assert!(r.hits_per_page.is_none());
+    }
+
+    // ── generate_secured_api_key ──
+
+    #[test]
+    fn generate_secured_api_key_produces_base64() {
+        let key = generate_secured_api_key("parent_key", "filters=brand:Nike");
+        // Should be valid base64
+        assert!(BASE64.decode(key.as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn generate_secured_api_key_deterministic() {
+        let k1 = generate_secured_api_key("key", "params");
+        let k2 = generate_secured_api_key("key", "params");
+        assert_eq!(k1, k2);
+    }
+
+    #[test]
+    fn generate_secured_api_key_different_params_differ() {
+        let k1 = generate_secured_api_key("key", "filters=a");
+        let k2 = generate_secured_api_key("key", "filters=b");
+        assert_ne!(k1, k2);
+    }
 }

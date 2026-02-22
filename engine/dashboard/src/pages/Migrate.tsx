@@ -436,7 +436,7 @@ function ResultStat({
 }) {
   return (
     <div className="rounded-md border p-3 text-center">
-      <div className="text-xl font-bold">
+      <div className="text-xl font-bold" data-testid={`migrate-stat-${label.toLowerCase()}`}>
         {typeof value === 'number' ? value.toLocaleString() : value}
       </div>
       <div className="text-xs text-muted-foreground">{label}</div>

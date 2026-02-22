@@ -19,6 +19,7 @@
  * - Request count badge accuracy
  */
 import { test, expect } from '../../fixtures/auth.fixture';
+import { API_BASE } from '../../fixtures/local-instance';
 
 test.describe('Search Logs', () => {
   /**
@@ -110,7 +111,7 @@ test.describe('Search Logs', () => {
 
     // Wait for the filter to take effect — only health entries should remain
     await expect(async () => {
-      const visibleEntries = page.getByTestId('logs-list').locator('[data-testid="log-entry"]');
+      const visibleEntries = page.getByTestId('logs-list').getByTestId('log-entry');
       const count = await visibleEntries.count();
       // If filtering works, either we see only health entries or fewer entries
       if (count > 0) {
@@ -164,7 +165,7 @@ test.describe('Search Logs', () => {
     // The curl command should start with "curl -X" and contain the URL
     const curlText = await firstPre.textContent();
     expect(curlText).toContain('curl -X');
-    expect(curlText).toContain('localhost:7700');
+    expect(curlText).toContain(new URL(API_BASE).host);
   });
 
   // ---------- Expanded Detail Body ----------
@@ -178,7 +179,7 @@ test.describe('Search Logs', () => {
     const searchInput = page.getByPlaceholder(/search/i).first();
     await searchInput.fill('laptop');
     await searchInput.press('Enter');
-    await page.waitForTimeout(1000);
+    // The postEntry check below uses isVisible({ timeout: 5000 }) — no fixed wait needed
 
     // Now go to logs
     await page.goto('/logs');

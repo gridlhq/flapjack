@@ -634,84 +634,63 @@ else
     fi
 
     if [ "$qs_ready" = "true" ]; then
-      pass "Quickstart: server started on port ${QS_PORT} (mode: ${QS_AUTH_MODE})"
+      pass "Install test: server started on port ${QS_PORT} (mode: ${QS_AUTH_MODE})"
     else
-      fail "Quickstart: server failed to start within 15s"
+      fail "Install test: server failed to start within 15s"
     fi
 
-    # Set up auth headers based on mode
+    # Always use the real /1/ API endpoints
+    QS_BASE="http://localhost:${QS_PORT}/1/indexes"
     if [ "$QS_AUTH_MODE" = "key" ]; then
       QS_AUTH="-H X-Algolia-API-Key:${QS_ADMIN_KEY} -H X-Algolia-Application-Id:test"
-      QS_BASE="http://localhost:${QS_PORT}/1/indexes"
     else
       QS_AUTH=""
-      QS_BASE="http://localhost:${QS_PORT}/indexes"
     fi
 
     if [ "$qs_ready" = "true" ]; then
-      # POST documents (matching README quickstart)
-      if [ "$QS_AUTH_MODE" = "key" ]; then
-        post_resp=$(curl -s -X POST "${QS_BASE}/movies/batch" \
-          -H "X-Algolia-API-Key:${QS_ADMIN_KEY}" -H "X-Algolia-Application-Id:test" \
-          -H "Content-Type: application/json" \
-          -d '{"requests":[{"action":"addObject","body":{"objectID":"1","title":"The Matrix","year":1999}},{"action":"addObject","body":{"objectID":"2","title":"Inception","year":2010}}]}' 2>&1)
-      else
-        post_resp=$(curl -s -X POST "${QS_BASE}/movies/documents" \
-          -d '[
-            {"objectID":"1","title":"The Matrix","year":1999},
-            {"objectID":"2","title":"Inception","year":2010}
-          ]' 2>&1)
-      fi
+      # POST documents via /1/ batch endpoint
+      post_resp=$(curl -s -X POST "${QS_BASE}/movies/batch" \
+        $QS_AUTH \
+        -H "Content-Type: application/json" \
+        -d '{"requests":[{"action":"addObject","body":{"objectID":"1","title":"The Matrix","year":1999}},{"action":"addObject","body":{"objectID":"2","title":"Inception","year":2010}}]}' 2>&1)
       if echo "$post_resp" | grep -q "taskID\|objectIDs"; then
-        pass "Quickstart: POST documents returns taskID"
+        pass "Install test: POST documents returns taskID"
       else
-        fail "Quickstart: POST documents failed" "$post_resp"
+        fail "Install test: POST documents failed" "$post_resp"
       fi
 
       # Wait for indexing
       sleep 2
 
       # Search — exact match
-      if [ "$QS_AUTH_MODE" = "key" ]; then
-        search_resp=$(curl -s -X POST "${QS_BASE}/movies/query" \
-          -H "X-Algolia-API-Key:${QS_ADMIN_KEY}" -H "X-Algolia-Application-Id:test" \
-          -H "Content-Type: application/json" \
-          -d '{"query":"matrix"}' 2>&1)
-      else
-        search_resp=$(curl -s "${QS_BASE}/movies/search?q=matrix" 2>&1)
-      fi
+      search_resp=$(curl -s -X POST "${QS_BASE}/movies/query" \
+        $QS_AUTH \
+        -H "Content-Type: application/json" \
+        -d '{"query":"matrix"}' 2>&1)
       if echo "$search_resp" | grep -q '"The Matrix"'; then
-        pass "Quickstart: search for 'matrix' returns The Matrix"
+        pass "Install test: search for 'matrix' returns The Matrix"
       else
-        fail "Quickstart: search for 'matrix' did not return expected hit" "$search_resp"
+        fail "Install test: search for 'matrix' did not return expected hit" "$search_resp"
       fi
 
-      # Search — typo tolerance (matching README: "matrx")
-      if [ "$QS_AUTH_MODE" = "key" ]; then
-        typo_resp=$(curl -s -X POST "${QS_BASE}/movies/query" \
-          -H "X-Algolia-API-Key:${QS_ADMIN_KEY}" -H "X-Algolia-Application-Id:test" \
-          -H "Content-Type: application/json" \
-          -d '{"query":"matrx"}' 2>&1)
-      else
-        typo_resp=$(curl -s "${QS_BASE}/movies/search?q=matrx" 2>&1)
-      fi
+      # Search — typo tolerance
+      typo_resp=$(curl -s -X POST "${QS_BASE}/movies/query" \
+        $QS_AUTH \
+        -H "Content-Type: application/json" \
+        -d '{"query":"matrx"}' 2>&1)
       if echo "$typo_resp" | grep -q '"The Matrix"'; then
-        pass "Quickstart: typo-tolerant search 'matrx' returns The Matrix"
+        pass "Install test: typo-tolerant search 'matrx' returns The Matrix"
       else
-        fail "Quickstart: typo-tolerant search 'matrx' did not return expected hit" "$typo_resp"
+        fail "Install test: typo-tolerant search 'matrx' did not return expected hit" "$typo_resp"
       fi
 
       # List indexes — verify movies index exists
-      if [ "$QS_AUTH_MODE" = "key" ]; then
-        idx_resp=$(curl -s "${QS_BASE}" \
-          -H "X-Algolia-API-Key:${QS_ADMIN_KEY}" -H "X-Algolia-Application-Id:test" 2>&1)
-      else
-        idx_resp=$(curl -s "${QS_BASE}" 2>&1)
-      fi
+      idx_resp=$(curl -s "${QS_BASE}" \
+        $QS_AUTH 2>&1)
       if echo "$idx_resp" | grep -q "movies"; then
-        pass "Quickstart: GET /indexes lists 'movies'"
+        pass "Install test: GET /1/indexes lists 'movies'"
       else
-        fail "Quickstart: GET /indexes missing 'movies'" "$idx_resp"
+        fail "Install test: GET /1/indexes missing 'movies'" "$idx_resp"
       fi
     fi
 

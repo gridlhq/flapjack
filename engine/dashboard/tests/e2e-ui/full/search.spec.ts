@@ -31,7 +31,7 @@ test.describe('Search & Browse', () => {
     await page.goto(`/index/${TEST_INDEX}`);
     // Wait for the results panel to appear (initial empty-query search returns all docs)
     await expect(
-      page.locator('[data-testid="results-panel"]').or(page.getByText(/no results found/i))
+      page.getByTestId('results-panel').or(page.getByText(/no results found/i))
     ).toBeVisible({ timeout: 15000 });
   });
 
@@ -44,7 +44,7 @@ test.describe('Search & Browse', () => {
     await searchInput.press('Enter');
 
     // Wait for results to update
-    const resultsPanel = page.locator('[data-testid="results-panel"]');
+    const resultsPanel = page.getByTestId('results-panel');
     await expect(resultsPanel).toBeVisible({ timeout: 10000 });
 
     // All three laptops should appear — document cards show objectID in header badge
@@ -60,7 +60,7 @@ test.describe('Search & Browse', () => {
   // This test waits for the Audio button specifically before clicking.
   // ---------------------------------------------------------------------------
   test('filtering by Audio category shows only audio products', async ({ page }) => {
-    const facetsPanel = page.locator('[data-testid="facets-panel"]');
+    const facetsPanel = page.getByTestId('facets-panel');
     await expect(facetsPanel).toBeVisible({ timeout: 10000 });
 
     // Wait for Audio facet button to appear (may take time due to known facets bug)
@@ -69,7 +69,7 @@ test.describe('Search & Browse', () => {
     await audioBtn.click();
 
     // Wait for results to update with the filter applied
-    const resultsPanel = page.locator('[data-testid="results-panel"]');
+    const resultsPanel = page.getByTestId('results-panel');
     await expect(resultsPanel).toBeVisible({ timeout: 10000 });
 
     // Should see audio products — check via objectIDs (p06=Sony headphones, p07=AirPods)
@@ -85,7 +85,7 @@ test.describe('Search & Browse', () => {
   // Multiple facets: filter by "Apple" brand -> see Apple products only
   // ---------------------------------------------------------------------------
   test('filtering by Apple brand shows only Apple products', async ({ page }) => {
-    const facetsPanel = page.locator('[data-testid="facets-panel"]');
+    const facetsPanel = page.getByTestId('facets-panel');
     await expect(facetsPanel).toBeVisible({ timeout: 10000 });
 
     // Wait for Apple facet button to appear, then click it
@@ -94,12 +94,12 @@ test.describe('Search & Browse', () => {
     await appleBtn.click();
 
     // Wait for results to update
-    const resultsPanel = page.locator('[data-testid="results-panel"]');
+    const resultsPanel = page.getByTestId('results-panel');
     await expect(resultsPanel).toBeVisible({ timeout: 10000 });
-    await expect(resultsPanel.locator('[data-testid="document-card"]').first()).toBeVisible({ timeout: 10000 });
+    await expect(resultsPanel.getByTestId('document-card').first()).toBeVisible({ timeout: 10000 });
 
     // All visible results should be Apple brand products
-    const cards = resultsPanel.locator('[data-testid="document-card"]');
+    const cards = resultsPanel.getByTestId('document-card');
     const cardCount = await cards.count();
     expect(cardCount).toBeGreaterThanOrEqual(1);
     expect(cardCount).toBeLessThanOrEqual(3);
@@ -111,7 +111,7 @@ test.describe('Search & Browse', () => {
   // Clear facet filter: after filtering, clear -> all results return
   // ---------------------------------------------------------------------------
   test('clearing facet filters restores all results', async ({ page }) => {
-    const facetsPanel = page.locator('[data-testid="facets-panel"]');
+    const facetsPanel = page.getByTestId('facets-panel');
     await expect(facetsPanel).toBeVisible({ timeout: 10000 });
 
     // Apply a filter first (wait for facet button — known facets panel timing issue)
@@ -120,15 +120,15 @@ test.describe('Search & Browse', () => {
     await audioBtn.click();
 
     // Verify filter is applied (only 2 audio products)
-    const resultsPanel = page.locator('[data-testid="results-panel"]');
-    await expect(resultsPanel.locator('[data-testid="document-card"]').first()).toBeVisible({ timeout: 10000 });
+    const resultsPanel = page.getByTestId('results-panel');
+    await expect(resultsPanel.getByTestId('document-card').first()).toBeVisible({ timeout: 10000 });
     await expect(resultsPanel.getByText('Audio').first()).toBeVisible();
 
     // Click the Clear button in the facets panel
     await facetsPanel.getByRole('button', { name: /clear/i }).click();
 
     // After clearing, more results should return (all 12 docs)
-    await expect(resultsPanel.locator('[data-testid="document-card"]').first()).toBeVisible({ timeout: 10000 });
+    await expect(resultsPanel.getByTestId('document-card').first()).toBeVisible({ timeout: 10000 });
     // The category facet should now show multiple categories again
     await expect(facetsPanel.getByText('Laptops').first()).toBeVisible();
   });
@@ -154,11 +154,11 @@ test.describe('Search & Browse', () => {
     await searchInput.press('Enter');
 
     // The synonym laptop/notebook/computer is configured, so laptop products should appear
-    const resultsPanel = page.locator('[data-testid="results-panel"]');
+    const resultsPanel = page.getByTestId('results-panel');
     await expect(resultsPanel).toBeVisible({ timeout: 10000 });
 
     // At least one result card should appear due to the synonym mapping
-    await expect(resultsPanel.locator('[data-testid="document-card"]').first()).toBeVisible({ timeout: 10000 });
+    await expect(resultsPanel.getByTestId('document-card').first()).toBeVisible({ timeout: 10000 });
 
     // The results should include laptop products (visible via description or category fields)
     await expect(resultsPanel.getByText(/laptop/i).first()).toBeVisible();
@@ -168,7 +168,7 @@ test.describe('Search & Browse', () => {
   // Result count: verify total hits count is displayed
   // ---------------------------------------------------------------------------
   test('result count is displayed in the results header', async ({ page }) => {
-    const resultsPanel = page.locator('[data-testid="results-panel"]');
+    const resultsPanel = page.getByTestId('results-panel');
     await expect(resultsPanel).toBeVisible({ timeout: 10000 });
 
     // The results header shows "N results · Xms" where count and "results" are in sibling spans.
@@ -176,7 +176,7 @@ test.describe('Search & Browse', () => {
     await expect(resultsPanel.getByText('results').first()).toBeVisible({ timeout: 10000 });
 
     // Verify document cards are rendered
-    await expect(resultsPanel.locator('[data-testid="document-card"]').first()).toBeVisible();
+    await expect(resultsPanel.getByTestId('document-card').first()).toBeVisible();
   });
 
   // ---------------------------------------------------------------------------
@@ -185,7 +185,7 @@ test.describe('Search & Browse', () => {
   test('pagination controls appear when results exceed one page', async ({ page }) => {
     // With 12 products and hitsPerPage=20, all fit on one page.
     // We verify no pagination is shown (single page of results).
-    const resultsPanel = page.locator('[data-testid="results-panel"]');
+    const resultsPanel = page.getByTestId('results-panel');
     await expect(resultsPanel).toBeVisible({ timeout: 10000 });
 
     // With 12 results and 20 per page, there should be no pagination controls
@@ -208,15 +208,15 @@ test.describe('Search & Browse', () => {
   // Multiple facets: select category + brand to narrow down results
   // ---------------------------------------------------------------------------
   test('combining category and brand facets narrows results', async ({ page }) => {
-    const facetsPanel = page.locator('[data-testid="facets-panel"]');
+    const facetsPanel = page.getByTestId('facets-panel');
     await expect(facetsPanel).toBeVisible({ timeout: 10000 });
 
     // Wait for Apple brand facet and click it
     const appleBtn = facetsPanel.locator('button', { hasText: 'Apple' });
     await expect(appleBtn).toBeVisible({ timeout: 15_000 });
     await appleBtn.click();
-    const resultsPanel = page.locator('[data-testid="results-panel"]');
-    await expect(resultsPanel.locator('[data-testid="document-card"]').first()).toBeVisible({ timeout: 10000 });
+    const resultsPanel = page.getByTestId('results-panel');
+    await expect(resultsPanel.getByTestId('document-card').first()).toBeVisible({ timeout: 10000 });
 
     // Apple has 3 products (MacBook, iPad, AirPods) across 3 categories
     // Now also click "Laptops" category to narrow to just MacBook
@@ -249,7 +249,7 @@ test.describe('Search & Browse', () => {
     await expect(toggle).toHaveAttribute('data-state', 'checked');
 
     // Animated recording indicator should appear
-    await expect(page.locator('.animate-pulse').first()).toBeVisible();
+    await expect(page.getByTestId('recording-indicator')).toBeVisible();
 
     // Turn off
     await toggle.click();
@@ -297,51 +297,17 @@ test.describe('Search & Browse', () => {
     await searchInput.press('Enter');
 
     // Should see Apple products — check for brand "Apple" in result cards
-    const resultsPanel = page.locator('[data-testid="results-panel"]');
+    const resultsPanel = page.getByTestId('results-panel');
     await expect(resultsPanel).toBeVisible({ timeout: 10000 });
-    await expect(resultsPanel.locator('[data-testid="document-card"]').first()).toBeVisible({ timeout: 10000 });
+    await expect(resultsPanel.getByTestId('document-card').first()).toBeVisible({ timeout: 10000 });
     await expect(resultsPanel.getByText('p01').first()).toBeVisible();
   });
 
-  // ---------------------------------------------------------------------------
-  // Clicking Search button triggers search
-  // ---------------------------------------------------------------------------
-  test('clicking Search button triggers search', async ({ page }) => {
-    const searchInput = page.getByPlaceholder(/search documents/i);
-    await searchInput.fill('samsung');
+  // (Removed: "clicking Search button triggers search" — no standalone Search button exists;
+  //  search is triggered via input + Enter, already tested above.)
 
-    // Click the Search button and wait for the search API response
-    await Promise.all([
-      page.waitForResponse((resp) => resp.url().includes('/search') && resp.status() === 200),
-      page.getByRole('button', { name: /^search$/i }).click(),
-    ]);
-
-    const resultsPanel = page.locator('[data-testid="results-panel"]');
-    await expect(resultsPanel).toBeVisible({ timeout: 15000 });
-    // Samsung search returns p05 (Galaxy Tab) and p08 (990 Pro) — check objectIDs
-    await expect(resultsPanel.getByText('p05').first()).toBeVisible({ timeout: 15000 });
-  });
-
-  // ---------------------------------------------------------------------------
-  // Filter toggle opens and closes filter panel
-  // ---------------------------------------------------------------------------
-  test('filter toggle opens and closes filter panel', async ({ page }) => {
-    // Click the filter toggle (sliders icon button)
-    const filterBtn = page.locator('button').filter({ has: page.locator('[class*="lucide-sliders"]') }).or(
-      page.getByRole('button').filter({ has: page.locator('svg') }).nth(2)
-    );
-    // Use a more reliable selector
-    const sliderBtn = page.locator('button:has(svg.lucide-sliders-horizontal)');
-    if (await sliderBtn.isVisible().catch(() => false)) {
-      await sliderBtn.click();
-      // Filter panel should open showing filter input
-      await expect(page.getByPlaceholder(/e\.g\., category:books/i)).toBeVisible({ timeout: 5000 });
-
-      // Close it
-      await page.getByRole('button', { name: /cancel/i }).click();
-      await expect(page.getByPlaceholder(/e\.g\., category:books/i)).not.toBeVisible();
-    }
-  });
+  // (Removed: "filter toggle opens and closes filter panel" — no filter toggle button exists;
+  //  facets panel is always visible on desktop.)
 
   // ---------------------------------------------------------------------------
   // Typo tolerance: search "macbok" should still find MacBook
@@ -351,11 +317,11 @@ test.describe('Search & Browse', () => {
     await searchInput.fill('macbok');
     await searchInput.press('Enter');
 
-    const resultsPanel = page.locator('[data-testid="results-panel"]');
+    const resultsPanel = page.getByTestId('results-panel');
     await expect(resultsPanel).toBeVisible({ timeout: 10000 });
 
     // Should still find MacBook Pro via typo tolerance
-    await expect(resultsPanel.locator('[data-testid="document-card"]').first()).toBeVisible({ timeout: 10000 });
+    await expect(resultsPanel.getByTestId('document-card').first()).toBeVisible({ timeout: 10000 });
   });
 
   // ---------------------------------------------------------------------------
@@ -363,7 +329,7 @@ test.describe('Search & Browse', () => {
   // ---------------------------------------------------------------------------
   test('different searches return distinct result sets', async ({ page }) => {
     const searchInput = page.getByPlaceholder(/search documents/i);
-    const resultsPanel = page.locator('[data-testid="results-panel"]');
+    const resultsPanel = page.getByTestId('results-panel');
 
     // Search "monitor" — result cards show objectID and fields, not full product name
     await searchInput.fill('monitor');
@@ -391,10 +357,10 @@ test.describe('Search & Browse', () => {
     await searchInput.fill('screen');
     await searchInput.press('Enter');
 
-    const resultsPanel = page.locator('[data-testid="results-panel"]');
+    const resultsPanel = page.getByTestId('results-panel');
     await expect(resultsPanel).toBeVisible({ timeout: 10000 });
     // "screen" is a synonym for "monitor", so should find the LG monitor
-    await expect(resultsPanel.locator('[data-testid="document-card"]').first()).toBeVisible({ timeout: 10000 });
+    await expect(resultsPanel.getByTestId('document-card').first()).toBeVisible({ timeout: 10000 });
   });
 
   // ---------------------------------------------------------------------------
@@ -405,16 +371,16 @@ test.describe('Search & Browse', () => {
     await searchInput.fill('earbuds');
     await searchInput.press('Enter');
 
-    const resultsPanel = page.locator('[data-testid="results-panel"]');
+    const resultsPanel = page.getByTestId('results-panel');
     await expect(resultsPanel).toBeVisible({ timeout: 10000 });
-    await expect(resultsPanel.locator('[data-testid="document-card"]').first()).toBeVisible({ timeout: 10000 });
+    await expect(resultsPanel.getByTestId('document-card').first()).toBeVisible({ timeout: 10000 });
   });
 
   // ---------------------------------------------------------------------------
   // Facets panel shows category and brand facets
   // ---------------------------------------------------------------------------
   test('facets panel shows category values', async ({ page }) => {
-    const facetsPanel = page.locator('[data-testid="facets-panel"]');
+    const facetsPanel = page.getByTestId('facets-panel');
     await expect(facetsPanel).toBeVisible({ timeout: 10000 });
 
     // Wait for "Category" heading to appear in facets panel
@@ -432,7 +398,7 @@ test.describe('Search & Browse', () => {
   // Facets panel shows brand values
   // ---------------------------------------------------------------------------
   test('facets panel shows brand facet values', async ({ page }) => {
-    const facetsPanel = page.locator('[data-testid="facets-panel"]');
+    const facetsPanel = page.getByTestId('facets-panel');
     await expect(facetsPanel).toBeVisible({ timeout: 10000 });
 
     // Wait for "Brand" heading to appear in facets panel
@@ -448,7 +414,7 @@ test.describe('Search & Browse', () => {
   // Facet counts are displayed with each facet value
   // ---------------------------------------------------------------------------
   test('facet values show document counts', async ({ page }) => {
-    const facetsPanel = page.locator('[data-testid="facets-panel"]');
+    const facetsPanel = page.getByTestId('facets-panel');
     await expect(facetsPanel).toBeVisible({ timeout: 10000 });
 
     // Wait for facet buttons to appear

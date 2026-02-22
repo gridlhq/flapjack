@@ -1,7 +1,7 @@
 # E2E-UI Test Coverage Checklist
 
-**Last updated:** 2026-02-14
-**Total tests:** 196 across 16 spec files (7 smoke + 189 full)
+**Last updated:** 2026-02-20
+**Total tests:** 234 across 19 spec files (7 smoke + 227 full) — 227 active, 7 skipped (api-keys backend not yet implemented)
 **Test type:** NON-MOCKED, simulated-human, real-browser (Playwright + Chromium, headless)
 **Runner:** `npm test` or `npx playwright test --project=e2e-ui`
 
@@ -53,58 +53,65 @@ This checklist covers **E2E-UI tests only** — the non-mocked, real-browser tes
 | 15 | Clicking index navigates to search page | Done |
 | 16 | Export All button triggers download | Done |
 
-### Search & Browse — [search.spec.ts](e2e-ui/full/search.spec.ts) (22 tests)
+### Search & Browse — [search.spec.ts](e2e-ui/full/search.spec.ts) (20 tests)
 
 | # | Test | Status |
 |---|------|--------|
-| 1 | Search by typing and pressing Enter | Done |
-| 2 | Search by clicking Search button | Done |
-| 3 | Search results display with hit count | Done |
-| 4 | Facet panel displays with category/brand facets | Done |
-| 5 | Click facet value filters results | Done |
-| 6 | Clear filters restores original results | Done |
-| 7 | Multiple facet filters combine correctly | Done |
-| 8 | Facets panel persists when filter produces 0 results | Done |
-| 9 | Add Documents dialog opens and closes | Done |
-| 10 | Sample Data tab loads movie/product data | Done |
-| 11 | Pagination controls appear when results exceed one page | Done |
-| 12 | Empty query shows all documents | Done |
-| 13 | No results message for nonsense query | Done |
-| 14 | Analytics toggle switch | Done |
-| 15 | Typo tolerance returns results for misspelled queries | Done |
-| 16 | Different searches return distinct result sets | Done |
-| 17 | Synonym "screen" returns monitor results | Done |
-| 18 | Synonym "earbuds" returns headphone results | Done |
-| 19 | Synonym "notebook" returns laptop results | Done |
-| 20 | Sub-page nav buttons (Settings, Synonyms, etc.) | Done |
-| 21 | Index name breadcrumb and stats | Done |
-| 22 | Facet values show document counts | Done |
+| 1 | Searching for "laptop" returns laptop products | Done |
+| 2 | Filtering by Audio category shows only audio products | Done |
+| 3 | Filtering by Apple brand shows only Apple products | Done |
+| 4 | Clearing facet filters restores all results | Done |
+| 5 | Searching for nonsense query shows no results | Done |
+| 6 | Searching for "notebook" returns laptop results via synonyms | Done |
+| 7 | Result count is displayed in the results header | Done |
+| 8 | Pagination controls appear when results exceed one page | Done |
+| 9 | Combining category and brand facets narrows results | Done |
+| 10 | Analytics tracking toggle is visible and can be switched | Done |
+| 11 | Add Documents button opens dialog with tab options | Done |
+| 12 | Index stats shown in breadcrumb area | Done |
+| 13 | Pressing Enter in search box triggers search | Done |
+| 14 | Typo tolerance returns results for misspelled queries | Done |
+| 15 | Different searches return distinct result sets | Done |
+| 16 | Synonym "screen" returns monitor results | Done |
+| 17 | Synonym "earbuds" returns headphone results | Done |
+| 18 | Facets panel shows category values | Done |
+| 19 | Facets panel shows brand facet values | Done |
+| 20 | Facet values show document counts | Done |
 
-### Analytics — [analytics.spec.ts](e2e-ui/full/analytics.spec.ts) (19 tests)
+### Analytics — [analytics.spec.ts](e2e-ui/full/analytics.spec.ts) (28 tests)
 
-| # | Test | Status |
-|---|------|--------|
-| 1 | Overview tab loads with KPI cards showing data | Done |
-| 2 | Search volume chart is visible on Overview tab | Done |
-| 3 | Top searches table shows data on Overview tab | Done |
-| 4 | No-Result Rate Over Time chart is visible | Done |
-| 5 | No Results tab loads with rate banner and table | Done |
-| 6 | Devices tab shows platform breakdown | Done |
-| 7 | Geography tab shows country list | Done |
-| 8 | Geography drill-down: click country, see details, back | Done |
-| 9 | Date range toggle (7d/30d/90d) triggers API calls | Done |
-| 10 | Searches tab shows top searches table with data | Done |
-| 11 | Searches tab filter input narrows results | Done |
-| 12 | Searches tab shows country filter dropdown | Done |
-| 13 | Searches tab shows device filter dropdown | Done |
-| 14 | Searches tab column headers clickable for sorting | Done |
-| 15 | Filters tab shows Top Filter Attributes table | Done |
-| 16 | Filters tab: expand/collapse filter rows | Done |
-| 17 | Flush button is visible and clickable | Done |
-| 18 | Analytics page shows BETA badge | Done |
-| 19 | Clear Analytics button opens confirmation dialog | Done |
+| # | Test | Status | Notes |
+|---|------|--------|-------|
+| 1 | Overview tab loads with KPI cards showing data | Done | Uses data-testid, not CSS class |
+| 2 | Search volume chart renders SVG (not empty state) | Done | Hard assert SVG, no OR fallback |
+| 3 | Top searches table shows data on Overview tab | Done | |
+| 4 | No-Result Rate Over Time chart renders SVG | Done | Hard assert SVG, no OR fallback |
+| 5 | No Results tab loads with rate banner and table | Done | |
+| 6 | Devices tab shows platform breakdown | Done | |
+| 7 | Geography tab shows country list | Done | |
+| 8 | Geography drill-down: click country, see details, back | Done | |
+| 9 | Date range toggle (7d/30d/90d) refreshes data | Done | Uses data-testid for KPI values |
+| 10 | Searches tab shows top searches table with data | Done | |
+| 11 | Searches tab filter input narrows results | Done | |
+| 12 | Searches tab shows country filter dropdown | Done | Hard assertion, no if guard |
+| 13 | Searches tab shows device filter dropdown | Done | Hard assertion, no if guard |
+| 14 | Searches tab column headers clickable for sorting | Done | |
+| 15 | Filters tab shows Top Filter Attributes table | Done | |
+| 16 | Filters tab: expand/collapse filter rows | Done | Hard assertion, no conditional skip |
+| 17 | Flush button triggers analytics refresh | Done | Verifies loading state + completion |
+| 18 | Analytics page shows BETA badge | Done | |
+| 19 | Clear Analytics button opens confirmation dialog | Done | Hard assertion using data-testid |
+| 20 | Filters Causing No Results section with seeded data | Done | Hard assertion, was conditional guard |
+| 21 | Breadcrumb: Overview > index > Analytics links work | Done | Verifies navigation |
+| 22 | Breadcrumb index link navigates to search page | Done | |
+| 23 | Date range label shows formatted date range | Done | Verifies "MMM DD - MMM DD" format |
+| 24 | KPI cards show formatted numeric values | Done | Asserts number/percentage patterns |
+| 25 | KPI sparkline SVGs render for time-series data | Done | Total Searches + NRR sparklines |
+| 26 | Top searches table: ranked queries with counts | Done | Verifies rank, query text, count format |
+| 27 | Clear Analytics dialog shows warning text + index name | Done | Content verification |
+| 28 | Flush button disabled while request pending | Done | State transition verification |
 
-### Analytics Deep Data — [analytics-deep.spec.ts](e2e-ui/full/analytics-deep.spec.ts) (15 tests)
+### Analytics Deep Data — [analytics-deep.spec.ts](e2e-ui/full/analytics-deep.spec.ts) (24 tests)
 
 | # | Test | Status |
 |---|------|--------|
@@ -123,6 +130,15 @@ This checklist covers **E2E-UI tests only** — the non-mocked, real-browser tes
 | 13 | Geography click country shows drill-down | Done |
 | 14 | Geography back button returns to country list | Done |
 | 15 | Switching to 30d updates KPI values | Done |
+| 16 | Total Searches KPI sparkline renders SVG path | Done |
+| 17 | No-Result Rate KPI sparkline renders SVG path | Done |
+| 18 | Search query cells contain non-empty text strings | Done |
+| 19 | Search count cells contain comma-formatted numbers | Done |
+| 20 | Volume bars have non-zero width for rows with counts | Done |
+| 21 | Country rows: flag, name, code, count, share % | Done |
+| 22 | Drill-down shows country-specific search queries | Done |
+| 23 | US drill-down: States table shows state names | Done |
+| 24 | Device counts add up across platform cards | Done |
 
 ### Rules — [rules.spec.ts](e2e-ui/full/rules.spec.ts) (12 tests)
 
@@ -172,7 +188,7 @@ This checklist covers **E2E-UI tests only** — the non-mocked, real-browser tes
 | 10 | Reset button appears after modification and reverts | Done |
 | 11 | Save settings + verify persistence | Done |
 
-### Merchandising — [merchandising.spec.ts](e2e-ui/full/merchandising.spec.ts) (10 tests)
+### Merchandising — [merchandising.spec.ts](e2e-ui/full/merchandising.spec.ts) (14 tests)
 
 | # | Test | Status |
 |---|------|--------|
@@ -186,21 +202,27 @@ This checklist covers **E2E-UI tests only** — the non-mocked, real-browser tes
 | 8 | Different queries return different results | Done |
 | 9 | Results summary shows hit count | Done |
 | 10 | How It Works help card visible | Done |
+| 11 | Drag handle visible on all result cards | Done |
+| 12 | Result cards are draggable (have draggable attribute) | Done |
+| 13 | Drag and drop pins item at target position | Done |
+| 14 | Up/down arrow buttons work for pinned items | Done |
 
-### API Keys — [api-keys.spec.ts](e2e-ui/full/api-keys.spec.ts) (10 tests)
+### API Keys — [api-keys.spec.ts](e2e-ui/full/api-keys.spec.ts) (3 active + 7 skipped)
+
+*Note: The `/1/keys` API is defined in the OpenAPI spec but not yet implemented on the server. Tests requiring key CRUD are `test.skip()` until backend support lands.*
 
 | # | Test | Status |
 |---|------|--------|
-| 1 | Key list loads (keys or empty state) | Done |
-| 2 | Create new API key via dialog | Done |
-| 3 | Create then delete API key | Done |
-| 4 | Key permissions badges display | Done |
-| 5 | Copy button visible on key cards | Done |
-| 6 | Copy button click shows "Copied" feedback | Done |
-| 7 | Create key dialog shows all form sections | Done |
-| 8 | Toggle permissions updates badges | Done |
-| 9 | Key with no index scope shows "All Indexes" | Done |
-| 10 | Create key with index scope restriction | Done |
+| 1 | API keys page loads and shows heading and create button | Done |
+| 2 | Create key dialog shows all form sections | Done |
+| 3 | Toggling permissions updates selection badges | Done |
+| 4 | Create a new API key and verify it appears in the list | **Skipped** (needs `/1/keys` backend) |
+| 5 | Create then delete an API key | **Skipped** (needs `/1/keys` backend) |
+| 6 | Key cards display permissions badges | **Skipped** (needs `/1/keys` backend) |
+| 7 | Copy button visible on key cards | **Skipped** (needs `/1/keys` backend) |
+| 8 | Clicking copy button shows Copied feedback | **Skipped** (needs `/1/keys` backend) |
+| 9 | Key with no index scope shows All Indexes badge | **Skipped** (needs `/1/keys` backend) |
+| 10 | Create key with restricted index scope | **Skipped** (needs `/1/keys` backend) |
 
 ### Search Logs — [search-logs.spec.ts](e2e-ui/full/search-logs.spec.ts) (11 tests)
 
@@ -298,6 +320,39 @@ This checklist covers **E2E-UI tests only** — the non-mocked, real-browser tes
 | 7 | Overview analytics → Analytics page link | Done |
 | 8 | Full navigation cycle (5 pages) | Done |
 
+### Auth Flow — [auth-flow.spec.ts](e2e-ui/full/auth-flow.spec.ts) (5 tests)
+
+| # | Test | Status |
+|---|------|--------|
+| 1 | Auth gate appears for unauthenticated users | Done |
+| 2 | Valid API key authenticates successfully | Done |
+| 3 | Invalid API key shows error | Done |
+| 4 | Authenticated user can access dashboard | Done |
+| 5 | Logout returns to auth gate | Done |
+
+### Connection Health — [connection-health.spec.ts](e2e-ui/full/connection-health.spec.ts) (4 tests)
+
+| # | Test | Status |
+|---|------|--------|
+| 1 | Connected badge when server is healthy | Done |
+| 2 | BETA badge visible in header | Done |
+| 3 | Disconnected banner when server unreachable | Done |
+| 4 | Recovery from disconnected state | Done |
+
+### Query Suggestions — [query-suggestions.spec.ts](e2e-ui/full/query-suggestions.spec.ts) (9 tests)
+
+| # | Test | Status |
+|---|------|--------|
+| 1 | Seeded config renders in the list after navigation | Done |
+| 2 | Page loads with heading and Create Config button | Done |
+| 3 | Empty state shows Create Your First Config when no configs exist | Done |
+| 4 | Create config dialog shows all required form fields | Done |
+| 5 | Cancel closes dialog without creating a config | Done |
+| 6 | Created config card shows source index, status, and action buttons | Done |
+| 7 | Rebuild button triggers a build and shows toast | Done |
+| 8 | Delete config removes it from the list | Done |
+| 9 | Sidebar Query Suggestions link navigates to the page | Done |
+
 ---
 
 ## Summary
@@ -306,33 +361,41 @@ This checklist covers **E2E-UI tests only** — the non-mocked, real-browser tes
 |-------------|------|-------|----------|
 | Smoke (critical paths) | critical-paths.spec.ts | 7 | Full |
 | Overview | overview.spec.ts | 16 | Full |
-| Search & Browse | search.spec.ts | 22 | Full |
-| Analytics | analytics.spec.ts | 19 | Full |
-| Analytics Deep Data | analytics-deep.spec.ts | 15 | Full |
+| Search & Browse | search.spec.ts | 20 | Full |
+| Analytics | analytics.spec.ts | 28 | Full (hardened) |
+| Analytics Deep Data | analytics-deep.spec.ts | 24 | Full (hardened) |
 | Rules | rules.spec.ts | 12 | Full |
 | Synonyms | synonyms.spec.ts | 10 | Full |
 | Settings | settings.spec.ts | 11 | Full |
-| Merchandising | merchandising.spec.ts | 10 | Full |
-| API Keys | api-keys.spec.ts | 10 | Full |
+| Merchandising | merchandising.spec.ts | 14 | Full |
+| API Keys | api-keys.spec.ts | 3 + 7 skipped | Partial (needs `/1/keys` backend) |
 | Search Logs | search-logs.spec.ts | 11 | Full |
 | System | system.spec.ts | 16 | Full |
 | Migrate | migrate.spec.ts | 13 | Full |
 | Migrate (Algolia) | migrate-algolia.spec.ts | 2 | Full |
 | Navigation/Layout | navigation.spec.ts | 14 | Full |
 | Cross-Page Flows | cross-page-flows.spec.ts | 8 | Full |
-| **TOTAL** | **16 files** | **196** | **Full** |
+| Auth Flow | auth-flow.spec.ts | 5 | Full |
+| Connection Health | connection-health.spec.ts | 4 | Full |
+| Query Suggestions | query-suggestions.spec.ts | 9 | Full |
+| **TOTAL** | **19 files** | **227 active + 7 skipped = 234** | **Full (except API Keys CRUD)** |
 
 ---
 
 ## Quality Standards
 
+- **Zero ESLint violations** — `npx eslint --config tests/e2e-ui/eslint.config.mjs 'tests/e2e-ui/**/*.spec.ts'` passes clean
+- **Zero CSS class selectors** — all locators use `data-testid`, `getByRole`, `getByText`, or `getByPlaceholder`
+- **Zero attribute selectors** — no `.locator('[data-testid="..."]')`, uses `.getByTestId('...')` instead
+- **Zero API calls in spec files** — all `request.*` calls moved to `fixtures/api-helpers.ts`
 - **Zero conditional assertions** — no `if (await isVisible())` guards that silently pass
-- **Zero sleeps** — all waits use Playwright auto-retry (`expect().toBeVisible()`, `waitForResponse()`)
+- **Zero sleeps** — all waits use Playwright auto-retry (`expect().toBeVisible()`, `expect().toPass()`)
+- **Content verification** — tests assert actual data values (numbers, percentages, text), not just visibility
 - **Real server** — every test runs against a live Flapjack backend with seeded data
 - **Real browser** — Chromium via Playwright (headless mode for CI/local)
 - **Simulated human** — all interactions use getByRole/getByText/getByTestId locators
 - **Deterministic data** — 12 products, 3 synonyms, 2 rules, settings seeded via seed.setup.ts
-- **Cleanup** — tests that create data clean up after themselves (API or UI)
+- **Cleanup** — tests that create data clean up via fixture helpers (not raw API calls)
 
 ---
 

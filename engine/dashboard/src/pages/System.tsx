@@ -26,8 +26,10 @@ import {
   HardDrive,
   Cloud,
   CloudOff,
+  Clock,
+  Cpu,
 } from 'lucide-react';
-import { formatBytes } from '@/lib/utils';
+import { formatBytes, formatUptime } from '@/lib/utils';
 import { InfoTooltip } from '@/components/ui/info-tooltip';
 
 function IndexHealthSummary() {
@@ -78,13 +80,29 @@ function IndexHealthSummary() {
   );
 }
 
+function PressureDot({ level }: { level: string }) {
+  const normalized = level.charAt(0).toUpperCase() + level.slice(1).toLowerCase();
+  const colorClass =
+    normalized === 'Critical'
+      ? 'bg-red-500'
+      : normalized === 'Elevated'
+        ? 'bg-amber-500'
+        : 'bg-green-500';
+  return (
+    <span className="inline-flex items-center gap-1.5" data-testid="health-pressure">
+      <span className={`inline-block h-2.5 w-2.5 rounded-full ${colorClass}`} />
+      <span className="text-sm">{normalized}</span>
+    </span>
+  );
+}
+
 function HealthTab() {
   const { data, isLoading, isError, error } = useHealthDetail();
 
   if (isLoading) {
     return (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {Array.from({ length: 5 }).map((_, i) => (
+        {Array.from({ length: 6 }).map((_, i) => (
           <Card key={i}><CardContent className="pt-6"><Skeleton className="h-16" /></CardContent></Card>
         ))}
       </div>
@@ -107,33 +125,64 @@ function HealthTab() {
     );
   }
 
+  const heapMb = data?.heap_allocated_mb ?? 0;
+  const limitMb = data?.system_limit_mb ?? 0;
+  const memPercent = limitMb > 0 ? Math.round((heapMb / limitMb) * 100) : 0;
+
   const stats = [
     {
       label: 'Status',
       value: data?.status || 'unknown',
       icon: data?.status === 'ok' ? CheckCircle : XCircle,
       color: data?.status === 'ok' ? 'text-green-600 dark:text-green-400' : 'text-destructive',
+      testId: 'health-status',
     },
     {
       label: 'Active Writers',
       value: `${data?.active_writers ?? 0} / ${data?.max_concurrent_writers ?? 0}`,
       icon: Database,
       color: 'text-blue-600 dark:text-blue-400',
+      testId: 'health-active-writers',
     },
     {
       label: 'Facet Cache',
       value: `${data?.facet_cache_entries ?? 0} / ${data?.facet_cache_cap ?? 0}`,
       icon: Layers,
       color: 'text-purple-600 dark:text-purple-400',
+      testId: 'health-facet-cache',
+    },
+    {
+      label: 'Uptime',
+      value: formatUptime(data?.uptime_secs ?? 0),
+      icon: Clock,
+      color: 'text-emerald-600 dark:text-emerald-400',
+      testId: 'health-uptime',
+    },
+    {
+      label: 'Tenants Loaded',
+      value: String(data?.tenants_loaded ?? 0),
+      icon: Database,
+      color: 'text-indigo-600 dark:text-indigo-400',
+      testId: 'health-tenants-loaded',
     },
   ];
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">Auto-refreshes every 5 seconds</p>
+      <div className="flex items-center gap-3">
+        <p className="text-sm text-muted-foreground">Auto-refreshes every 5 seconds</p>
+        {data?.version && (
+          <span
+            className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium"
+            data-testid="health-version"
+          >
+            {data.version}{data.build_profile ? ` · ${data.build_profile}` : ''}
+          </span>
+        )}
+      </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {stats.map((stat) => (
-          <Card key={stat.label} data-testid={`health-${stat.label.toLowerCase().replace(/\s+/g, '-')}`}>
+          <Card key={stat.testId} data-testid={stat.testId}>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 {stat.label}
@@ -141,10 +190,31 @@ function HealthTab() {
               <stat.icon className={`h-5 w-5 ${stat.color}`} />
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold">{stat.value}</p>
+              <p className="text-2xl font-bold" data-testid="stat-value">{stat.value}</p>
             </CardContent>
           </Card>
         ))}
+        {/* Memory card with progress bar and pressure indicator */}
+        <Card data-testid="health-memory">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Memory
+            </CardTitle>
+            <Cpu className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <p className="text-2xl font-bold" data-testid="stat-value">
+              {heapMb} MB / {limitMb} MB ({memPercent}%)
+            </p>
+            <div className="h-2 w-full rounded-full bg-muted">
+              <div
+                className="h-2 rounded-full bg-orange-500 transition-all"
+                style={{ width: `${Math.min(memPercent, 100)}%` }}
+              />
+            </div>
+            <PressureDot level={data?.pressure_level ?? 'Normal'} />
+          </CardContent>
+        </Card>
       </div>
       <IndexHealthSummary />
     </div>
@@ -185,19 +255,19 @@ function IndexesTab() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Indexes</CardTitle>
           </CardHeader>
-          <CardContent><p className="text-2xl font-bold">{indexes.length}</p></CardContent>
+          <CardContent><p className="text-2xl font-bold" data-testid="stat-value">{indexes.length}</p></CardContent>
         </Card>
         <Card data-testid="indexes-total-docs">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Documents</CardTitle>
           </CardHeader>
-          <CardContent><p className="text-2xl font-bold">{totalDocs.toLocaleString()}</p></CardContent>
+          <CardContent><p className="text-2xl font-bold" data-testid="stat-value">{totalDocs.toLocaleString()}</p></CardContent>
         </Card>
         <Card data-testid="indexes-total-storage">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Storage</CardTitle>
           </CardHeader>
-          <CardContent><p className="text-2xl font-bold">{formatBytes(totalSize)}</p></CardContent>
+          <CardContent><p className="text-2xl font-bold" data-testid="stat-value">{formatBytes(totalSize)}</p></CardContent>
         </Card>
       </div>
 
@@ -258,8 +328,8 @@ function IndexesTab() {
                           </span>
                         )}
                       </td>
-                      <td className="py-2 pr-4 text-right">{(idx.entries ?? 0).toLocaleString()}</td>
-                      <td className="py-2 pr-4 text-right">{formatBytes(idx.dataSize ?? 0)}</td>
+                      <td className="py-2 pr-4 text-right" data-testid={`index-doc-count-${idx.uid}`}>{(idx.entries ?? 0).toLocaleString()}</td>
+                      <td className="py-2 pr-4 text-right" data-testid={`index-storage-${idx.uid}`}>{formatBytes(idx.dataSize ?? 0)}</td>
                       <td className="py-2 text-right">
                         {pending > 0 ? (
                           <span className="text-amber-600 dark:text-amber-400">
@@ -319,7 +389,7 @@ function ReplicationTab() {
             <Server className="h-5 w-5 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <p className="text-sm font-mono break-all">{data?.node_id || 'N/A'}</p>
+            <p className="text-sm font-mono break-all" data-testid="node-id-value">{data?.node_id || 'N/A'}</p>
             {(!data?.node_id || data.node_id === 'unknown') && (
               <p className="text-xs text-muted-foreground mt-1">
                 Expected for standalone instances. Node IDs are assigned when replication is configured.
@@ -338,7 +408,7 @@ function ReplicationTab() {
             )}
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">
+            <p className="text-2xl font-bold" data-testid="replication-status">
               {data?.replication_enabled ? 'Enabled' : 'Disabled'}
             </p>
             {data?.replication_enabled && (

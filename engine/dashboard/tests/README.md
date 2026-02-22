@@ -58,8 +58,9 @@ tests/
 
 ## Prerequisites
 
-- **Flapjack server** running on `localhost:7700`
-- **Vite dev server** on `localhost:5177` (started automatically by Playwright unless already running)
+- **Repo-local config file** at `flapjack.local.conf` (copy from `flapjack.local.conf.example`)
+- **Flapjack server** running on `http://$FJ_HOST:$FJ_BACKEND_PORT` from that file
+- **Vite dev server** on `http://$FJ_HOST:$FJ_DASHBOARD_PORT` from that file (started automatically by Playwright unless already running)
 - **Algolia credentials** (e2e-api tests only) — set `ALGOLIA_APP_ID` and `ALGOLIA_ADMIN_KEY` in `../../.secret/.env.secret`
 
 ## Running Tests
@@ -202,7 +203,7 @@ await page.pause();
 ## Common Issues
 
 ### Tests fail with "No API response"
-The dashboard needs a running Flapjack server at `http://localhost:7700`.
+The dashboard needs a running Flapjack server at the repo-local configured backend URL (`flapjack.local.conf`).
 
 ### Integration tests are skipped
 Set `ALGOLIA_APP_ID` and `ALGOLIA_ADMIN_KEY` in `.secret/.env.secret` at the project root.

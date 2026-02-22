@@ -12,6 +12,7 @@ pub mod schema;
 pub mod settings;
 #[cfg(feature = "s3-snapshots")]
 pub mod snapshot;
+pub mod storage_size;
 pub mod synonyms;
 pub mod task_queue;
 mod utils;

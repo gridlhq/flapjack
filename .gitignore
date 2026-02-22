@@ -67,6 +67,9 @@ dist-ssr
 # Stable server binary for dashboard dev/testing
 bin/
 
+# Per-clone local test/runtime ports and keys
+flapjack.local.conf
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -86,3 +89,6 @@ __pycache__/
 # Large binary/archive files
 sdks/wordpress/*.zip
 sdks/javascript/.yarn/releases/
+
+
+*.parquet

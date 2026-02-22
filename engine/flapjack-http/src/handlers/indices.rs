@@ -231,6 +231,40 @@ pub async fn compact_index(
     })))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dir_size_nonexistent() {
+        assert_eq!(dir_size(std::path::Path::new("/nonexistent/path")), 0);
+    }
+
+    #[test]
+    fn dir_size_empty_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(dir_size(dir.path()), 0);
+    }
+
+    #[test]
+    fn dir_size_with_files() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "hello").unwrap(); // 5 bytes
+        std::fs::write(dir.path().join("b.txt"), "world!").unwrap(); // 6 bytes
+        assert_eq!(dir_size(dir.path()), 11);
+    }
+
+    #[test]
+    fn dir_size_recursive() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("sub");
+        std::fs::create_dir(&sub).unwrap();
+        std::fs::write(dir.path().join("top.txt"), "ab").unwrap(); // 2 bytes
+        std::fs::write(sub.join("nested.txt"), "cde").unwrap(); // 3 bytes
+        assert_eq!(dir_size(dir.path()), 5);
+    }
+}
+
 #[derive(serde::Deserialize, utoipa::ToSchema)]
 pub struct OperationIndexRequest {
     pub operation: String,

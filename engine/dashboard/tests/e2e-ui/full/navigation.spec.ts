@@ -7,9 +7,9 @@
  * NO mocking. Tests verify real navigation between pages and UI state.
  *
  * Pre-requisites:
- *   - Flapjack server running on port 7700
+ *   - Flapjack server running on the repo-local configured backend port
  *   - `e2e-products` index seeded with 12 products (via seed.setup.ts)
- *   - Vite dev server on localhost:5177
+ *   - Vite dev server on the repo-local configured dashboard port
  */
 import { test, expect } from '../../fixtures/auth.fixture';
 import { TEST_INDEX } from '../helpers';
@@ -31,6 +31,7 @@ test.describe('Navigation & Layout', () => {
     await expect(sidebar.getByText('API Logs').first()).toBeVisible();
     await expect(sidebar.getByText('Migrate').first()).toBeVisible();
     await expect(sidebar.getByText('API Keys').first()).toBeVisible();
+    await expect(sidebar.getByText('Metrics').first()).toBeVisible();
     await expect(sidebar.getByText('System').first()).toBeVisible();
   });
 
@@ -45,7 +46,7 @@ test.describe('Navigation & Layout', () => {
 
   test('clicking sidebar Overview navigates to overview page', async ({ page }) => {
     await page.goto(`/index/${TEST_INDEX}`);
-    await expect(page.locator('[data-testid="results-panel"]').or(page.getByText(/no results found/i))).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('results-panel').or(page.getByText(/no results found/i))).toBeVisible({ timeout: 15_000 });
 
     // Click Overview in sidebar
     const sidebar = page.locator('aside').or(page.locator('nav'));
@@ -81,7 +82,17 @@ test.describe('Navigation & Layout', () => {
     const sidebar = page.locator('aside').or(page.locator('nav'));
     await sidebar.getByText('API Keys').first().click();
     await expect(page).toHaveURL(/\/keys/);
-    await expect(page.getByRole('heading', { name: /api keys/i })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('heading', { name: 'API Keys', exact: true })).toBeVisible({ timeout: 10_000 });
+  });
+
+  test('clicking sidebar Metrics navigates to metrics page', async ({ page }) => {
+    await page.goto('/overview');
+    await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible({ timeout: 10_000 });
+
+    const sidebar = page.locator('aside').or(page.locator('nav'));
+    await sidebar.getByText('Metrics').first().click();
+    await expect(page).toHaveURL(/\/metrics/);
+    await expect(page.getByRole('heading', { name: /metrics/i })).toBeVisible({ timeout: 10_000 });
   });
 
   test('clicking sidebar System navigates to system page', async ({ page }) => {
@@ -102,7 +113,7 @@ test.describe('Navigation & Layout', () => {
     await sidebar.getByText(TEST_INDEX).first().click();
     await expect(page).toHaveURL(new RegExp(`/index/${TEST_INDEX}`));
     await expect(
-      page.locator('[data-testid="results-panel"]').or(page.getByText(/no results found/i))
+      page.getByTestId('results-panel').or(page.getByText(/no results found/i))
     ).toBeVisible({ timeout: 15_000 });
   });
 
@@ -132,17 +143,17 @@ test.describe('Navigation & Layout', () => {
     // Get initial theme state
     const htmlBefore = await page.locator('html').getAttribute('class');
 
-    // Click to toggle
+    // Click to toggle — wait for the class to actually change (Playwright retries automatically)
     await themeBtn.click();
-    await page.waitForTimeout(500);
+    await expect(page.locator('html')).not.toHaveAttribute('class', htmlBefore ?? '');
 
     // Theme class should change
     const htmlAfter = await page.locator('html').getAttribute('class');
     expect(htmlBefore).not.toBe(htmlAfter);
 
-    // Toggle back
+    // Toggle back — wait for class to return to original
     await themeBtn.click();
-    await page.waitForTimeout(500);
+    await expect(page.locator('html')).toHaveAttribute('class', htmlBefore ?? '');
     const htmlRestored = await page.locator('html').getAttribute('class');
     expect(htmlRestored).toBe(htmlBefore);
   });
@@ -168,7 +179,7 @@ test.describe('Navigation & Layout', () => {
   test('search page nav buttons lead to correct sub-pages', async ({ page }) => {
     await page.goto(`/index/${TEST_INDEX}`);
     await expect(
-      page.locator('[data-testid="results-panel"]').or(page.getByText(/no results found/i))
+      page.getByTestId('results-panel').or(page.getByText(/no results found/i))
     ).toBeVisible({ timeout: 15_000 });
 
     // Click Synonyms nav button
@@ -179,7 +190,7 @@ test.describe('Navigation & Layout', () => {
     // Navigate back to search
     await page.goto(`/index/${TEST_INDEX}`);
     await expect(
-      page.locator('[data-testid="results-panel"]').or(page.getByText(/no results found/i))
+      page.getByTestId('results-panel').or(page.getByText(/no results found/i))
     ).toBeVisible({ timeout: 15_000 });
 
     // Click Analytics nav button
@@ -190,7 +201,7 @@ test.describe('Navigation & Layout', () => {
     // Navigate back to search
     await page.goto(`/index/${TEST_INDEX}`);
     await expect(
-      page.locator('[data-testid="results-panel"]').or(page.getByText(/no results found/i))
+      page.getByTestId('results-panel').or(page.getByText(/no results found/i))
     ).toBeVisible({ timeout: 15_000 });
 
     // Click Settings nav button
@@ -201,7 +212,7 @@ test.describe('Navigation & Layout', () => {
     // Navigate back to search
     await page.goto(`/index/${TEST_INDEX}`);
     await expect(
-      page.locator('[data-testid="results-panel"]').or(page.getByText(/no results found/i))
+      page.getByTestId('results-panel').or(page.getByText(/no results found/i))
     ).toBeVisible({ timeout: 15_000 });
 
     // Click Merchandising nav button
@@ -213,7 +224,7 @@ test.describe('Navigation & Layout', () => {
   test('search page breadcrumb navigates back to overview', async ({ page }) => {
     await page.goto(`/index/${TEST_INDEX}`);
     await expect(
-      page.locator('[data-testid="results-panel"]').or(page.getByText(/no results found/i))
+      page.getByTestId('results-panel').or(page.getByText(/no results found/i))
     ).toBeVisible({ timeout: 15_000 });
 
     // Click the Overview breadcrumb link

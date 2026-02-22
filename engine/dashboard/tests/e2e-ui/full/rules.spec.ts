@@ -17,7 +17,8 @@
  * - Condition/consequence summary display
  */
 import { test, expect } from '../../fixtures/auth.fixture';
-import { API_BASE, API_HEADERS, TEST_INDEX } from '../helpers';
+import { TEST_INDEX } from '../helpers';
+import { createRule, deleteRule } from '../../fixtures/api-helpers';
 
 const RULES_URL = `/index/${TEST_INDEX}/rules`;
 
@@ -71,11 +72,7 @@ test.describe('Rules', () => {
       enabled: true,
     };
 
-    const res = await request.put(
-      `${API_BASE}/1/indexes/${TEST_INDEX}/rules/${testRule.objectID}`,
-      { headers: API_HEADERS, data: testRule }
-    );
-    expect(res.ok(), 'Failed to create test rule via API').toBeTruthy();
+    await createRule(request, TEST_INDEX, testRule);
 
     await page.reload();
     await expect(page.getByText('Rules').first()).toBeVisible({ timeout: 15_000 });
@@ -84,10 +81,7 @@ test.describe('Rules', () => {
     await expect(page.getByText('E2E test rule').first()).toBeVisible();
 
     // Cleanup
-    await request.delete(
-      `${API_BASE}/1/indexes/${TEST_INDEX}/rules/e2e-test-rule`,
-      { headers: API_HEADERS }
-    );
+    await deleteRule(request, TEST_INDEX, 'e2e-test-rule');
 
     await page.reload();
     await expect(page.getByText('Rules').first()).toBeVisible({ timeout: 15_000 });
@@ -105,11 +99,7 @@ test.describe('Rules', () => {
       enabled: true,
     };
 
-    const res = await request.put(
-      `${API_BASE}/1/indexes/${TEST_INDEX}/rules/${testRule.objectID}`,
-      { headers: API_HEADERS, data: testRule }
-    );
-    expect(res.ok(), `Failed to create rule: ${await res.text()}`).toBeTruthy();
+    await createRule(request, TEST_INDEX, testRule);
 
     await page.reload();
     await expect(page.getByText('Rules').first()).toBeVisible({ timeout: 15_000 });
@@ -128,10 +118,7 @@ test.describe('Rules', () => {
     await expect(dialog).not.toBeVisible({ timeout: 5_000 });
 
     // Cleanup via API
-    await request.delete(
-      `${API_BASE}/1/indexes/${TEST_INDEX}/rules/e2e-ui-created-rule`,
-      { headers: API_HEADERS }
-    );
+    await deleteRule(request, TEST_INDEX, 'e2e-ui-created-rule');
   });
 
   // ---------- Delete rule via UI confirm dialog ----------
@@ -145,11 +132,7 @@ test.describe('Rules', () => {
       description: 'Delete me via UI',
       enabled: true,
     };
-    const putRes = await request.put(
-      `${API_BASE}/1/indexes/${TEST_INDEX}/rules/${testRule.objectID}`,
-      { headers: API_HEADERS, data: testRule }
-    );
-    expect(putRes.ok(), 'Failed to create rule via API').toBeTruthy();
+    await createRule(request, TEST_INDEX, testRule);
 
     // Poll until the rule is indexed and visible in the UI (API may be eventually consistent)
     await expect(async () => {
@@ -170,12 +153,15 @@ test.describe('Rules', () => {
 
   // ---------- Enabled/Disabled Indicator ----------
 
-  test('enabled rules show green power icon', async ({ page }) => {
+  test('enabled rules show enabled icon', async ({ page }) => {
     const list = page.getByTestId('rules-list');
     await expect(list).toBeVisible({ timeout: 10_000 });
 
-    const greenIcons = list.locator('.text-green-500');
-    await expect(greenIcons.first()).toBeVisible();
+    // Seeded rules are enabled — they should show the enabled power icon
+    const enabledIcons = list.getByTestId('rule-enabled-icon');
+    await expect(enabledIcons.first()).toBeVisible();
+    const count = await enabledIcons.count();
+    expect(count).toBeGreaterThanOrEqual(2);
   });
 
   // ---------- Add Rule Button ----------
@@ -208,25 +194,27 @@ test.describe('Rules', () => {
   // ---------- Clear All Rules ----------
 
   test('Clear All button shows confirmation and can be cancelled', async ({ page }) => {
+    // Clear All button must be present when rules exist
     const clearAllBtn = page.getByRole('button', { name: /clear all/i });
+    await expect(clearAllBtn).toBeVisible({ timeout: 10_000 });
 
-    if (await clearAllBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
-      // Set up dialog handler to DISMISS (cancel) to avoid deleting seeded rules
-      page.on('dialog', (d) => d.dismiss());
+    // Set up dialog handler to DISMISS (cancel) to avoid deleting seeded rules
+    page.on('dialog', (d) => d.dismiss());
 
-      await clearAllBtn.click();
+    await clearAllBtn.click();
 
-      // If it uses a native confirm, we already dismissed it
-      // If it uses a custom dialog, cancel it
-      const dialog = page.getByRole('dialog');
-      if (await dialog.isVisible({ timeout: 2_000 }).catch(() => false)) {
-        const cancelBtn = dialog.getByRole('button', { name: /cancel/i });
-        await cancelBtn.click();
-        await expect(dialog).not.toBeVisible({ timeout: 5_000 });
-      }
-
-      // Seeded rules should still be visible (we cancelled)
-      await expect(page.getByText('rule-pin-macbook').first()).toBeVisible();
+    // Confirm dialog should appear (native or custom) — wait briefly for it
+    // The native dialog is auto-dismissed, so just verify rules still exist after
+    // For custom dialog, cancel it
+    const dialog = page.getByRole('dialog');
+    const dialogAppeared = await dialog.isVisible({ timeout: 2_000 }).catch(() => false);
+    if (dialogAppeared) {
+      const cancelBtn = dialog.getByRole('button', { name: /cancel/i });
+      await cancelBtn.click();
+      await expect(dialog).not.toBeVisible({ timeout: 5_000 });
     }
+
+    // Seeded rules should still be visible after cancellation
+    await expect(page.getByText('rule-pin-macbook').first()).toBeVisible();
   });
 });

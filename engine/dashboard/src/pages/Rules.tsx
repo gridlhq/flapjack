@@ -160,9 +160,9 @@ export function Rules() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3 min-w-0">
                   {rule.enabled !== false ? (
-                    <Power className="h-4 w-4 text-green-500 shrink-0" />
+                    <Power className="h-4 w-4 text-green-500 shrink-0" data-testid="rule-enabled-icon" />
                   ) : (
-                    <PowerOff className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <PowerOff className="h-4 w-4 text-muted-foreground shrink-0" data-testid="rule-disabled-icon" />
                   )}
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">

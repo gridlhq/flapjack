@@ -70,7 +70,7 @@ export const useApiLogger = create<ApiLoggerStore>()(
               .map(([k, v]) => `  -H "${k}: ${v}"`)
               .join(' \\\n');
             const body = e.body ? ` \\\n  -d '${JSON.stringify(e.body)}'` : '';
-            const fullUrl = e.url.startsWith('http') ? e.url : `http://localhost:7700${e.url}`;
+            const fullUrl = e.url.startsWith('http') ? e.url : `${__BACKEND_URL__}${e.url}`;
             return `# ${i + 1}. ${e.method} ${e.url}\ncurl -X ${e.method} ${fullUrl} \\\n${headers}${body}\n`;
           })
           .join('\n');

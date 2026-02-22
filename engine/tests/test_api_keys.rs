@@ -41,10 +41,13 @@ fn authed(client: &reqwest::Client, method: &str, url: &str, key: &str) -> reqwe
 }
 
 async fn create_index(client: &reqwest::Client, addr: &str, index: &str, key: &str) {
-    authed(client, "POST", &format!("http://{}/1/indexes/{}/batch", addr, index), key)
+    let resp = authed(client, "POST", &format!("http://{}/1/indexes/{}/batch", addr, index), key)
         .json(&json!({"requests": [{"action": "addObject", "body": {"objectID": "1", "name": "Test Doc"}}]}))
         .send().await.unwrap();
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    let body: serde_json::Value = resp.json().await.unwrap();
+    if let Some(task_id) = body.get("taskID").and_then(|v| v.as_i64()) {
+        common::wait_for_task_authed(client, addr, task_id, Some(key)).await;
+    }
 }
 
 #[tokio::test]

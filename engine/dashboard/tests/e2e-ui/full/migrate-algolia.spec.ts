@@ -68,18 +68,11 @@ describeOrSkip('Algolia Migration (real browser)', () => {
     // Wait for success card
     await expect(page.getByText('Migration complete')).toBeVisible({ timeout: 30_000 });
 
-    // Verify imported counts
-    const docsStatLabel = page.getByText('Documents', { exact: true });
-    await expect(docsStatLabel.locator('..').locator('.text-xl')).toHaveText(String(EXPECTED_COUNTS.documents));
-
-    const settingsStatLabel = page.getByText('Settings', { exact: true });
-    await expect(settingsStatLabel.locator('..').locator('.text-xl')).toHaveText('Applied');
-
-    const synonymsStatLabel = page.getByText('Synonyms', { exact: true });
-    await expect(synonymsStatLabel.locator('..').locator('.text-xl')).toHaveText(String(EXPECTED_COUNTS.synonyms));
-
-    const rulesStatLabel = page.getByText('Rules', { exact: true });
-    await expect(rulesStatLabel.locator('..').locator('.text-xl')).toHaveText(String(EXPECTED_COUNTS.rules));
+    // Verify imported counts using data-testid (not CSS class selectors)
+    await expect(page.getByTestId('migrate-stat-documents')).toHaveText(String(EXPECTED_COUNTS.documents));
+    await expect(page.getByTestId('migrate-stat-settings')).toHaveText('Applied');
+    await expect(page.getByTestId('migrate-stat-synonyms')).toHaveText(String(EXPECTED_COUNTS.synonyms));
+    await expect(page.getByTestId('migrate-stat-rules')).toHaveText(String(EXPECTED_COUNTS.rules));
 
     // Click "Browse Index" and verify navigation
     await page.getByRole('link', { name: 'Browse Index' }).click();
@@ -87,7 +80,7 @@ describeOrSkip('Algolia Migration (real browser)', () => {
 
     // Verify documents are searchable
     await expect(page.getByRole('heading', { name: ctx.indexName })).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator('[data-testid="results-panel"]')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('results-panel')).toBeVisible({ timeout: 15_000 });
 
     const searchInput = page.getByPlaceholder(/search documents/i);
     await searchInput.fill('laptop');

@@ -3,6 +3,11 @@ name = "flapjack-http"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+vector-search = ["flapjack/vector-search", "dep:lru"]
+vector-search-local = ["vector-search", "flapjack/vector-search-local"]
+
 [dependencies]
 flapjack = { path = "..", features = ["analytics"] }
 flapjack-replication = { path = "../flapjack-replication" }
@@ -10,7 +15,7 @@ flapjack-ssl = { path = "../flapjack-ssl" }
 
 axum = "0.7"
 dashmap = "6.0"
-tokio = { version = "1.35", features = ["macros", "rt-multi-thread", "sync", "time", "net"] }
+tokio = { version = "1.35", features = ["macros", "rt-multi-thread", "sync", "time", "net", "signal"] }
 tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.5", features = ["trace", "cors"] }
 rust-embed = "8"
@@ -30,7 +35,14 @@ nom = "7.1"
 url = "2.5.8"
 urlencoding = "2.1.3"
 colored = "2"
+fs2 = "0.4"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+lru = { version = "0.12", optional = true }
 once_cell = "1.19"
+prometheus = { version = "0.13", default-features = false }
 utoipa = { version = "5.3", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "8.0", features = ["axum"] }
+
+[dev-dependencies]
+tempfile = "3"
+wiremock = "0.6"

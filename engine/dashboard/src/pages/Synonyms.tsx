@@ -303,6 +303,7 @@ function SynonymEditor({ synonym: initial, isCreating, onSave, onCancel, isPendi
               placeholder="synonym-id"
               className="font-mono"
               disabled={!isCreating}
+              data-testid="synonym-id-input"
             />
           </div>
 

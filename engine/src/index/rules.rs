@@ -331,3 +331,453 @@ impl RuleStore {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn bare_rule(id: &str) -> Rule {
+        Rule {
+            object_id: id.to_string(),
+            conditions: vec![],
+            consequence: Consequence {
+                promote: None,
+                hide: None,
+                filter_promotes: None,
+                user_data: None,
+                params: None,
+            },
+            description: None,
+            enabled: None,
+            validity: None,
+        }
+    }
+
+    fn rule_with_pattern(id: &str, pattern: &str, anchoring: Anchoring) -> Rule {
+        Rule {
+            object_id: id.to_string(),
+            conditions: vec![Condition {
+                pattern: pattern.to_string(),
+                anchoring,
+                alternatives: None,
+                context: None,
+                filters: None,
+            }],
+            consequence: Consequence {
+                promote: None,
+                hide: None,
+                filter_promotes: None,
+                user_data: None,
+                params: None,
+            },
+            description: None,
+            enabled: None,
+            validity: None,
+        }
+    }
+
+    // --- Rule::is_enabled ---
+
+    #[test]
+    fn enabled_defaults_to_true() {
+        let r = bare_rule("x");
+        assert!(r.is_enabled());
+    }
+
+    #[test]
+    fn enabled_explicit_true() {
+        let mut r = bare_rule("x");
+        r.enabled = Some(true);
+        assert!(r.is_enabled());
+    }
+
+    #[test]
+    fn enabled_explicit_false() {
+        let mut r = bare_rule("x");
+        r.enabled = Some(false);
+        assert!(!r.is_enabled());
+    }
+
+    // --- Rule::is_valid_at ---
+
+    #[test]
+    fn validity_none_always_valid() {
+        let r = bare_rule("x");
+        assert!(r.is_valid_at(0));
+        assert!(r.is_valid_at(i64::MAX));
+    }
+
+    #[test]
+    fn validity_within_range() {
+        let mut r = bare_rule("x");
+        r.validity = Some(vec![TimeRange {
+            from: 1000,
+            until: 2000,
+        }]);
+        assert!(r.is_valid_at(1000));
+        assert!(r.is_valid_at(1500));
+        assert!(r.is_valid_at(2000));
+    }
+
+    #[test]
+    fn validity_outside_range() {
+        let mut r = bare_rule("x");
+        r.validity = Some(vec![TimeRange {
+            from: 1000,
+            until: 2000,
+        }]);
+        assert!(!r.is_valid_at(999));
+        assert!(!r.is_valid_at(2001));
+    }
+
+    #[test]
+    fn validity_multiple_ranges_matches_any() {
+        let mut r = bare_rule("x");
+        r.validity = Some(vec![
+            TimeRange {
+                from: 100,
+                until: 200,
+            },
+            TimeRange {
+                from: 500,
+                until: 600,
+            },
+        ]);
+        assert!(r.is_valid_at(150));
+        assert!(r.is_valid_at(550));
+        assert!(!r.is_valid_at(350));
+    }
+
+    // --- Rule::matches (no conditions → always matches) ---
+
+    #[test]
+    fn no_conditions_always_matches() {
+        let r = bare_rule("x");
+        assert!(r.matches("anything", None));
+        assert!(r.matches("", None));
+    }
+
+    #[test]
+    fn disabled_rule_never_matches() {
+        let mut r = rule_with_pattern("x", "laptop", Anchoring::Is);
+        r.enabled = Some(false);
+        assert!(!r.matches("laptop", None));
+    }
+
+    // --- RuleStore::apply_rules ---
+
+    #[test]
+    fn apply_rules_promotes_single() {
+        let mut store = RuleStore::new();
+        let mut rule = rule_with_pattern("r1", "laptop", Anchoring::Is);
+        rule.consequence.promote = Some(vec![Promote::Single {
+            object_id: "doc-1".to_string(),
+            position: 0,
+        }]);
+        store.insert(rule);
+
+        let effects = store.apply_rules("laptop", None);
+        assert_eq!(effects.applied_rules, vec!["r1"]);
+        assert_eq!(effects.pins, vec![("doc-1".to_string(), 0)]);
+        assert!(effects.hidden.is_empty());
+    }
+
+    #[test]
+    fn apply_rules_promotes_multiple() {
+        let mut store = RuleStore::new();
+        let mut rule = rule_with_pattern("r1", "sale", Anchoring::Contains);
+        rule.consequence.promote = Some(vec![Promote::Multiple {
+            object_ids: vec!["a".to_string(), "b".to_string(), "c".to_string()],
+            position: 2,
+        }]);
+        store.insert(rule);
+
+        let effects = store.apply_rules("big sale today", None);
+        assert_eq!(
+            effects.pins,
+            vec![
+                ("a".to_string(), 2),
+                ("b".to_string(), 3),
+                ("c".to_string(), 4),
+            ]
+        );
+    }
+
+    #[test]
+    fn apply_rules_hides() {
+        let mut store = RuleStore::new();
+        let mut rule = rule_with_pattern("r1", "laptop", Anchoring::Is);
+        rule.consequence.hide = Some(vec![Hide {
+            object_id: "bad-doc".to_string(),
+        }]);
+        store.insert(rule);
+
+        let effects = store.apply_rules("laptop", None);
+        assert_eq!(effects.hidden, vec!["bad-doc"]);
+    }
+
+    #[test]
+    fn apply_rules_user_data() {
+        let mut store = RuleStore::new();
+        let mut rule = rule_with_pattern("r1", "promo", Anchoring::Contains);
+        rule.consequence.user_data = Some(json!({"banner": "sale"}));
+        store.insert(rule);
+
+        let effects = store.apply_rules("promo items", None);
+        assert_eq!(effects.user_data, vec![json!({"banner": "sale"})]);
+    }
+
+    #[test]
+    fn apply_rules_no_match_returns_empty() {
+        let mut store = RuleStore::new();
+        store.insert(rule_with_pattern("r1", "laptop", Anchoring::Is));
+
+        let effects = store.apply_rules("phone", None);
+        assert!(effects.applied_rules.is_empty());
+        assert!(effects.pins.is_empty());
+    }
+
+    #[test]
+    fn apply_rules_pins_sorted_by_position() {
+        // Two rules both match; their pins should come out sorted
+        let mut store = RuleStore::new();
+        let mut r1 = rule_with_pattern("r1", "sale", Anchoring::Contains);
+        r1.consequence.promote = Some(vec![Promote::Single {
+            object_id: "b".to_string(),
+            position: 5,
+        }]);
+        let mut r2 = rule_with_pattern("r2", "sale", Anchoring::Contains);
+        r2.consequence.promote = Some(vec![Promote::Single {
+            object_id: "a".to_string(),
+            position: 1,
+        }]);
+        store.insert(r1);
+        store.insert(r2);
+
+        let effects = store.apply_rules("sale", None);
+        // pins sorted by position: 1, then 5
+        assert_eq!(effects.pins[0], ("a".to_string(), 1));
+        assert_eq!(effects.pins[1], ("b".to_string(), 5));
+    }
+
+    // --- RuleStore::apply_query_rewrite ---
+
+    #[test]
+    fn query_rewrite_matches() {
+        let mut store = RuleStore::new();
+        let mut rule = rule_with_pattern("r1", "tv", Anchoring::Is);
+        rule.consequence.params = Some(ConsequenceParams {
+            query: Some("television".to_string()),
+        });
+        store.insert(rule);
+
+        assert_eq!(
+            store.apply_query_rewrite("tv", None),
+            Some("television".to_string())
+        );
+    }
+
+    #[test]
+    fn query_rewrite_no_match() {
+        let mut store = RuleStore::new();
+        let mut rule = rule_with_pattern("r1", "tv", Anchoring::Is);
+        rule.consequence.params = Some(ConsequenceParams {
+            query: Some("television".to_string()),
+        });
+        store.insert(rule);
+
+        assert_eq!(store.apply_query_rewrite("phone", None), None);
+    }
+
+    // --- RuleStore::search ---
+
+    #[test]
+    fn search_empty_query_returns_all() {
+        let mut store = RuleStore::new();
+        store.insert(bare_rule("alpha"));
+        store.insert(bare_rule("beta"));
+        store.insert(bare_rule("gamma"));
+
+        let (hits, total) = store.search("", 0, 10);
+        assert_eq!(total, 3);
+        assert_eq!(hits.len(), 3);
+    }
+
+    #[test]
+    fn search_filters_by_id() {
+        let mut store = RuleStore::new();
+        store.insert(bare_rule("laptop-rule"));
+        store.insert(bare_rule("phone-rule"));
+
+        let (hits, total) = store.search("laptop", 0, 10);
+        assert_eq!(total, 1);
+        assert_eq!(hits[0].object_id, "laptop-rule");
+    }
+
+    #[test]
+    fn search_pagination() {
+        let mut store = RuleStore::new();
+        for i in 0..5 {
+            store.insert(bare_rule(&format!("rule-{}", i)));
+        }
+
+        let (page0, total) = store.search("", 0, 2);
+        assert_eq!(total, 5);
+        assert_eq!(page0.len(), 2);
+
+        let (page1, _) = store.search("", 1, 2);
+        assert_eq!(page1.len(), 2);
+
+        let (page2, _) = store.search("", 2, 2);
+        assert_eq!(page2.len(), 1);
+    }
+
+    #[test]
+    fn search_past_end_returns_empty() {
+        let mut store = RuleStore::new();
+        store.insert(bare_rule("only-one"));
+
+        let (hits, total) = store.search("", 5, 10);
+        assert_eq!(total, 1);
+        assert!(hits.is_empty());
+    }
+
+    #[test]
+    fn search_filters_by_pattern() {
+        let mut store = RuleStore::new();
+        let mut r = bare_rule("boost-electronics");
+        r.conditions.push(Condition {
+            pattern: "gaming".to_string(),
+            anchoring: Anchoring::Contains,
+            alternatives: None,
+            context: None,
+            filters: None,
+        });
+        store.insert(r);
+        store.insert(bare_rule("other-rule"));
+
+        let (hits, total) = store.search("gaming", 0, 10);
+        assert_eq!(total, 1);
+        assert_eq!(hits[0].object_id, "boost-electronics");
+    }
+
+    // --- Anchoring variants (matches()) ---
+
+    #[test]
+    fn anchoring_is() {
+        let r = rule_with_pattern("x", "laptop", Anchoring::Is);
+        assert!(r.matches("laptop", None));
+        assert!(r.matches("LAPTOP", None));
+        assert!(!r.matches("gaming laptop", None));
+        assert!(!r.matches("lapto", None));
+    }
+
+    #[test]
+    fn anchoring_starts_with() {
+        let r = rule_with_pattern("x", "gam", Anchoring::StartsWith);
+        assert!(r.matches("gaming", None));
+        assert!(r.matches("GAMing laptop", None));
+        assert!(!r.matches("laptop gaming", None));
+    }
+
+    #[test]
+    fn anchoring_ends_with() {
+        let r = rule_with_pattern("x", "top", Anchoring::EndsWith);
+        assert!(r.matches("laptop", None));
+        assert!(r.matches("gaming LAPTOP", None));
+        assert!(!r.matches("laptop gaming", None));
+    }
+
+    #[test]
+    fn anchoring_contains() {
+        let r = rule_with_pattern("x", "lap", Anchoring::Contains);
+        assert!(r.matches("laptop", None));
+        assert!(r.matches("gaming LAPTOP", None));
+        assert!(r.matches("overlap", None));
+        assert!(!r.matches("computer", None));
+    }
+
+    #[test]
+    fn anchoring_is_empty_pattern() {
+        let r = rule_with_pattern("x", "", Anchoring::Is);
+        assert!(r.matches("", None));
+        assert!(!r.matches("anything", None));
+    }
+
+    #[test]
+    fn context_required_mismatched_skips_condition() {
+        let mut r = rule_with_pattern("x", "laptop", Anchoring::Contains);
+        r.conditions[0].context = Some("mobile".to_string());
+        // context matches → matches
+        assert!(r.matches("laptop", Some("mobile")));
+        // context doesn't match → condition skipped → no conditions left → false
+        assert!(!r.matches("laptop", Some("desktop")));
+        assert!(!r.matches("laptop", None));
+    }
+
+    #[test]
+    fn multi_condition_any_match() {
+        let mut r = bare_rule("x");
+        r.conditions.push(Condition {
+            pattern: "laptop".to_string(),
+            anchoring: Anchoring::Contains,
+            alternatives: None,
+            context: None,
+            filters: None,
+        });
+        r.conditions.push(Condition {
+            pattern: "computer".to_string(),
+            anchoring: Anchoring::Contains,
+            alternatives: None,
+            context: None,
+            filters: None,
+        });
+        assert!(r.matches("laptop", None));
+        assert!(r.matches("computer", None));
+        assert!(!r.matches("phone", None));
+    }
+
+    #[test]
+    fn hide_and_pin_from_separate_rules() {
+        let mut store = RuleStore::new();
+        let mut r1 = rule_with_pattern("r1", "laptop", Anchoring::Contains);
+        r1.consequence.promote = Some(vec![Promote::Single {
+            object_id: "item1".to_string(),
+            position: 0,
+        }]);
+        let mut r2 = rule_with_pattern("r2", "laptop", Anchoring::Contains);
+        r2.consequence.hide = Some(vec![Hide {
+            object_id: "item1".to_string(),
+        }]);
+        store.insert(r1);
+        store.insert(r2);
+
+        let effects = store.apply_rules("laptop", None);
+        assert_eq!(effects.pins.len(), 1);
+        assert_eq!(effects.hidden.len(), 1);
+        assert_eq!(effects.pins[0].0, "item1");
+        assert_eq!(effects.hidden[0], "item1");
+    }
+
+    #[test]
+    fn multiple_pins_same_position() {
+        let mut store = RuleStore::new();
+        let mut r1 = rule_with_pattern("r1", "laptop", Anchoring::Contains);
+        r1.consequence.promote = Some(vec![Promote::Single {
+            object_id: "a".to_string(),
+            position: 0,
+        }]);
+        let mut r2 = rule_with_pattern("r2", "laptop", Anchoring::Contains);
+        r2.consequence.promote = Some(vec![Promote::Single {
+            object_id: "b".to_string(),
+            position: 0,
+        }]);
+        store.insert(r1);
+        store.insert(r2);
+
+        let effects = store.apply_rules("laptop", None);
+        assert_eq!(effects.pins.len(), 2);
+        assert!(effects.pins.iter().all(|(_, pos)| *pos == 0));
+    }
+}

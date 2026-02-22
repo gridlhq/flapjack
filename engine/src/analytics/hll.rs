@@ -149,11 +149,8 @@ mod tests {
 
     #[test]
     fn test_accuracy_10k() {
-        let sketch = HllSketch::from_items((0..10000).map(|i| {
-            // leak the string so we get &str — only in tests
-            let s: &str = Box::leak(format!("user_{}", i).into_boxed_str());
-            s
-        }));
+        let items: Vec<String> = (0..10000).map(|i| format!("user_{}", i)).collect();
+        let sketch = HllSketch::from_items(items.iter().map(|s| s.as_str()));
         let estimate = sketch.cardinality();
         // p=14 should be within ~2% of 10000
         let error = (estimate as f64 - 10000.0).abs() / 10000.0;
@@ -167,14 +164,10 @@ mod tests {
 
     #[test]
     fn test_merge_disjoint() {
-        let s1 = HllSketch::from_items((0..5000).map(|i| {
-            let s: &str = Box::leak(format!("a_{}", i).into_boxed_str());
-            s
-        }));
-        let s2 = HllSketch::from_items((5000..10000).map(|i| {
-            let s: &str = Box::leak(format!("b_{}", i).into_boxed_str());
-            s
-        }));
+        let items1: Vec<String> = (0..5000).map(|i| format!("a_{}", i)).collect();
+        let items2: Vec<String> = (5000..10000).map(|i| format!("b_{}", i)).collect();
+        let s1 = HllSketch::from_items(items1.iter().map(|s| s.as_str()));
+        let s2 = HllSketch::from_items(items2.iter().map(|s| s.as_str()));
         let merged = HllSketch::merge_all(&[s1, s2]);
         let estimate = merged.cardinality();
         let error = (estimate as f64 - 10000.0).abs() / 10000.0;
@@ -204,14 +197,10 @@ mod tests {
 
     #[test]
     fn test_merge_50_percent_overlap() {
-        let s1 = HllSketch::from_items((0..6000).map(|i| {
-            let s: &str = Box::leak(format!("user_{}", i).into_boxed_str());
-            s
-        }));
-        let s2 = HllSketch::from_items((3000..9000).map(|i| {
-            let s: &str = Box::leak(format!("user_{}", i).into_boxed_str());
-            s
-        }));
+        let items1: Vec<String> = (0..6000).map(|i| format!("user_{}", i)).collect();
+        let items2: Vec<String> = (3000..9000).map(|i| format!("user_{}", i)).collect();
+        let s1 = HllSketch::from_items(items1.iter().map(|s| s.as_str()));
+        let s2 = HllSketch::from_items(items2.iter().map(|s| s.as_str()));
         let merged = HllSketch::merge_all(&[s1, s2]);
         let estimate = merged.cardinality();
         // True unique count = 9000

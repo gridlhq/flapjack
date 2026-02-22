@@ -134,3 +134,162 @@ impl Drop for WriterGuard {
         self.active_writers.fetch_sub(1, Ordering::SeqCst);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── MemoryBudgetConfig ───────────────────────────────────────────────
+
+    #[test]
+    fn default_config_values() {
+        let cfg = MemoryBudgetConfig::default();
+        assert_eq!(cfg.max_buffer_mb, 31);
+        assert_eq!(cfg.max_concurrent_writers, 40);
+        assert_eq!(cfg.max_doc_mb, 3);
+    }
+
+    #[test]
+    fn to_bytes_converts_mb() {
+        let cfg = MemoryBudgetConfig {
+            max_buffer_mb: 10,
+            max_concurrent_writers: 5,
+            max_doc_mb: 2,
+        };
+        let (buf, writers, doc) = cfg.to_bytes();
+        assert_eq!(buf, 10 * 1024 * 1024);
+        assert_eq!(writers, 5);
+        assert_eq!(doc, 2 * 1024 * 1024);
+    }
+
+    // ── validate_document_size ───────────────────────────────────────────
+
+    #[test]
+    fn validate_document_size_ok() {
+        let budget = MemoryBudget::new(MemoryBudgetConfig::default());
+        assert!(budget.validate_document_size(1024).is_ok());
+    }
+
+    #[test]
+    fn validate_document_size_at_limit() {
+        let budget = MemoryBudget::new(MemoryBudgetConfig {
+            max_doc_mb: 1,
+            ..Default::default()
+        });
+        // exactly at limit
+        assert!(budget.validate_document_size(1024 * 1024).is_ok());
+    }
+
+    #[test]
+    fn validate_document_size_exceeds() {
+        let budget = MemoryBudget::new(MemoryBudgetConfig {
+            max_doc_mb: 1,
+            ..Default::default()
+        });
+        assert!(budget.validate_document_size(1024 * 1024 + 1).is_err());
+    }
+
+    // ── validate_buffer_size ─────────────────────────────────────────────
+
+    #[test]
+    fn validate_buffer_size_ok() {
+        let budget = MemoryBudget::new(MemoryBudgetConfig::default());
+        let result = budget.validate_buffer_size(1024);
+        assert_eq!(result.unwrap(), 1024);
+    }
+
+    #[test]
+    fn validate_buffer_size_exceeds() {
+        let budget = MemoryBudget::new(MemoryBudgetConfig {
+            max_buffer_mb: 1,
+            ..Default::default()
+        });
+        assert!(budget.validate_buffer_size(2 * 1024 * 1024).is_err());
+    }
+
+    // ── acquire_writer / WriterGuard ─────────────────────────────────────
+
+    #[test]
+    fn acquire_writer_increments_count() {
+        let budget = MemoryBudget::new(MemoryBudgetConfig {
+            max_concurrent_writers: 10,
+            ..Default::default()
+        });
+        assert_eq!(budget.active_writers(), 0);
+        let _guard = budget.acquire_writer().unwrap();
+        assert_eq!(budget.active_writers(), 1);
+    }
+
+    #[test]
+    fn writer_guard_drop_decrements_count() {
+        let budget = MemoryBudget::new(MemoryBudgetConfig {
+            max_concurrent_writers: 10,
+            ..Default::default()
+        });
+        {
+            let _guard = budget.acquire_writer().unwrap();
+            assert_eq!(budget.active_writers(), 1);
+        }
+        assert_eq!(budget.active_writers(), 0);
+    }
+
+    #[test]
+    fn acquire_writer_fails_at_limit() {
+        let budget = MemoryBudget::new(MemoryBudgetConfig {
+            max_concurrent_writers: 2,
+            ..Default::default()
+        });
+        let _g1 = budget.acquire_writer().unwrap();
+        let _g2 = budget.acquire_writer().unwrap();
+        assert!(budget.acquire_writer().is_err());
+        assert_eq!(budget.active_writers(), 2);
+    }
+
+    #[test]
+    fn acquire_writer_recovers_after_drop() {
+        let budget = MemoryBudget::new(MemoryBudgetConfig {
+            max_concurrent_writers: 1,
+            ..Default::default()
+        });
+        {
+            let _g = budget.acquire_writer().unwrap();
+            assert!(budget.acquire_writer().is_err());
+        }
+        // After guard drops, should be able to acquire again
+        let _g2 = budget.acquire_writer().unwrap();
+        assert_eq!(budget.active_writers(), 1);
+    }
+
+    #[test]
+    fn clone_shares_active_writers() {
+        let budget = MemoryBudget::new(MemoryBudgetConfig {
+            max_concurrent_writers: 10,
+            ..Default::default()
+        });
+        let budget2 = budget.clone();
+        let _guard = budget.acquire_writer().unwrap();
+        assert_eq!(budget2.active_writers(), 1);
+    }
+
+    #[test]
+    fn reset_for_test_clears_writers() {
+        let budget = MemoryBudget::new(MemoryBudgetConfig {
+            max_concurrent_writers: 10,
+            ..Default::default()
+        });
+        // Leak a guard intentionally
+        std::mem::forget(budget.acquire_writer().unwrap());
+        assert_eq!(budget.active_writers(), 1);
+        budget.reset_for_test();
+        assert_eq!(budget.active_writers(), 0);
+    }
+
+    #[test]
+    fn max_concurrent_writers_getter() {
+        let budget = MemoryBudget::new(MemoryBudgetConfig {
+            max_concurrent_writers: 42,
+            ..Default::default()
+        });
+        assert_eq!(budget.max_concurrent_writers(), 42);
+    }
+}

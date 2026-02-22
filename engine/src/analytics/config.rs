@@ -64,3 +64,48 @@ impl AnalyticsConfig {
         self.data_dir.join(index_name).join("events")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn disabled_config_not_enabled() {
+        let cfg = AnalyticsConfig::disabled();
+        assert!(!cfg.enabled);
+    }
+
+    #[test]
+    fn disabled_config_has_sensible_defaults() {
+        let cfg = AnalyticsConfig::disabled();
+        assert_eq!(cfg.retention_days, 90);
+        assert_eq!(cfg.flush_interval_secs, 3600);
+        assert_eq!(cfg.flush_size, 100_000);
+    }
+
+    #[test]
+    fn searches_dir_correct_path() {
+        let cfg = AnalyticsConfig::disabled();
+        let dir = cfg.searches_dir("my_index");
+        assert!(dir.ends_with("my_index/searches"));
+    }
+
+    #[test]
+    fn events_dir_correct_path() {
+        let cfg = AnalyticsConfig::disabled();
+        let dir = cfg.events_dir("my_index");
+        assert!(dir.ends_with("my_index/events"));
+    }
+
+    #[test]
+    fn searches_dir_different_indexes_differ() {
+        let cfg = AnalyticsConfig::disabled();
+        assert_ne!(cfg.searches_dir("idx_a"), cfg.searches_dir("idx_b"));
+    }
+
+    #[test]
+    fn events_dir_different_indexes_differ() {
+        let cfg = AnalyticsConfig::disabled();
+        assert_ne!(cfg.events_dir("idx_a"), cfg.events_dir("idx_b"));
+    }
+}

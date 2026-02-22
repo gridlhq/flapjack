@@ -53,7 +53,7 @@ pub fn flush_insight_events(events: &[InsightEvent], dir: &Path) -> Result<(), S
     Ok(())
 }
 
-fn write_parquet_file(path: &Path, batch: RecordBatch) -> Result<(), String> {
+pub(crate) fn write_parquet_file(path: &Path, batch: RecordBatch) -> Result<(), String> {
     let props = WriterProperties::builder()
         .set_compression(Compression::ZSTD(Default::default()))
         .set_max_row_group_size(100_000)
@@ -74,7 +74,7 @@ fn write_parquet_file(path: &Path, batch: RecordBatch) -> Result<(), String> {
     Ok(())
 }
 
-fn search_events_to_batch(
+pub(crate) fn search_events_to_batch(
     events: &[SearchEvent],
     schema: &Arc<arrow::datatypes::Schema>,
 ) -> Result<RecordBatch, String> {
@@ -95,6 +95,9 @@ fn search_events_to_batch(
     let mut has_results = BooleanBuilder::with_capacity(len);
     let mut country = StringBuilder::with_capacity(len, len * 2);
     let mut region = StringBuilder::with_capacity(len, len * 10);
+    let mut experiment_id = StringBuilder::with_capacity(len, len * 36);
+    let mut variant_id = StringBuilder::with_capacity(len, len * 10);
+    let mut assignment_method = StringBuilder::with_capacity(len, len * 12);
 
     for e in events {
         timestamp_ms.append_value(e.timestamp_ms);
@@ -137,6 +140,18 @@ fn search_events_to_batch(
             Some(r) => region.append_value(r),
             None => region.append_null(),
         }
+        match &e.experiment_id {
+            Some(v) => experiment_id.append_value(v),
+            None => experiment_id.append_null(),
+        }
+        match &e.variant_id {
+            Some(v) => variant_id.append_value(v),
+            None => variant_id.append_null(),
+        }
+        match &e.assignment_method {
+            Some(v) => assignment_method.append_value(v),
+            None => assignment_method.append_null(),
+        }
     }
 
     let columns: Vec<ArrayRef> = vec![
@@ -156,12 +171,15 @@ fn search_events_to_batch(
         Arc::new(has_results.finish()),
         Arc::new(country.finish()),
         Arc::new(region.finish()),
+        Arc::new(experiment_id.finish()),
+        Arc::new(variant_id.finish()),
+        Arc::new(assignment_method.finish()),
     ];
 
     RecordBatch::try_new(schema.clone(), columns).map_err(|e| format!("RecordBatch error: {}", e))
 }
 
-fn insight_events_to_batch(
+pub(crate) fn insight_events_to_batch(
     events: &[InsightEvent],
     schema: &Arc<arrow::datatypes::Schema>,
 ) -> Result<RecordBatch, String> {

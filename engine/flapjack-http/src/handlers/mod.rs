@@ -1,5 +1,9 @@
 use crate::auth::KeyStore;
+use crate::pause_registry::PausedIndexes;
+use crate::usage_middleware::TenantUsageCounters;
+use dashmap::DashMap;
 use flapjack::analytics::AnalyticsQueryEngine;
+use flapjack::experiments::store::ExperimentStore;
 use flapjack::IndexManager;
 use flapjack::SslManager;
 use flapjack_replication::manager::ReplicationManager;
@@ -8,15 +12,17 @@ use std::sync::Arc;
 pub mod analytics;
 pub mod browse;
 pub mod dashboard;
+pub mod experiments;
 pub mod facets;
 pub mod health;
 pub mod indices;
 pub mod insights;
 pub mod internal;
 pub mod keys;
+pub mod metrics;
 pub mod migration;
 pub mod objects;
-pub mod quickstart;
+pub mod query_suggestions;
 pub mod rules;
 pub mod search;
 pub mod settings;
@@ -30,6 +36,13 @@ pub struct AppState {
     pub replication_manager: Option<Arc<ReplicationManager>>,
     pub ssl_manager: Option<Arc<SslManager>>,
     pub analytics_engine: Option<Arc<AnalyticsQueryEngine>>,
+    pub experiment_store: Option<Arc<ExperimentStore>>,
+    pub metrics_state: Option<metrics::MetricsState>,
+    pub usage_counters: Arc<DashMap<String, TenantUsageCounters>>,
+    pub paused_indexes: PausedIndexes,
+    pub start_time: std::time::Instant,
+    #[cfg(feature = "vector-search")]
+    pub embedder_store: Arc<crate::embedder_store::EmbedderStore>,
 }
 
 /// Convert a FieldValue to serde_json::Value. Shared across handlers.
@@ -62,6 +75,7 @@ pub use indices::{
 pub use keys::{
     create_key, delete_key, generate_secured_key, get_key, list_keys, restore_key, update_key,
 };
+pub use metrics::metrics_handler;
 pub use migration::{list_algolia_indexes, migrate_from_algolia};
 pub use objects::{
     add_documents, add_record_auto_id, delete_by_query, delete_object, get_object, get_objects,

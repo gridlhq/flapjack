@@ -588,3 +588,45 @@ fn algolia_error(msg: &str) -> (StatusCode, Json<serde_json::Value>) {
         Json(serde_json::json!({"message": msg})),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn algolia_host_format() {
+        assert_eq!(algolia_host("ABC123"), "ABC123-dsn.algolia.net");
+    }
+
+    #[test]
+    fn algolia_url_format() {
+        assert_eq!(
+            algolia_url("ABC123", "/1/indexes"),
+            "https://ABC123-dsn.algolia.net/1/indexes"
+        );
+    }
+
+    #[test]
+    fn algolia_url_with_encoded_path() {
+        assert_eq!(
+            algolia_url("X", "/1/indexes/my%20index/settings"),
+            "https://X-dsn.algolia.net/1/indexes/my%20index/settings"
+        );
+    }
+
+    #[test]
+    fn algolia_headers_contain_required() {
+        let headers = algolia_headers("APP", "KEY");
+        assert_eq!(headers.len(), 3);
+        assert_eq!(headers[0], ("x-algolia-application-id", "APP".to_string()));
+        assert_eq!(headers[1], ("x-algolia-api-key", "KEY".to_string()));
+        assert_eq!(headers[2], ("content-type", "application/json".to_string()));
+    }
+
+    #[test]
+    fn algolia_error_returns_bad_gateway() {
+        let (status, body) = algolia_error("connection refused");
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert_eq!(body.0["message"], "connection refused");
+    }
+}

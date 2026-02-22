@@ -232,7 +232,7 @@ export function ApiKeys() {
                 {/* ACL */}
                 <div>
                   <div className="text-sm font-medium mb-2">Permissions</div>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2" data-testid="key-permissions">
                     {key.acl.map((permission) => (
                       <Badge key={permission} variant="secondary">
                         {permission}

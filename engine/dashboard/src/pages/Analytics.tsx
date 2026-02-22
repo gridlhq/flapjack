@@ -143,6 +143,7 @@ export function Analytics() {
               onClick={() => flushMutation.mutate()}
               disabled={flushMutation.isPending}
               title="Flush buffered analytics events to disk and refresh"
+              data-testid="flush-btn"
             >
               <RefreshCw className={`h-4 w-4 mr-1.5 ${flushMutation.isPending ? 'animate-spin' : ''}`} />
               {flushMutation.isPending ? 'Updating...' : 'Update'}
@@ -155,6 +156,7 @@ export function Analytics() {
                 onClick={() => setShowClearDialog(true)}
                 disabled={clearMutation.isPending}
                 title="Delete all analytics data for this index"
+                data-testid="clear-btn"
               >
                 {clearMutation.isPending ? (
                   <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
@@ -425,10 +427,10 @@ function OverviewTab({ index, range, prevRange }: TabProps) {
                     {topSearches.searches.slice(0, 10).map((s: any, i: number) => (
                       <tr key={i} className="border-b border-border/50">
                         <td className="py-1.5 pr-3 text-muted-foreground text-xs">{i + 1}</td>
-                        <td className="py-1.5 pr-3 font-mono text-sm truncate max-w-[200px]">
+                        <td className="py-1.5 pr-3 font-mono text-sm truncate max-w-[200px]" data-testid="search-query">
                           {s.search || <span className="text-muted-foreground italic">(empty)</span>}
                         </td>
-                        <td className="py-1.5 text-right tabular-nums">{s.count?.toLocaleString()}</td>
+                        <td className="py-1.5 text-right tabular-nums" data-testid="search-count">{s.count?.toLocaleString()}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -578,11 +580,11 @@ function SearchesTab({ index, range }: TabProps) {
                   {sorted.map((s: any, i: number) => (
                     <tr key={i} className="border-b border-border/50 hover:bg-accent/30 transition-colors">
                       <td className="py-2.5 pr-4 text-muted-foreground text-xs">{i + 1}</td>
-                      <td className="py-2.5 pr-4">
+                      <td className="py-2.5 pr-4" data-testid="search-query">
                         <span className="font-mono text-sm">{s.search || <span className="text-muted-foreground italic">(empty query)</span>}</span>
                       </td>
-                      <td className="py-2.5 pr-4 text-right tabular-nums">{s.count?.toLocaleString()}</td>
-                      <td className="py-2.5 pr-4">
+                      <td className="py-2.5 pr-4 text-right tabular-nums" data-testid="search-count">{s.count?.toLocaleString()}</td>
+                      <td className="py-2.5 pr-4" data-testid="search-volume">
                         <div className="flex items-center justify-end gap-2">
                           <div className="w-24 h-2 bg-muted rounded-full overflow-hidden">
                             <div
@@ -592,7 +594,7 @@ function SearchesTab({ index, range }: TabProps) {
                           </div>
                         </div>
                       </td>
-                      <td className="py-2.5 text-right tabular-nums">{s.nbHits ?? '-'}</td>
+                      <td className="py-2.5 text-right tabular-nums" data-testid="search-hits">{s.nbHits ?? '-'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -634,7 +636,7 @@ function NoResultsTab({ index, range, prevRange }: TabProps) {
               )}
               <div className="flex-1">
                 <div className="flex items-baseline gap-3">
-                  <span className={`text-3xl font-bold ${rateData.rate > 0.1 ? 'text-red-500' : isClean ? 'text-green-500' : ''}`}>
+                  <span className={`text-3xl font-bold ${rateData.rate > 0.1 ? 'text-red-500' : isClean ? 'text-green-500' : ''}`} data-testid="rate-value">
                     {(rateData.rate * 100).toFixed(1)}%
                   </span>
                   <DeltaBadge current={rateData.rate} previous={prevRateData?.rate} invertColor />
@@ -818,7 +820,7 @@ function FiltersTab({ index, range }: TabProps) {
 
       {/* Filters causing no results */}
       {noResultFilters?.filters?.length > 0 && (
-        <Card>
+        <Card data-testid="filters-no-results">
           <CardHeader className="pb-2">
             <CardTitle className="text-base font-medium flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-amber-500" />
@@ -929,10 +931,10 @@ function DevicesTab({ index, range }: TabProps) {
                       </div>
                       <div>
                         <div className="text-sm font-medium text-muted-foreground">{meta.label}</div>
-                        <div className="text-2xl font-bold tabular-nums">{(p.count as number).toLocaleString()}</div>
+                        <div className="text-2xl font-bold tabular-nums" data-testid="device-count">{(p.count as number).toLocaleString()}</div>
                       </div>
                     </div>
-                    <div className="text-lg font-semibold text-muted-foreground">{pct}%</div>
+                    <div className="text-lg font-semibold text-muted-foreground" data-testid="device-pct">{pct}%</div>
                   </div>
                   {/* Mini progress bar */}
                   <div className="mt-3 h-1.5 bg-muted rounded-full overflow-hidden">
@@ -954,7 +956,7 @@ function DevicesTab({ index, range }: TabProps) {
             <CardTitle className="text-sm font-medium">Searches by Device Over Time</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-64">
+            <div className="h-64" data-testid="device-chart">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
@@ -1106,8 +1108,8 @@ function GeographyTab({ index, range }: TabProps) {
                       <span className="font-medium">{name}</span>
                       <span className="text-muted-foreground ml-1.5 text-xs">({code})</span>
                     </td>
-                    <td className="py-2.5 text-right tabular-nums font-medium">{count.toLocaleString()}</td>
-                    <td className="py-2.5 text-right tabular-nums text-muted-foreground">{pct.toFixed(1)}%</td>
+                    <td className="py-2.5 text-right tabular-nums font-medium" data-testid="country-count">{count.toLocaleString()}</td>
+                    <td className="py-2.5 text-right tabular-nums text-muted-foreground" data-testid="country-share">{pct.toFixed(1)}%</td>
                     <td className="py-2.5 pl-3">
                       <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                         <div
@@ -1294,7 +1296,7 @@ function KpiCard({
         ) : formattedValue != null ? (
           <div className="space-y-1">
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-bold tabular-nums">{formattedValue}</span>
+              <span className="text-2xl font-bold tabular-nums" data-testid="kpi-value">{formattedValue}</span>
               <DeltaBadge current={value} previous={prevValue} invertColor={invertDelta} />
             </div>
             {/* Sparkline */}

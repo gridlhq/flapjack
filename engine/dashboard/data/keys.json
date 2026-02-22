@@ -1,0 +1,50 @@
+{
+  "keys": [
+    {
+      "hash": "3203dc5c443346aee4379417c9552b40a329d3e04d453206db16bb334893d778",
+      "salt": "e43a0c58d7094ee85754136853fc3774aaa394b39e3659a406a31ce7f2cb0281",
+      "createdAt": 1771670664138,
+      "acl": [
+        "search",
+        "browse",
+        "addObject",
+        "deleteObject",
+        "deleteIndex",
+        "settings",
+        "editSettings",
+        "listIndexes",
+        "logs",
+        "seeUnretrievableAttributes",
+        "analytics",
+        "recommendation",
+        "usage",
+        "inference",
+        "personalization"
+      ],
+      "description": "Admin API Key",
+      "indexes": [],
+      "maxHitsPerQuery": 0,
+      "maxQueriesPerIPPerHour": 0,
+      "queryParameters": "",
+      "referers": [],
+      "validity": 0
+    },
+    {
+      "hash": "26bb977cb1c6ca94f4f8a4bd398f52b124fa9443b95976e6aae12af346ff24e4",
+      "salt": "e0b99b21aae22109e805384556232fe11b4e42cedca0e7c7215f2945b355bf26",
+      "hmac_key": "fj_search_36f68472fafa3b80132a2b7eb3d8ad0f",
+      "createdAt": 1771670664138,
+      "acl": [
+        "search"
+      ],
+      "description": "Default Search API Key",
+      "indexes": [],
+      "maxHitsPerQuery": 0,
+      "maxQueriesPerIPPerHour": 0,
+      "queryParameters": "",
+      "referers": [],
+      "validity": 0
+    }
+  ],
+  "deleted_keys": []
+}

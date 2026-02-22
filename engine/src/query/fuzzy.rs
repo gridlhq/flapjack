@@ -64,3 +64,76 @@ pub fn apply_fuzzy_to_terms(
 
     Ok(Box::new(BooleanQuery::new(fuzzy_queries)))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn distance_short_words_zero() {
+        // < 5 chars → distance 0 (exact match only)
+        assert_eq!(FuzzyQueryBuilder::calculate_distance(""), 0);
+        assert_eq!(FuzzyQueryBuilder::calculate_distance("a"), 0);
+        assert_eq!(FuzzyQueryBuilder::calculate_distance("abcd"), 0);
+    }
+
+    #[test]
+    fn distance_medium_words_one() {
+        // 5-8 chars → distance 1
+        assert_eq!(FuzzyQueryBuilder::calculate_distance("abcde"), 1);
+        assert_eq!(FuzzyQueryBuilder::calculate_distance("abcdefgh"), 1);
+    }
+
+    #[test]
+    fn distance_long_words_two() {
+        // >= 9 chars → distance 2
+        assert_eq!(FuzzyQueryBuilder::calculate_distance("abcdefghi"), 2);
+        assert_eq!(FuzzyQueryBuilder::calculate_distance("international"), 2);
+    }
+
+    #[test]
+    fn distance_unicode_counts_chars_not_bytes() {
+        // "café" = 4 chars → distance 0
+        assert_eq!(FuzzyQueryBuilder::calculate_distance("café"), 0);
+        // "naïveté" = 7 chars → distance 1
+        assert_eq!(FuzzyQueryBuilder::calculate_distance("naïveté"), 1);
+    }
+
+    #[test]
+    fn distance_boundary_4_to_5() {
+        assert_eq!(FuzzyQueryBuilder::calculate_distance("xxxx"), 0); // 4
+        assert_eq!(FuzzyQueryBuilder::calculate_distance("xxxxx"), 1); // 5
+    }
+
+    #[test]
+    fn distance_boundary_8_to_9() {
+        assert_eq!(FuzzyQueryBuilder::calculate_distance("xxxxxxxx"), 1); // 8
+        assert_eq!(FuzzyQueryBuilder::calculate_distance("xxxxxxxxx"), 2); // 9
+    }
+
+    #[test]
+    fn builder_short_term_exact_match() {
+        // distance=0 → should produce a TermQuery, not FuzzyTermQuery
+        let schema_builder = tantivy::schema::SchemaBuilder::new();
+        let schema = schema_builder.build();
+        let field = schema.get_field("_json_search").unwrap_or_else(|_| {
+            // Create a minimal schema for test
+            let mut sb = tantivy::schema::Schema::builder();
+            let f = sb.add_text_field("test", tantivy::schema::TEXT);
+            f
+        });
+        let builder = FuzzyQueryBuilder::new(field, "cat".to_string());
+        assert_eq!(builder.distance, 0);
+        // build() should not panic
+        let _query = builder.build();
+    }
+
+    #[test]
+    fn builder_long_term_fuzzy() {
+        let mut sb = tantivy::schema::Schema::builder();
+        let field = sb.add_text_field("test", tantivy::schema::TEXT);
+        let builder = FuzzyQueryBuilder::new(field, "international".to_string());
+        assert_eq!(builder.distance, 2);
+        let _query = builder.build();
+    }
+}

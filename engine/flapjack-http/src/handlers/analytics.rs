@@ -55,7 +55,27 @@ fn default_end_date() -> String {
     chrono::Utc::now().format("%Y-%m-%d").to_string()
 }
 
+/// Extract the `index` query parameter from a raw query string (e.g. "index=foo&startDate=...").
+fn extract_index_from_query(raw_query: &str) -> Option<String> {
+    raw_query.split('&').find_map(|pair| {
+        let mut parts = pair.splitn(2, '=');
+        match (parts.next(), parts.next()) {
+            (Some("index"), Some(v)) => {
+                Some(urlencoding::decode(v).unwrap_or_default().into_owned())
+            }
+            _ => None,
+        }
+    })
+}
+
 /// If cluster mode and not local-only, fan out query to peers and merge results.
+///
+/// Tier 2 (Phase 4): when all peers have fresh rollups in the rollup cache, merges
+/// locally without any live HTTP fan-out (lower latency, tolerates peer restarts).
+///
+/// Tier 1 fallback: when rollups are stale or absent, queries all peers via HTTP
+/// and merges the responses (existing behaviour, always correct).
+///
 /// Returns local result unchanged in standalone mode or when X-Flapjack-Local-Only is set.
 async fn maybe_fan_out(
     headers: &HeaderMap,
@@ -69,14 +89,41 @@ async fn maybe_fan_out(
     if headers.get("X-Flapjack-Local-Only").is_some() {
         return local_result;
     }
-    // Skip if no cluster client configured
+    // No cluster client configured → standalone mode
     let cluster = match crate::analytics_cluster::get_global_cluster() {
         Some(c) => c,
         None => return local_result,
     };
-    // Fan out to peers, merge, and return
+
+    // Phase 4 Tier 2: serve from rollup cache when all peers have fresh snapshots.
+    // This avoids cross-region HTTP fan-out for globally distributed clusters.
+    let peer_ids = cluster.peer_ids();
+    if let Some(index) = extract_index_from_query(raw_query) {
+        let cache = crate::analytics_cluster::get_global_rollup_cache();
+        if cache.all_fresh(
+            &peer_ids,
+            &index,
+            crate::analytics_cluster::ROLLUP_MAX_AGE_SECS,
+        ) {
+            tracing::debug!(
+                "[ANALYTICS] using rollup cache for endpoint={} index={}",
+                endpoint,
+                index
+            );
+            let peer_rollups = cache.all_for_index(&index);
+            let mut all_results = vec![local_result];
+            for rollup in &peer_rollups {
+                if let Some(result) = rollup.results.get(endpoint) {
+                    all_results.push(result.clone());
+                }
+            }
+            return flapjack::analytics::merge::merge_results(endpoint, &all_results, limit);
+        }
+    }
+
+    // Tier 1 fallback: live fan-out to all available peers
     cluster
-        .fan_out_and_merge(endpoint, path, raw_query, local_result, limit)
+        .fan_out_and_merge(endpoint, path, raw_query, local_result, limit, headers)
         .await
 }
 
@@ -101,7 +148,15 @@ pub async fn get_top_searches(
         )
         .await
         .map_err(|e| FlapjackError::InvalidQuery(format!("Analytics error: {}", e)))?;
-    let result = maybe_fan_out(&headers, "searches", "/2/searches", &raw_query.unwrap_or_default(), result, limit).await;
+    let result = maybe_fan_out(
+        &headers,
+        "searches",
+        "/2/searches",
+        &raw_query.unwrap_or_default(),
+        result,
+        limit,
+    )
+    .await;
     Ok(Json(result))
 }
 
@@ -116,7 +171,15 @@ pub async fn get_search_count(
         .search_count(&params.index, &params.start_date, &params.end_date)
         .await
         .map_err(|e| FlapjackError::InvalidQuery(format!("Analytics error: {}", e)))?;
-    let result = maybe_fan_out(&headers, "searches/count", "/2/searches/count", &raw_query.unwrap_or_default(), result, 1000).await;
+    let result = maybe_fan_out(
+        &headers,
+        "searches/count",
+        "/2/searches/count",
+        &raw_query.unwrap_or_default(),
+        result,
+        1000,
+    )
+    .await;
     Ok(Json(result))
 }
 
@@ -132,7 +195,15 @@ pub async fn get_no_results(
         .no_results_searches(&params.index, &params.start_date, &params.end_date, limit)
         .await
         .map_err(|e| FlapjackError::InvalidQuery(format!("Analytics error: {}", e)))?;
-    let result = maybe_fan_out(&headers, "searches/noResults", "/2/searches/noResults", &raw_query.unwrap_or_default(), result, limit).await;
+    let result = maybe_fan_out(
+        &headers,
+        "searches/noResults",
+        "/2/searches/noResults",
+        &raw_query.unwrap_or_default(),
+        result,
+        limit,
+    )
+    .await;
     Ok(Json(result))
 }
 
@@ -147,7 +218,15 @@ pub async fn get_no_result_rate(
         .no_results_rate(&params.index, &params.start_date, &params.end_date)
         .await
         .map_err(|e| FlapjackError::InvalidQuery(format!("Analytics error: {}", e)))?;
-    let result = maybe_fan_out(&headers, "searches/noResultRate", "/2/searches/noResultRate", &raw_query.unwrap_or_default(), result, 1000).await;
+    let result = maybe_fan_out(
+        &headers,
+        "searches/noResultRate",
+        "/2/searches/noResultRate",
+        &raw_query.unwrap_or_default(),
+        result,
+        1000,
+    )
+    .await;
     Ok(Json(result))
 }
 
@@ -163,7 +242,15 @@ pub async fn get_no_clicks(
         .no_click_searches(&params.index, &params.start_date, &params.end_date, limit)
         .await
         .map_err(|e| FlapjackError::InvalidQuery(format!("Analytics error: {}", e)))?;
-    let result = maybe_fan_out(&headers, "searches/noClicks", "/2/searches/noClicks", &raw_query.unwrap_or_default(), result, limit).await;
+    let result = maybe_fan_out(
+        &headers,
+        "searches/noClicks",
+        "/2/searches/noClicks",
+        &raw_query.unwrap_or_default(),
+        result,
+        limit,
+    )
+    .await;
     Ok(Json(result))
 }
 
@@ -178,7 +265,15 @@ pub async fn get_no_click_rate(
         .no_click_rate(&params.index, &params.start_date, &params.end_date)
         .await
         .map_err(|e| FlapjackError::InvalidQuery(format!("Analytics error: {}", e)))?;
-    let result = maybe_fan_out(&headers, "searches/noClickRate", "/2/searches/noClickRate", &raw_query.unwrap_or_default(), result, 1000).await;
+    let result = maybe_fan_out(
+        &headers,
+        "searches/noClickRate",
+        "/2/searches/noClickRate",
+        &raw_query.unwrap_or_default(),
+        result,
+        1000,
+    )
+    .await;
     Ok(Json(result))
 }
 
@@ -193,7 +288,15 @@ pub async fn get_click_through_rate(
         .click_through_rate(&params.index, &params.start_date, &params.end_date)
         .await
         .map_err(|e| FlapjackError::InvalidQuery(format!("Analytics error: {}", e)))?;
-    let result = maybe_fan_out(&headers, "clicks/clickThroughRate", "/2/clicks/clickThroughRate", &raw_query.unwrap_or_default(), result, 1000).await;
+    let result = maybe_fan_out(
+        &headers,
+        "clicks/clickThroughRate",
+        "/2/clicks/clickThroughRate",
+        &raw_query.unwrap_or_default(),
+        result,
+        1000,
+    )
+    .await;
     Ok(Json(result))
 }
 
@@ -208,7 +311,15 @@ pub async fn get_average_click_position(
         .average_click_position(&params.index, &params.start_date, &params.end_date)
         .await
         .map_err(|e| FlapjackError::InvalidQuery(format!("Analytics error: {}", e)))?;
-    let result = maybe_fan_out(&headers, "clicks/averageClickPosition", "/2/clicks/averageClickPosition", &raw_query.unwrap_or_default(), result, 1000).await;
+    let result = maybe_fan_out(
+        &headers,
+        "clicks/averageClickPosition",
+        "/2/clicks/averageClickPosition",
+        &raw_query.unwrap_or_default(),
+        result,
+        1000,
+    )
+    .await;
     Ok(Json(result))
 }
 
@@ -223,7 +334,15 @@ pub async fn get_click_positions(
         .click_positions(&params.index, &params.start_date, &params.end_date)
         .await
         .map_err(|e| FlapjackError::InvalidQuery(format!("Analytics error: {}", e)))?;
-    let result = maybe_fan_out(&headers, "clicks/positions", "/2/clicks/positions", &raw_query.unwrap_or_default(), result, 1000).await;
+    let result = maybe_fan_out(
+        &headers,
+        "clicks/positions",
+        "/2/clicks/positions",
+        &raw_query.unwrap_or_default(),
+        result,
+        1000,
+    )
+    .await;
     Ok(Json(result))
 }
 
@@ -238,7 +357,15 @@ pub async fn get_conversion_rate(
         .conversion_rate(&params.index, &params.start_date, &params.end_date)
         .await
         .map_err(|e| FlapjackError::InvalidQuery(format!("Analytics error: {}", e)))?;
-    let result = maybe_fan_out(&headers, "conversions/conversionRate", "/2/conversions/conversionRate", &raw_query.unwrap_or_default(), result, 1000).await;
+    let result = maybe_fan_out(
+        &headers,
+        "conversions/conversionRate",
+        "/2/conversions/conversionRate",
+        &raw_query.unwrap_or_default(),
+        result,
+        1000,
+    )
+    .await;
     Ok(Json(result))
 }
 
@@ -254,7 +381,15 @@ pub async fn get_top_hits(
         .top_hits(&params.index, &params.start_date, &params.end_date, limit)
         .await
         .map_err(|e| FlapjackError::InvalidQuery(format!("Analytics error: {}", e)))?;
-    let result = maybe_fan_out(&headers, "hits", "/2/hits", &raw_query.unwrap_or_default(), result, limit).await;
+    let result = maybe_fan_out(
+        &headers,
+        "hits",
+        "/2/hits",
+        &raw_query.unwrap_or_default(),
+        result,
+        limit,
+    )
+    .await;
     Ok(Json(result))
 }
 
@@ -270,7 +405,15 @@ pub async fn get_top_filters(
         .top_filters(&params.index, &params.start_date, &params.end_date, limit)
         .await
         .map_err(|e| FlapjackError::InvalidQuery(format!("Analytics error: {}", e)))?;
-    let result = maybe_fan_out(&headers, "filters", "/2/filters", &raw_query.unwrap_or_default(), result, limit).await;
+    let result = maybe_fan_out(
+        &headers,
+        "filters",
+        "/2/filters",
+        &raw_query.unwrap_or_default(),
+        result,
+        limit,
+    )
+    .await;
     Ok(Json(result))
 }
 
@@ -295,7 +438,15 @@ pub async fn get_filter_values(
         .map_err(|e| FlapjackError::InvalidQuery(format!("Analytics error: {}", e)))?;
     let endpoint = format!("filters/{}", attribute);
     let path = format!("/2/filters/{}", attribute);
-    let result = maybe_fan_out(&headers, &endpoint, &path, &raw_query.unwrap_or_default(), result, limit).await;
+    let result = maybe_fan_out(
+        &headers,
+        &endpoint,
+        &path,
+        &raw_query.unwrap_or_default(),
+        result,
+        limit,
+    )
+    .await;
     Ok(Json(result))
 }
 
@@ -311,7 +462,15 @@ pub async fn get_filters_no_results(
         .filters_no_results(&params.index, &params.start_date, &params.end_date, limit)
         .await
         .map_err(|e| FlapjackError::InvalidQuery(format!("Analytics error: {}", e)))?;
-    let result = maybe_fan_out(&headers, "filters/noResults", "/2/filters/noResults", &raw_query.unwrap_or_default(), result, limit).await;
+    let result = maybe_fan_out(
+        &headers,
+        "filters/noResults",
+        "/2/filters/noResults",
+        &raw_query.unwrap_or_default(),
+        result,
+        limit,
+    )
+    .await;
     Ok(Json(result))
 }
 
@@ -323,10 +482,33 @@ pub async fn get_users_count(
     Query(params): Query<AnalyticsParams>,
 ) -> Result<Json<serde_json::Value>, FlapjackError> {
     let result = engine
-        .users_count(&params.index, &params.start_date, &params.end_date)
+        .users_count_hll(&params.index, &params.start_date, &params.end_date)
         .await
         .map_err(|e| FlapjackError::InvalidQuery(format!("Analytics error: {}", e)))?;
-    let result = maybe_fan_out(&headers, "users/count", "/2/users/count", &raw_query.unwrap_or_default(), result, 1000).await;
+    let mut result = maybe_fan_out(
+        &headers,
+        "users/count",
+        "/2/users/count",
+        &raw_query.unwrap_or_default(),
+        result,
+        1000,
+    )
+    .await;
+    // Strip internal HLL fields from PUBLIC API responses only.
+    //
+    // When X-Flapjack-Local-Only is set, this node is responding to a cluster
+    // coordinator query. The coordinator needs hll_sketch and daily_sketches to
+    // merge sketches across nodes via merge_user_counts(). Do NOT strip them here.
+    //
+    // When serving a public client (no local-only header), strip them:
+    //   - single-node: users_count_hll() returns them but clients must not see them
+    //   - cluster mode: merge_user_counts() already stripped them (this is a no-op)
+    if headers.get("X-Flapjack-Local-Only").is_none() {
+        if let Some(obj) = result.as_object_mut() {
+            obj.remove("hll_sketch");
+            obj.remove("daily_sketches");
+        }
+    }
     Ok(Json(result))
 }
 
@@ -341,7 +523,15 @@ pub async fn get_overview(
         .overview(&params.start_date, &params.end_date)
         .await
         .map_err(|e| FlapjackError::InvalidQuery(format!("Analytics error: {}", e)))?;
-    let result = maybe_fan_out(&headers, "overview", "/2/overview", &raw_query.unwrap_or_default(), result, 1000).await;
+    let result = maybe_fan_out(
+        &headers,
+        "overview",
+        "/2/overview",
+        &raw_query.unwrap_or_default(),
+        result,
+        1000,
+    )
+    .await;
     Ok(Json(result))
 }
 
@@ -436,7 +626,15 @@ pub async fn get_device_breakdown(
         .device_breakdown(&params.index, &params.start_date, &params.end_date)
         .await
         .map_err(|e| FlapjackError::InvalidQuery(format!("Analytics error: {}", e)))?;
-    let result = maybe_fan_out(&headers, "devices", "/2/devices", &raw_query.unwrap_or_default(), result, 1000).await;
+    let result = maybe_fan_out(
+        &headers,
+        "devices",
+        "/2/devices",
+        &raw_query.unwrap_or_default(),
+        result,
+        1000,
+    )
+    .await;
     Ok(Json(result))
 }
 
@@ -452,7 +650,15 @@ pub async fn get_geo_breakdown(
         .geo_breakdown(&params.index, &params.start_date, &params.end_date, limit)
         .await
         .map_err(|e| FlapjackError::InvalidQuery(format!("Analytics error: {}", e)))?;
-    let result = maybe_fan_out(&headers, "geo", "/2/geo", &raw_query.unwrap_or_default(), result, limit).await;
+    let result = maybe_fan_out(
+        &headers,
+        "geo",
+        "/2/geo",
+        &raw_query.unwrap_or_default(),
+        result,
+        limit,
+    )
+    .await;
     Ok(Json(result))
 }
 
@@ -477,7 +683,15 @@ pub async fn get_geo_top_searches(
         .map_err(|e| FlapjackError::InvalidQuery(format!("Analytics error: {}", e)))?;
     let endpoint = format!("geo/{}", country);
     let path = format!("/2/geo/{}", country);
-    let result = maybe_fan_out(&headers, &endpoint, &path, &raw_query.unwrap_or_default(), result, limit).await;
+    let result = maybe_fan_out(
+        &headers,
+        &endpoint,
+        &path,
+        &raw_query.unwrap_or_default(),
+        result,
+        limit,
+    )
+    .await;
     Ok(Json(result))
 }
 
@@ -502,7 +716,15 @@ pub async fn get_geo_regions(
         .map_err(|e| FlapjackError::InvalidQuery(format!("Analytics error: {}", e)))?;
     let endpoint = format!("geo/{}/regions", country);
     let path = format!("/2/geo/{}/regions", country);
-    let result = maybe_fan_out(&headers, &endpoint, &path, &raw_query.unwrap_or_default(), result, limit).await;
+    let result = maybe_fan_out(
+        &headers,
+        &endpoint,
+        &path,
+        &raw_query.unwrap_or_default(),
+        result,
+        limit,
+    )
+    .await;
     Ok(Json(result))
 }
 

@@ -65,13 +65,20 @@
 //! for the full embedding guide.
 
 pub mod error;
+pub mod experiments;
 pub mod index;
 pub mod query;
 pub mod tokenizer;
 pub mod types;
 
+#[cfg(feature = "vector-search")]
+pub mod vector;
+
 #[cfg(feature = "analytics")]
 pub mod analytics;
+
+#[cfg(feature = "analytics")]
+pub mod query_suggestions;
 
 pub use error::{FlapjackError, Result};
 pub use index::{manager::IndexManager, Index, ManagedIndexWriter};
@@ -87,6 +94,9 @@ pub use types::{FacetCount, FacetRequest};
 pub use flapjack_ssl::{SslConfig, SslManager};
 
 pub use index::reset_global_budget_for_test;
+
+#[cfg(test)]
+mod integ_tests;
 
 /// Initialize configuration from environment variables.
 ///

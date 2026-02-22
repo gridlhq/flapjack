@@ -752,7 +752,7 @@ async fn users_count_hll_returns_sketch_and_deduplicates() {
     let merged = HllSketch::merge_all(&[s_a, s_b]);
     let card = merged.cardinality();
     assert!(
-        card >= 2 && card <= 4,
+        (2..=4).contains(&card),
         "merged HLL should be ~3 (got {})",
         card
     );

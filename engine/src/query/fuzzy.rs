@@ -119,8 +119,7 @@ mod tests {
         let field = schema.get_field("_json_search").unwrap_or_else(|_| {
             // Create a minimal schema for test
             let mut sb = tantivy::schema::Schema::builder();
-            let f = sb.add_text_field("test", tantivy::schema::TEXT);
-            f
+            sb.add_text_field("test", tantivy::schema::TEXT)
         });
         let builder = FuzzyQueryBuilder::new(field, "cat".to_string());
         assert_eq!(builder.distance, 0);

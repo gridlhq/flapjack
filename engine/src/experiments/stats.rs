@@ -1057,7 +1057,7 @@ mod tests {
     #[test]
     fn bayesian_prob_is_between_0_and_1() {
         let prob = beta_binomial_prob_b_greater_a(50, 500, 60, 500);
-        assert!(prob >= 0.0 && prob <= 1.0);
+        assert!((0.0..=1.0).contains(&prob));
     }
 
     // ── Sample Size Estimator ───────────────────────────────────────

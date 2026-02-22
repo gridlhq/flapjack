@@ -522,8 +522,8 @@ mod tests {
 
     #[test]
     fn owned_f64_to_float() {
-        let v = owned_to_field_value(&OwnedValue::F64(3.14));
-        assert_eq!(v, Some(FieldValue::Float(3.14)));
+        let v = owned_to_field_value(&OwnedValue::F64(2.5));
+        assert_eq!(v, Some(FieldValue::Float(2.5)));
     }
 
     #[test]
@@ -630,8 +630,8 @@ mod tests {
 
     #[test]
     fn fv_float_to_json() {
-        let v = field_value_to_json(&FieldValue::Float(3.14));
-        assert_eq!(v, json!(3.14));
+        let v = field_value_to_json(&FieldValue::Float(2.5));
+        assert_eq!(v, json!(2.5));
     }
 
     #[test]
@@ -705,9 +705,9 @@ mod tests {
 
     #[test]
     fn json_float_to_owned() {
-        let v = json_value_to_owned(&json!(3.14)).unwrap();
+        let v = json_value_to_owned(&json!(2.5)).unwrap();
         match v {
-            OwnedValue::F64(f) => assert!((f - 3.14).abs() < 1e-10),
+            OwnedValue::F64(f) => assert!((f - 2.5).abs() < 1e-10),
             other => panic!("expected F64, got {:?}", other),
         }
     }
@@ -908,8 +908,8 @@ mod tests {
     #[test]
     fn jv_float_to_float() {
         assert_eq!(
-            json_value_to_field_value(&json!(3.14)),
-            Some(FieldValue::Float(3.14))
+            json_value_to_field_value(&json!(2.5)),
+            Some(FieldValue::Float(2.5))
         );
     }
 

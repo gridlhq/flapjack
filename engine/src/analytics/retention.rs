@@ -62,6 +62,7 @@ pub fn cleanup_old_partitions(analytics_dir: &Path, retention_days: u32) -> Resu
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
     use std::fs;

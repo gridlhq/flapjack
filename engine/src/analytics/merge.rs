@@ -1030,7 +1030,7 @@ mod tests {
         // Should be HLL(~1000) + 500 fallback ≈ 1500
         // HLL for 1000 items at p=14 should be 970-1030, so total should be ~1470-1530
         assert!(
-            count >= 1400 && count <= 1600,
+            (1400..=1600).contains(&count),
             "count {} should be ~1500 (HLL ~1000 + fallback 500)",
             count
         );
@@ -1043,7 +1043,7 @@ mod tests {
             "searches": [{"search": "test", "count": 42, "nbHits": 100}],
             "extraField": "preserved"
         });
-        let merged = merge_results("searches", &[single.clone()], 10);
+        let merged = merge_results("searches", std::slice::from_ref(&single), 10);
         assert_eq!(
             merged, single,
             "single result should pass through unchanged"

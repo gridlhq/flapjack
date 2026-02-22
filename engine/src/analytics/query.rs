@@ -2175,9 +2175,9 @@ mod tests {
     #[test]
     fn arrow_value_at_float64() {
         use arrow::array::Float64Array;
-        let arr = Float64Array::from(vec![3.14]);
+        let arr = Float64Array::from(vec![2.5]);
         let val = arrow_value_at(&arr, 0);
-        assert_eq!(val, serde_json::json!(3.14));
+        assert_eq!(val, serde_json::json!(2.5));
     }
 
     #[test]

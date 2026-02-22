@@ -94,7 +94,7 @@ async fn config_crud_roundtrip() {
     assert_eq!(resp.status(), 200);
     let list: Value = resp.json().await.unwrap();
     assert!(
-        list.as_array().unwrap().len() >= 1,
+        !list.as_array().unwrap().is_empty(),
         "list should have ≥1 config"
     );
 

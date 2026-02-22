@@ -537,7 +537,7 @@ async fn test_facets_field_not_in_settings_returns_empty() {
         .unwrap();
 
     assert!(
-        result.facets.get("brand").is_some(),
+        result.facets.contains_key("brand"),
         "Configured facet field should work"
     );
 }
@@ -1325,7 +1325,7 @@ async fn test_facet_search_params_string_integration() {
 #[tokio::test]
 async fn test_facet_search_rejects_non_searchable() {
     let (_tmp, _mgr) = setup_facet_search_env(vec!["filterOnly(brand)"]).await;
-    let settings = IndexSettings::load(&_tmp.path().join("test/settings.json")).unwrap();
+    let settings = IndexSettings::load(_tmp.path().join("test/settings.json")).unwrap();
     assert!(
         !settings.searchable_facet_set().contains("brand"),
         "filterOnly(brand) should not be in searchable set"

@@ -1688,8 +1688,10 @@ mod tests {
 
     #[test]
     fn merge_secured_filters_combines_with_existing() {
-        let mut req = SearchRequest::default();
-        req.filters = Some("color:Red".to_string());
+        let mut req = SearchRequest {
+            filters: Some("color:Red".to_string()),
+            ..Default::default()
+        };
         let restrictions = crate::auth::SecuredKeyRestrictions {
             filters: Some("brand:Nike".to_string()),
             ..Default::default()
@@ -1711,8 +1713,10 @@ mod tests {
 
     #[test]
     fn merge_secured_filters_caps_hits_per_page() {
-        let mut req = SearchRequest::default();
-        req.hits_per_page = Some(100);
+        let mut req = SearchRequest {
+            hits_per_page: Some(100),
+            ..Default::default()
+        };
         let restrictions = crate::auth::SecuredKeyRestrictions {
             hits_per_page: Some(20),
             ..Default::default()
@@ -1723,8 +1727,10 @@ mod tests {
 
     #[test]
     fn merge_secured_filters_no_cap_when_lower() {
-        let mut req = SearchRequest::default();
-        req.hits_per_page = Some(10);
+        let mut req = SearchRequest {
+            hits_per_page: Some(10),
+            ..Default::default()
+        };
         let restrictions = crate::auth::SecuredKeyRestrictions {
             hits_per_page: Some(20),
             ..Default::default()
@@ -1747,8 +1753,10 @@ mod tests {
 
     #[test]
     fn merge_secured_filters_empty_filter_string() {
-        let mut req = SearchRequest::default();
-        req.filters = Some("color:Red".to_string());
+        let mut req = SearchRequest {
+            filters: Some("color:Red".to_string()),
+            ..Default::default()
+        };
         let restrictions = crate::auth::SecuredKeyRestrictions {
             filters: Some("".to_string()),
             ..Default::default()
@@ -1760,8 +1768,10 @@ mod tests {
 
     #[test]
     fn merge_secured_filters_both_filters_and_hpp() {
-        let mut req = SearchRequest::default();
-        req.hits_per_page = Some(100);
+        let mut req = SearchRequest {
+            hits_per_page: Some(100),
+            ..Default::default()
+        };
         let restrictions = crate::auth::SecuredKeyRestrictions {
             filters: Some("brand:Nike".to_string()),
             hits_per_page: Some(20),
@@ -1918,10 +1928,12 @@ mod tests {
 
     #[test]
     fn apply_overrides_skips_none_fields() {
-        let mut req = SearchRequest::default();
-        req.filters = Some("existing".to_string());
-        req.enable_rules = Some(true);
-        req.optional_filters = Some(json!(["old"]));
+        let mut req = SearchRequest {
+            filters: Some("existing".to_string()),
+            enable_rules: Some(true),
+            optional_filters: Some(json!(["old"])),
+            ..Default::default()
+        };
         let overrides = QueryOverrides::default();
 
         apply_query_overrides(&mut req, &overrides);
@@ -1933,8 +1945,10 @@ mod tests {
 
     #[test]
     fn apply_overrides_does_not_clobber_existing() {
-        let mut req = SearchRequest::default();
-        req.filters = Some("existing".to_string());
+        let mut req = SearchRequest {
+            filters: Some("existing".to_string()),
+            ..Default::default()
+        };
         let overrides = QueryOverrides {
             enable_synonyms: Some(false),
             ..Default::default()
@@ -1948,9 +1962,11 @@ mod tests {
 
     #[test]
     fn apply_overrides_skips_index_level_fields() {
-        let mut req = SearchRequest::default();
-        req.filters = Some("existing".to_string());
-        req.enable_synonyms = Some(true);
+        let mut req = SearchRequest {
+            filters: Some("existing".to_string()),
+            enable_synonyms: Some(true),
+            ..Default::default()
+        };
         let overrides = QueryOverrides {
             custom_ranking: Some(vec!["desc(popularity)".to_string()]),
             attribute_weights: Some(std::iter::once(("title".to_string(), 10.0)).collect()),
@@ -4142,7 +4158,7 @@ mod tests {
                     || state
                         .manager
                         .get_vector_index(idx)
-                        .map(|vi| vi.read().unwrap().len() == 0)
+                        .map(|vi| vi.read().unwrap().is_empty())
                         .unwrap_or(true),
                 "vector index should be empty — fastembed not available without feature"
             );

@@ -1827,7 +1827,7 @@ mod tests {
             });
 
             // Give some clicks (6 for control arm qids 0-5, 8 for variant arm qids 10-17)
-            if i < 6 || (i >= 10 && i < 18) {
+            if i < 6 || (10..18).contains(&i) {
                 click_events.push(InsightEvent {
                     event_type: "click".to_string(),
                     event_subtype: None,
@@ -2258,7 +2258,7 @@ mod tests {
             response
                 .recommendation
                 .as_ref()
-                .map_or(false, |r| r.contains("Sample ratio mismatch")),
+                .is_some_and(|r| r.contains("Sample ratio mismatch")),
             "recommendation should warn about SRM even when gate is closed"
         );
     }
@@ -2372,7 +2372,7 @@ mod tests {
             response
                 .recommendation
                 .as_ref()
-                .map_or(false, |r| r.contains("Statistically significant")),
+                .is_some_and(|r| r.contains("Statistically significant")),
             "recommendation should declare significant result"
         );
     }
@@ -2892,7 +2892,7 @@ mod tests {
     fn build_results_response_gate_has_estimated_days_remaining() {
         let now = chrono::Utc::now().timestamp_millis();
         // started 1 day ago, needs 14 minimum_days, low N
-        let started_at = now - (1 * 24 * 60 * 60 * 1000);
+        let started_at = now - (24 * 60 * 60 * 1000);
         let experiment = Experiment {
             id: "exp-eta-1".to_string(),
             name: "ETA test".to_string(),

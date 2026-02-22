@@ -537,7 +537,7 @@ mod tests {
             Ordering::Less
         );
         assert_eq!(
-            SortValue::Float(3.14).cmp(&SortValue::Float(3.14)),
+            SortValue::Float(2.5).cmp(&SortValue::Float(2.5)),
             Ordering::Equal
         );
         assert_eq!(

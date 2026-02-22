@@ -339,6 +339,7 @@ pub async fn cluster_status(State(state): State<Arc<AppState>>) -> impl IntoResp
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
     use flapjack::index::oplog::OpLogEntry;

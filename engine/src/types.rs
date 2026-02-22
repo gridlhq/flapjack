@@ -421,8 +421,8 @@ mod tests {
 
     #[test]
     fn json_float_to_float() {
-        let v = serde_json::json!(3.14);
-        assert_eq!(json_value_to_field_value(&v), Some(FieldValue::Float(3.14)));
+        let v = serde_json::json!(2.5);
+        assert_eq!(json_value_to_field_value(&v), Some(FieldValue::Float(2.5)));
     }
 
     #[test]
@@ -461,8 +461,8 @@ mod tests {
 
     #[test]
     fn float_roundtrip() {
-        let fv = FieldValue::Float(3.14);
-        assert_eq!(field_value_to_json_value(&fv), serde_json::json!(3.14));
+        let fv = FieldValue::Float(2.5);
+        assert_eq!(field_value_to_json_value(&fv), serde_json::json!(2.5));
     }
 
     #[test]

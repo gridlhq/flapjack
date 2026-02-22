@@ -562,7 +562,7 @@ mod tests {
     #[test]
     fn format_value_float() {
         let c = make_compiler();
-        assert_eq!(c.format_value(&FieldValue::Float(3.14)), "3.14");
+        assert_eq!(c.format_value(&FieldValue::Float(2.5)), "2.5");
     }
 
     #[test]

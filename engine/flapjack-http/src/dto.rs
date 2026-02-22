@@ -1020,8 +1020,10 @@ mod tests {
 
     #[test]
     fn apply_params_string_sets_query() {
-        let mut req = SearchRequest::default();
-        req.params = Some("query=hello".to_string());
+        let mut req = SearchRequest {
+            params: Some("query=hello".to_string()),
+            ..Default::default()
+        };
         req.apply_params_string();
         assert_eq!(req.query, "hello");
     }
@@ -1039,32 +1041,40 @@ mod tests {
 
     #[test]
     fn apply_params_string_sets_hits_per_page() {
-        let mut req = SearchRequest::default();
-        req.params = Some("hitsPerPage=5".to_string());
+        let mut req = SearchRequest {
+            params: Some("hitsPerPage=5".to_string()),
+            ..Default::default()
+        };
         req.apply_params_string();
         assert_eq!(req.hits_per_page, Some(5));
     }
 
     #[test]
     fn apply_params_string_sets_page() {
-        let mut req = SearchRequest::default();
-        req.params = Some("page=3".to_string());
+        let mut req = SearchRequest {
+            params: Some("page=3".to_string()),
+            ..Default::default()
+        };
         req.apply_params_string();
         assert_eq!(req.page, 3);
     }
 
     #[test]
     fn apply_params_string_sets_filters() {
-        let mut req = SearchRequest::default();
-        req.params = Some("filters=brand%3ANike".to_string());
+        let mut req = SearchRequest {
+            params: Some("filters=brand%3ANike".to_string()),
+            ..Default::default()
+        };
         req.apply_params_string();
         assert_eq!(req.filters, Some("brand:Nike".to_string()));
     }
 
     #[test]
     fn apply_params_string_empty_noop() {
-        let mut req = SearchRequest::default();
-        req.params = Some("".to_string());
+        let mut req = SearchRequest {
+            params: Some("".to_string()),
+            ..Default::default()
+        };
         req.apply_params_string();
         assert!(req.query.is_empty());
     }
@@ -1078,8 +1088,10 @@ mod tests {
 
     #[test]
     fn apply_params_string_multiple_fields() {
-        let mut req = SearchRequest::default();
-        req.params = Some("query=test&hitsPerPage=10&page=2&analytics=true".to_string());
+        let mut req = SearchRequest {
+            params: Some("query=test&hitsPerPage=10&page=2&analytics=true".to_string()),
+            ..Default::default()
+        };
         req.apply_params_string();
         assert_eq!(req.query, "test");
         assert_eq!(req.hits_per_page, Some(10));

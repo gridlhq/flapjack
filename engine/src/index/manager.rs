@@ -1947,6 +1947,7 @@ impl IndexManager {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
     use tempfile::TempDir;
@@ -2192,7 +2193,7 @@ mod tests {
             )])),
             ..Default::default()
         };
-        settings.save(&tenant_path.join("settings.json")).unwrap();
+        settings.save(tenant_path.join("settings.json")).unwrap();
 
         // Manually save a VectorIndex with 3 docs (no fingerprint file → backward compat load)
         let mut vi = crate::vector::index::VectorIndex::new(3, MetricKind::Cos).unwrap();
@@ -2267,7 +2268,7 @@ mod tests {
             )])),
             ..Default::default()
         };
-        settings.save(&tenant_path.join("settings.json")).unwrap();
+        settings.save(tenant_path.join("settings.json")).unwrap();
 
         // Write garbage to id_map.json (no fingerprint → backward compat, proceeds to load)
         let vectors_dir = tenant_path.join("vectors");
@@ -2312,7 +2313,7 @@ mod tests {
             )])),
             ..Default::default()
         };
-        settings.save(&tenant_path.join("settings.json")).unwrap();
+        settings.save(tenant_path.join("settings.json")).unwrap();
 
         // Save VectorIndex (no fingerprint file → backward compat load)
         let mut vi = crate::vector::index::VectorIndex::new(3, MetricKind::Cos).unwrap();
@@ -2352,7 +2353,7 @@ mod tests {
 
         // Write default settings
         let settings = crate::index::settings::IndexSettings::default();
-        settings.save(&tenant_path.join("settings.json")).unwrap();
+        settings.save(tenant_path.join("settings.json")).unwrap();
 
         // Create oplog and write entries
         let oplog_dir = tenant_path.join("oplog");
@@ -2710,7 +2711,7 @@ mod tests {
                 )])),
                 ..Default::default()
             };
-            settings.save(&tenant_path.join("settings.json")).unwrap();
+            settings.save(tenant_path.join("settings.json")).unwrap();
 
             // Add docs through write queue (which creates oplog entries)
             let docs = vec![Document {
@@ -2773,7 +2774,7 @@ mod tests {
             )])),
             ..Default::default()
         };
-        settings.save(&tenant_path.join("settings.json")).unwrap();
+        settings.save(tenant_path.join("settings.json")).unwrap();
 
         // Save VectorIndex
         let mut vi = crate::vector::index::VectorIndex::new(3, MetricKind::Cos).unwrap();
@@ -2829,7 +2830,7 @@ mod tests {
             )])),
             ..Default::default()
         };
-        settings.save(&tenant_path.join("settings.json")).unwrap();
+        settings.save(tenant_path.join("settings.json")).unwrap();
 
         // Save VectorIndex
         let mut vi = crate::vector::index::VectorIndex::new(3, MetricKind::Cos).unwrap();
@@ -2884,7 +2885,7 @@ mod tests {
             )])),
             ..Default::default()
         };
-        settings.save(&tenant_path.join("settings.json")).unwrap();
+        settings.save(tenant_path.join("settings.json")).unwrap();
 
         // Save VectorIndex but NO fingerprint.json (backward compat)
         let mut vi = crate::vector::index::VectorIndex::new(3, MetricKind::Cos).unwrap();
@@ -2927,7 +2928,7 @@ mod tests {
             )])),
             ..Default::default()
         };
-        settings.save(&tenant_path.join("settings.json")).unwrap();
+        settings.save(tenant_path.join("settings.json")).unwrap();
 
         // Save VectorIndex
         let mut vi = crate::vector::index::VectorIndex::new(3, MetricKind::Cos).unwrap();
@@ -3030,7 +3031,7 @@ mod tests {
                 )])),
                 ..Default::default()
             };
-            settings.save(&tenant_path.join("settings.json")).unwrap();
+            settings.save(tenant_path.join("settings.json")).unwrap();
 
             let docs = vec![
                 Document {
@@ -3122,7 +3123,7 @@ mod tests {
                 )])),
                 ..Default::default()
             };
-            settings.save(&tenant_path.join("settings.json")).unwrap();
+            settings.save(tenant_path.join("settings.json")).unwrap();
 
             let docs = vec![Document {
                 id: "doc1".to_string(),
@@ -3155,7 +3156,7 @@ mod tests {
                 )])),
                 ..Default::default()
             };
-            settings.save(&tenant_path.join("settings.json")).unwrap();
+            settings.save(tenant_path.join("settings.json")).unwrap();
 
             let manager2 = IndexManager::new(tmp.path());
             manager2.get_or_load(tenant_id).unwrap();

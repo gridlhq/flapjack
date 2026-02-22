@@ -496,6 +496,7 @@ fn write_search_events_to_partition(
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 
@@ -527,7 +528,7 @@ mod tests {
         let mut rng = Rng::new(123);
         for _ in 0..1000 {
             let v = rng.next_f64();
-            assert!(v >= 0.0 && v < 1.0, "next_f64 out of range: {}", v);
+            assert!((0.0..1.0).contains(&v), "next_f64 out of range: {}", v);
         }
     }
 
@@ -536,7 +537,7 @@ mod tests {
         let mut rng = Rng::new(99);
         for _ in 0..500 {
             let v = rng.range(5, 10);
-            assert!(v >= 5 && v <= 10, "range out of bounds: {}", v);
+            assert!((5..=10).contains(&v), "range out of bounds: {}", v);
         }
     }
 
@@ -646,7 +647,7 @@ mod tests {
         let mut rng = Rng::new(42);
         for _ in 0..500 {
             let pos = generate_click_position(&mut rng);
-            assert!(pos >= 1 && pos <= 12, "position out of range: {}", pos);
+            assert!((1..=12).contains(&pos), "position out of range: {}", pos);
         }
     }
 

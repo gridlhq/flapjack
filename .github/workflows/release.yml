@@ -27,7 +27,7 @@ jobs:
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
             use_cross: true
-            features: "vector-search"
+            features: ""  # usearch/simsimd x86_64-musl cross toolchain incompatibility
           - target: aarch64-unknown-linux-musl
             os: ubuntu-latest
             use_cross: true

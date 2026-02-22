@@ -591,6 +591,22 @@ mod tests {
     }
 
     #[test]
+    fn interleaving_flag_persists_across_store_restart() {
+        let tmp = TempDir::new().unwrap();
+        {
+            let store = ExperimentStore::new(tmp.path()).unwrap();
+            let mut exp = make_experiment("e-il", "products_il");
+            exp.interleaving = Some(true);
+            exp.variant.query_overrides = None;
+            exp.variant.index_name = Some("products_il_v2".to_string());
+            store.create(exp).unwrap();
+        }
+        let store2 = ExperimentStore::new(tmp.path()).unwrap();
+        let loaded = store2.get("e-il").unwrap();
+        assert_eq!(loaded.interleaving, Some(true), "interleaving flag must survive persistence");
+    }
+
+    #[test]
     fn new_store_rejects_invalid_experiment_from_disk() {
         let tmp = TempDir::new().unwrap();
         let experiments_dir = tmp.path().join(".experiments");

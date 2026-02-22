@@ -328,7 +328,8 @@ describe('ExperimentDetail', () => {
     expect(card).toHaveTextContent(/control wins/i);
     expect(card).toHaveTextContent(/variant wins/i);
     expect(card).toHaveTextContent(/ties/i);
-    expect(card).toHaveTextContent(/significant/i);
+    expect(screen.getByText(/^Significant$/i)).toBeInTheDocument();
+    expect(card).not.toHaveTextContent(/not significant/i);
   });
 
   it('does not show interleaving card for standard experiments', () => {
@@ -355,6 +356,7 @@ describe('ExperimentDetail', () => {
 
     const card = screen.getByTestId('interleaving-card');
     expect(card).toBeInTheDocument();
+    expect(screen.getByText(/^Not significant$/i)).toBeInTheDocument();
     expect(screen.getByTestId('interleaving-data-quality-warning')).toBeInTheDocument();
   });
 

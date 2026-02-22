@@ -839,9 +839,7 @@ async fn commit_batch(
                 .as_millis() as u64;
             let node_id =
                 std::env::var("FLAPJACK_NODE_ID").unwrap_or_else(|_| "unknown".to_string());
-            let tenant_map = lww_map
-                .entry(tenant_id.to_string())
-                .or_default();
+            let tenant_map = lww_map.entry(tenant_id.to_string()).or_default();
             for doc_id in &primary_upsert_ids {
                 tenant_map.insert(doc_id.clone(), (now_ts, node_id.clone()));
             }

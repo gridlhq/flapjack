@@ -12,6 +12,7 @@ teardown('cleanup test data', async ({ request }) => {
 
   // Delete temp indexes that tests may have created
   await request.delete(`${API}/1/indexes/e2e-temp`, { headers: H }).catch(() => {});
+  await request.delete(`${API}/1/indexes/e2e-experiments`, { headers: H }).catch(() => {});
 
   // Clear analytics for test index
   await request.delete(`${API}/2/analytics/clear`, {

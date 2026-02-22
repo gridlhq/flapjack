@@ -245,6 +245,14 @@ describe('ExperimentDetail', () => {
     expect(screen.queryByTestId('guard-rail-banner')).not.toBeInTheDocument();
   });
 
+  it('renders safely when guardRailAlerts is missing', () => {
+    mockResults({ guardRailAlerts: undefined });
+    renderWithRoute('exp-1');
+
+    expect(screen.getByTestId('experiment-detail-name')).toHaveTextContent('Ranking test');
+    expect(screen.queryByTestId('guard-rail-banner')).not.toBeInTheDocument();
+  });
+
   it('shows CUPED badge when cupedApplied is true', () => {
     mockResults({
       gate: {

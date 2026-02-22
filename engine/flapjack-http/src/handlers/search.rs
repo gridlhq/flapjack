@@ -941,10 +941,12 @@ fn search_single_sync(
                                                 .get_document(&effective_index, &fr.doc_id)
                                             {
                                                 Ok(Some(doc)) => {
-                                                    fused_docs.push(flapjack::types::ScoredDocument {
-                                                        document: doc,
-                                                        score: fr.fused_score as f32,
-                                                    });
+                                                    fused_docs.push(
+                                                        flapjack::types::ScoredDocument {
+                                                            document: doc,
+                                                            score: fr.fused_score as f32,
+                                                        },
+                                                    );
                                                 }
                                                 Ok(None) => {
                                                     // Document was in vector index but not in Tantivy
@@ -1430,7 +1432,7 @@ fn search_single_sync(
         let entry = state
             .usage_counters
             .entry(effective_index.clone())
-            .or_insert_with(crate::usage_middleware::TenantUsageCounters::new);
+            .or_default();
         entry
             .search_results_total
             .fetch_add(result.total as u64, std::sync::atomic::Ordering::Relaxed);
@@ -2059,11 +2061,7 @@ mod tests {
         }
     }
 
-    fn interleaving_experiment(
-        id: &str,
-        index_name: &str,
-        variant_index_name: &str,
-    ) -> Experiment {
+    fn interleaving_experiment(id: &str, index_name: &str, variant_index_name: &str) -> Experiment {
         let mut experiment = mode_b_experiment(id, index_name, variant_index_name);
         experiment.interleaving = Some(true);
         experiment
@@ -3488,11 +3486,8 @@ mod tests {
             let query = "needle-query";
             cache_query_vector(&state, "default", query, vec![1.0, 0.0, 0.0]);
 
-            let experiment = mode_b_experiment(
-                "exp-mode-b-hybrid-control",
-                original_index,
-                variant_index,
-            );
+            let experiment =
+                mode_b_experiment("exp-mode-b-hybrid-control", original_index, variant_index);
             experiment_store.create(experiment).unwrap();
             experiment_store.start("exp-mode-b-hybrid-control").unwrap();
             let running = experiment_store.get("exp-mode-b-hybrid-control").unwrap();
@@ -3523,7 +3518,10 @@ mod tests {
                 response.get("message").is_none(),
                 "control arm should remain keyword-only and not emit hybrid fallback warnings"
             );
-            assert!(!hits.is_empty(), "control arm should still return keyword hits");
+            assert!(
+                !hits.is_empty(),
+                "control arm should still return keyword hits"
+            );
             assert_eq!(
                 hits[0]["objectID"], "o1",
                 "control arm results must come from the original index"

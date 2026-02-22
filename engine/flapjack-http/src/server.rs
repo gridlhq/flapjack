@@ -853,6 +853,7 @@ fn acquire_data_dir_process_lock(data_dir: &Path) -> Result<DataDirProcessLock, 
         .read(true)
         .write(true)
         .create(true)
+        .truncate(false)
         .open(&lock_path)
         .map_err(|e| {
             format!(
@@ -926,8 +927,7 @@ fn print_startup_banner(bind_addr: &str, auth: AuthStatus, startup_ms: u128, dat
             );
             println!();
             println!(
-                "  {}  Admin API Key:  {}",
-                "\u{1F511}",
+                "  \u{1F511}  Admin API Key:  {}",
                 key.as_str().cyan().bold().on_black()
             );
             println!();

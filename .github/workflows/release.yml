@@ -26,12 +26,12 @@ jobs:
         include:
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
-            use_cross: false
+            use_cross: true
             features: "vector-search"
           - target: aarch64-unknown-linux-musl
             os: ubuntu-latest
             use_cross: true
-            features: "vector-search"
+            features: ""  # usearch/simsimd aarch64-musl toolchain incompatibility
           - target: x86_64-apple-darwin
             os: macos-15-intel
             use_cross: false
@@ -64,15 +64,6 @@ jobs:
           cd dashboard
           npm ci
           npm run build
-
-      - name: Install musl-tools
-        if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: sudo apt-get update && sudo apt-get install -y musl-tools musl-dev g++
-        working-directory: .
-
-      - name: Set musl C++ compiler
-        if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: echo "CXX_x86_64_unknown_linux_musl=g++" >> $GITHUB_ENV
 
       - name: Install cross
         if: matrix.use_cross

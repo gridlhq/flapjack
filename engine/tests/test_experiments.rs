@@ -24,6 +24,8 @@ fn make_state(tmp: &TempDir) -> Arc<flapjack_http::handlers::AppState> {
         usage_counters: Arc::new(dashmap::DashMap::new()),
         paused_indexes: flapjack_http::pause_registry::PausedIndexes::new(),
         start_time: std::time::Instant::now(),
+        #[cfg(feature = "vector-search")]
+        embedder_store: Arc::new(flapjack_http::embedder_store::EmbedderStore::new()),
     })
 }
 

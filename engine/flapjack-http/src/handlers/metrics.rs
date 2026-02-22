@@ -311,6 +311,12 @@ impl MetricsState {
     }
 }
 
+impl Default for MetricsState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

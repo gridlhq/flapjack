@@ -744,7 +744,7 @@ impl AnalyticsQueryEngine {
             overall.add(user_id);
             daily
                 .entry(ms_to_date_string(day_ms))
-                .or_insert_with(HllSketch::new)
+                .or_default()
                 .add(user_id);
         }
 

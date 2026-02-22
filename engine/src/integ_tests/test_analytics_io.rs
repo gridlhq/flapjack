@@ -832,7 +832,10 @@ fn insight_event_null_interleaving_team_roundtrip() {
         .as_any()
         .downcast_ref::<arrow::array::StringArray>()
         .unwrap();
-    assert!(team_col.is_null(0), "interleaving_team should be null when not set");
+    assert!(
+        team_col.is_null(0),
+        "interleaving_team should be null when not set"
+    );
 }
 
 #[tokio::test]

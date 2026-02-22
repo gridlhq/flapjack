@@ -154,14 +154,16 @@ pub struct BayesianResponse {
     pub prob_variant_better: f64,
 }
 
-fn get_experiment_store(state: &AppState) -> Result<&ExperimentStore, Response> {
-    state.experiment_store.as_deref().ok_or_else(|| {
-        (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(serde_json::json!({"message": "experiment store unavailable"})),
-        )
-            .into_response()
-    })
+fn experiment_store_unavailable_response() -> Response {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(serde_json::json!({"message": "experiment store unavailable"})),
+    )
+        .into_response()
+}
+
+fn get_experiment_store(state: &AppState) -> Option<&ExperimentStore> {
+    state.experiment_store.as_deref()
 }
 
 fn experiment_error_to_response(err: ExperimentError) -> Response {
@@ -206,8 +208,8 @@ pub async fn create_experiment(
     Json(body): Json<CreateExperimentRequest>,
 ) -> Response {
     let store = match get_experiment_store(&state) {
-        Ok(store) => store,
-        Err(resp) => return resp,
+        Some(store) => store,
+        None => return experiment_store_unavailable_response(),
     };
 
     let experiment = Experiment {
@@ -239,8 +241,8 @@ pub async fn list_experiments(
     Query(params): Query<ListExperimentsQuery>,
 ) -> Response {
     let store = match get_experiment_store(&state) {
-        Ok(store) => store,
-        Err(resp) => return resp,
+        Some(store) => store,
+        None => return experiment_store_unavailable_response(),
     };
 
     let status_filter = match params.status.as_deref() {
@@ -282,8 +284,8 @@ pub async fn get_experiment(
     Path(id): Path<String>,
 ) -> Response {
     let store = match get_experiment_store(&state) {
-        Ok(store) => store,
-        Err(resp) => return resp,
+        Some(store) => store,
+        None => return experiment_store_unavailable_response(),
     };
 
     match store.get(&id) {
@@ -298,8 +300,8 @@ pub async fn update_experiment(
     Json(body): Json<CreateExperimentRequest>,
 ) -> Response {
     let store = match get_experiment_store(&state) {
-        Ok(store) => store,
-        Err(resp) => return resp,
+        Some(store) => store,
+        None => return experiment_store_unavailable_response(),
     };
 
     let existing = match store.get(&id) {
@@ -336,8 +338,8 @@ pub async fn delete_experiment(
     Path(id): Path<String>,
 ) -> Response {
     let store = match get_experiment_store(&state) {
-        Ok(store) => store,
-        Err(resp) => return resp,
+        Some(store) => store,
+        None => return experiment_store_unavailable_response(),
     };
 
     match store.delete(&id) {
@@ -351,8 +353,8 @@ pub async fn start_experiment(
     Path(id): Path<String>,
 ) -> Response {
     let store = match get_experiment_store(&state) {
-        Ok(store) => store,
-        Err(resp) => return resp,
+        Some(store) => store,
+        None => return experiment_store_unavailable_response(),
     };
 
     match store.start(&id) {
@@ -366,8 +368,8 @@ pub async fn stop_experiment(
     Path(id): Path<String>,
 ) -> Response {
     let store = match get_experiment_store(&state) {
-        Ok(store) => store,
-        Err(resp) => return resp,
+        Some(store) => store,
+        None => return experiment_store_unavailable_response(),
     };
 
     match store.stop(&id) {
@@ -382,8 +384,8 @@ pub async fn conclude_experiment(
     Json(body): Json<ConcludeExperimentRequest>,
 ) -> Response {
     let store = match get_experiment_store(&state) {
-        Ok(store) => store,
-        Err(resp) => return resp,
+        Some(store) => store,
+        None => return experiment_store_unavailable_response(),
     };
 
     let winner = match validate_conclusion_winner(body.winner) {
@@ -403,7 +405,7 @@ pub async fn conclude_experiment(
 
     match store.conclude(&id, conclusion) {
         Ok(experiment) => {
-            if experiment.conclusion.as_ref().map_or(false, |c| c.promoted)
+            if experiment.conclusion.as_ref().is_some_and(|c| c.promoted)
                 && experiment
                     .conclusion
                     .as_ref()
@@ -428,10 +430,7 @@ pub async fn conclude_experiment(
 /// - Mode A: applies promotable query overrides (custom_ranking, remove_words_if_no_results)
 ///   to the main index settings. Query-time-only fields (typo_tolerance, enable_synonyms, etc.)
 ///   have no index-level equivalent and are logged as skipped.
-fn promote_variant_settings(
-    state: &AppState,
-    experiment: &Experiment,
-) -> Result<(), String> {
+fn promote_variant_settings(state: &AppState, experiment: &Experiment) -> Result<(), String> {
     use flapjack::index::settings::IndexSettings;
 
     let main_index = &experiment.index_name;
@@ -486,7 +485,10 @@ fn promote_variant_settings(
             overrides.enable_rules.as_ref().map(|_| "enableRules"),
             overrides.rule_contexts.as_ref().map(|_| "ruleContexts"),
             overrides.filters.as_ref().map(|_| "filters"),
-            overrides.optional_filters.as_ref().map(|_| "optionalFilters"),
+            overrides
+                .optional_filters
+                .as_ref()
+                .map(|_| "optionalFilters"),
         ]
         .into_iter()
         .flatten()
@@ -515,8 +517,8 @@ pub async fn get_experiment_results(
     Path(id): Path<String>,
 ) -> Response {
     let store = match get_experiment_store(&state) {
-        Ok(store) => store,
-        Err(resp) => return resp,
+        Some(store) => store,
+        None => return experiment_store_unavailable_response(),
     };
 
     let experiment = match store.get(&id) {
@@ -583,8 +585,11 @@ pub async fn get_experiment_results(
     };
 
     // Compute gate, stats, and build response
-    let response =
-        build_results_response(&experiment, experiment_metrics.as_ref(), covariates.as_ref());
+    let response = build_results_response(
+        &experiment,
+        experiment_metrics.as_ref(),
+        covariates.as_ref(),
+    );
     Json(response).into_response()
 }
 
@@ -766,19 +771,50 @@ fn build_results_response(
 
     // Bayesian probability is always available when metrics exist.
     // Uses the primary metric's count data for the beta-binomial computation.
-    let bayesian = metrics.and_then(|m| {
+    let bayesian = metrics.map(|m| {
         let (a_success, a_total, b_success, b_total) = match experiment.primary_metric {
-            PrimaryMetric::Ctr => (m.control.clicks, m.control.searches, m.variant.clicks, m.variant.searches),
-            PrimaryMetric::ConversionRate => (m.control.conversions, m.control.searches, m.variant.conversions, m.variant.searches),
-            PrimaryMetric::ZeroResultRate => (m.control.zero_result_searches, m.control.searches, m.variant.zero_result_searches, m.variant.searches),
+            PrimaryMetric::Ctr => (
+                m.control.clicks,
+                m.control.searches,
+                m.variant.clicks,
+                m.variant.searches,
+            ),
+            PrimaryMetric::ConversionRate => (
+                m.control.conversions,
+                m.control.searches,
+                m.variant.conversions,
+                m.variant.searches,
+            ),
+            PrimaryMetric::ZeroResultRate => (
+                m.control.zero_result_searches,
+                m.control.searches,
+                m.variant.zero_result_searches,
+                m.variant.searches,
+            ),
             PrimaryMetric::AbandonmentRate => {
-                let ctrl_with_results = m.control.searches.saturating_sub(m.control.zero_result_searches);
-                let var_with_results = m.variant.searches.saturating_sub(m.variant.zero_result_searches);
-                (m.control.abandoned_searches, ctrl_with_results, m.variant.abandoned_searches, var_with_results)
+                let ctrl_with_results = m
+                    .control
+                    .searches
+                    .saturating_sub(m.control.zero_result_searches);
+                let var_with_results = m
+                    .variant
+                    .searches
+                    .saturating_sub(m.variant.zero_result_searches);
+                (
+                    m.control.abandoned_searches,
+                    ctrl_with_results,
+                    m.variant.abandoned_searches,
+                    var_with_results,
+                )
             }
             PrimaryMetric::RevenuePerSearch => {
                 // No natural count data for beta-binomial; fall back to CTR as directional signal
-                (m.control.clicks, m.control.searches, m.variant.clicks, m.variant.searches)
+                (
+                    m.control.clicks,
+                    m.control.searches,
+                    m.variant.clicks,
+                    m.variant.searches,
+                )
             }
         };
         let prob = stats::beta_binomial_prob_b_greater_a(a_success, a_total, b_success, b_total);
@@ -787,11 +823,13 @@ fn build_results_response(
         } else {
             prob
         };
-        Some(BayesianResponse { prob_variant_better })
+        BayesianResponse {
+            prob_variant_better,
+        }
     });
 
     // SRM is always computed when metrics exist (early warning, independent of gate).
-    let srm = metrics.map_or(false, |m| {
+    let srm = metrics.is_some_and(|m| {
         stats::check_sample_ratio_mismatch(
             m.control.searches,
             m.variant.searches,
@@ -822,12 +860,12 @@ fn build_results_response(
                     stats::welch_t_test(&m.control.per_user_revenues, &m.variant.per_user_revenues)
                 }
                 _ => {
-                    let ctrl_samples = adj_ctrl
-                        .as_deref()
-                        .unwrap_or_else(|| arm_delta_samples(&m.control, &experiment.primary_metric));
-                    let var_samples = adj_var
-                        .as_deref()
-                        .unwrap_or_else(|| arm_delta_samples(&m.variant, &experiment.primary_metric));
+                    let ctrl_samples = adj_ctrl.as_deref().unwrap_or_else(|| {
+                        arm_delta_samples(&m.control, &experiment.primary_metric)
+                    });
+                    let var_samples = adj_var.as_deref().unwrap_or_else(|| {
+                        arm_delta_samples(&m.variant, &experiment.primary_metric)
+                    });
                     stats::delta_method_z_test(ctrl_samples, var_samples)
                 }
             };
@@ -892,22 +930,43 @@ fn build_results_response(
 
         let metric_checks: Vec<(&str, f64, f64, bool)> = vec![
             ("ctr", m.control.ctr, m.variant.ctr, false),
-            ("conversionRate", m.control.conversion_rate, m.variant.conversion_rate, false),
-            ("revenuePerSearch", m.control.revenue_per_search, m.variant.revenue_per_search, false),
-            ("zeroResultRate", m.control.zero_result_rate, m.variant.zero_result_rate, true),
-            ("abandonmentRate", m.control.abandonment_rate, m.variant.abandonment_rate, true),
+            (
+                "conversionRate",
+                m.control.conversion_rate,
+                m.variant.conversion_rate,
+                false,
+            ),
+            (
+                "revenuePerSearch",
+                m.control.revenue_per_search,
+                m.variant.revenue_per_search,
+                false,
+            ),
+            (
+                "zeroResultRate",
+                m.control.zero_result_rate,
+                m.variant.zero_result_rate,
+                true,
+            ),
+            (
+                "abandonmentRate",
+                m.control.abandonment_rate,
+                m.variant.abandonment_rate,
+                true,
+            ),
         ];
 
         metric_checks
             .into_iter()
             .filter_map(|(name, ctrl, var, lower_is_better)| {
-                stats::check_guard_rail(name, ctrl, var, lower_is_better, GUARD_RAIL_THRESHOLD)
-                    .map(|alert| GuardRailAlertResponse {
+                stats::check_guard_rail(name, ctrl, var, lower_is_better, GUARD_RAIL_THRESHOLD).map(
+                    |alert| GuardRailAlertResponse {
                         metric_name: alert.metric_name,
                         control_value: alert.control_value,
                         variant_value: alert.variant_value,
                         drop_pct: alert.drop_pct,
-                    })
+                    },
+                )
             })
             .collect()
     } else {
@@ -2464,8 +2523,8 @@ mod tests {
                 arm_name: "control".to_string(),
                 searches: n,
                 users: 1000,
-                clicks: 2000,       // low CTR
-                conversions: 8000,  // high conversion rate
+                clicks: 2000,      // low CTR
+                conversions: 8000, // high conversion rate
                 revenue: 0.0,
                 zero_result_searches: 0,
                 abandoned_searches: 0,
@@ -2486,8 +2545,8 @@ mod tests {
                 arm_name: "variant".to_string(),
                 searches: n,
                 users: 1000,
-                clicks: 8000,       // high CTR
-                conversions: 2000,  // low conversion rate
+                clicks: 8000,      // high CTR
+                conversions: 2000, // low conversion rate
                 revenue: 0.0,
                 zero_result_searches: 0,
                 abandoned_searches: 0,
@@ -2559,7 +2618,7 @@ mod tests {
                 clicks: 5000,
                 conversions: 0,
                 revenue: 0.0,
-                zero_result_searches: 4000,  // 40% zero-result rate (bad)
+                zero_result_searches: 4000, // 40% zero-result rate (bad)
                 abandoned_searches: 0,
                 ctr: 0.50,
                 conversion_rate: 0.0,
@@ -2581,7 +2640,7 @@ mod tests {
                 clicks: 5000,
                 conversions: 0,
                 revenue: 0.0,
-                zero_result_searches: 1000,  // 10% zero-result rate (good)
+                zero_result_searches: 1000, // 10% zero-result rate (good)
                 abandoned_searches: 0,
                 ctr: 0.50,
                 conversion_rate: 0.0,
@@ -3070,18 +3129,9 @@ mod tests {
             zero_result_rate: 0.0,
             abandonment_rate: 0.0,
             per_user_ctrs: per_user_ctrs.clone(),
-            per_user_conversion_rates: per_user_ctrs
-                .iter()
-                .map(|(_, d)| (0.0, *d))
-                .collect(),
-            per_user_zero_result_rates: per_user_ctrs
-                .iter()
-                .map(|(_, d)| (0.0, *d))
-                .collect(),
-            per_user_abandonment_rates: per_user_ctrs
-                .iter()
-                .map(|(_, d)| (0.0, *d))
-                .collect(),
+            per_user_conversion_rates: per_user_ctrs.iter().map(|(_, d)| (0.0, *d)).collect(),
+            per_user_zero_result_rates: per_user_ctrs.iter().map(|(_, d)| (0.0, *d)).collect(),
+            per_user_abandonment_rates: per_user_ctrs.iter().map(|(_, d)| (0.0, *d)).collect(),
             per_user_revenues: vec![0.0; users as usize],
             per_user_ids,
             mean_click_rank: 0.0,
@@ -3496,9 +3546,13 @@ mod tests {
             "significant": true,
             "promoted": promoted
         });
-        let resp =
-            send_json_request(app, Method::POST, &format!("/2/abtests/{id}/conclude"), conclude)
-                .await;
+        let resp = send_json_request(
+            app,
+            Method::POST,
+            &format!("/2/abtests/{id}/conclude"),
+            conclude,
+        )
+        .await;
         assert_eq!(resp.status(), StatusCode::OK);
         id
     }
@@ -3630,9 +3684,13 @@ mod tests {
             "significant": true,
             "promoted": true
         });
-        let resp =
-            send_json_request(&app, Method::POST, &format!("/2/abtests/{id}/conclude"), conclude)
-                .await;
+        let resp = send_json_request(
+            &app,
+            Method::POST,
+            &format!("/2/abtests/{id}/conclude"),
+            conclude,
+        )
+        .await;
         assert_eq!(resp.status(), StatusCode::OK);
 
         // Main index should now have custom_ranking and remove_words_if_no_results from overrides
@@ -3739,7 +3797,11 @@ mod tests {
         );
         let alert = &response.guard_rail_alerts[0];
         assert_eq!(alert.metric_name, "ctr");
-        assert!(alert.drop_pct > 40.0, "expected ~50% drop, got {}", alert.drop_pct);
+        assert!(
+            alert.drop_pct > 40.0,
+            "expected ~50% drop, got {}",
+            alert.drop_pct
+        );
     }
 
     #[test]
@@ -3996,8 +4058,7 @@ mod tests {
         };
 
         let raw_response = build_results_response(&experiment, Some(&metrics), None);
-        let cuped_response =
-            build_results_response(&experiment, Some(&metrics), Some(&covariates));
+        let cuped_response = build_results_response(&experiment, Some(&metrics), Some(&covariates));
 
         // Safety check should have detected that CUPED doesn't help and fallen back
         assert!(

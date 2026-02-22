@@ -10,6 +10,7 @@ import { API_BASE as API, API_HEADERS as H } from '../fixtures/local-instance';
 import { deleteExperimentsByName } from '../fixtures/api-helpers';
 
 const INDEX = 'e2e-products';
+const EXPERIMENT_INDEX = 'e2e-experiments';
 
 setup('seed test data', async ({ request }) => {
   // 1. Backend must be running
@@ -21,6 +22,7 @@ setup('seed test data', async ({ request }) => {
 
   // 2. Clean slate — delete test index if it exists (ignore 404)
   await request.delete(`${API}/1/indexes/${INDEX}`, { headers: H }).catch(() => {});
+  await request.delete(`${API}/1/indexes/${EXPERIMENT_INDEX}`, { headers: H }).catch(() => {});
 
   // 3. Add documents (creates index implicitly)
   const batchRes = await request.post(`${API}/1/indexes/${INDEX}/batch`, {
@@ -72,11 +74,30 @@ setup('seed test data', async ({ request }) => {
   // 9. Seed a baseline experiment for experiment browser-unmocked tests.
   await deleteExperimentsByName(request, 'e2e-seeded-experiment');
 
+  // Create a dedicated index for experiment UI tests so they don't mutate
+  // the shared search index used by search/browse tests.
+  const expIndexRes = await request.post(`${API}/1/indexes/${EXPERIMENT_INDEX}/batch`, {
+    headers: H,
+    data: {
+      requests: [
+        {
+          action: 'addObject',
+          body: {
+            objectID: 'exp-doc-1',
+            title: 'Experiment Seed Document',
+            category: 'Testing',
+          },
+        },
+      ],
+    },
+  });
+  expect(expIndexRes.ok(), 'Failed to seed experiment test index').toBeTruthy();
+
   const expRes = await request.post(`${API}/2/abtests`, {
     headers: H,
     data: {
       name: 'e2e-seeded-experiment',
-      indexName: INDEX,
+      indexName: EXPERIMENT_INDEX,
       trafficSplit: 0.5,
       control: { name: 'control' },
       variant: {
@@ -88,9 +109,5 @@ setup('seed test data', async ({ request }) => {
     },
   });
   expect(expRes.ok(), 'Failed to create seeded experiment').toBeTruthy();
-  const seededExp = await expRes.json();
-
-  // Start the experiment so it has a running status for detail page tests
-  const startRes = await request.post(`${API}/2/abtests/${seededExp.id}/start`, { headers: H });
-  expect(startRes.ok(), 'Failed to start seeded experiment').toBeTruthy();
+  await expRes.json();
 });

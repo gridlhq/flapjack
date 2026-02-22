@@ -451,7 +451,10 @@ mod tests {
         let mut ev = valid_event();
         ev.interleaving_team = Some("A".to_string());
         let err = ev.validate().unwrap_err();
-        assert!(err.contains("interleavingTeam"), "error should mention field name: {err}");
+        assert!(
+            err.contains("interleavingTeam"),
+            "error should mention field name: {err}"
+        );
     }
 
     #[test]

@@ -31,6 +31,12 @@ impl PausedIndexes {
     }
 }
 
+impl Default for PausedIndexes {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Guard function: returns `Err(FlapjackError::IndexPaused)` if the index is paused.
 /// Call at the top of each write handler to reject writes during migration.
 pub fn check_not_paused(

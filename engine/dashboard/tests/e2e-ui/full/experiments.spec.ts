@@ -13,10 +13,12 @@ import {
   getExperimentByName,
 } from '../../fixtures/api-helpers';
 
+const EXPERIMENT_INDEX = 'e2e-experiments';
+
 function makeExperimentPayload(name: string) {
   return {
     name,
-    indexName: 'e2e-products',
+    indexName: EXPERIMENT_INDEX,
     trafficSplit: 0.5,
     control: { name: 'control' },
     variant: {
@@ -29,6 +31,8 @@ function makeExperimentPayload(name: string) {
     minimumDays: 14,
   };
 }
+
+test.describe.configure({ mode: 'serial' });
 
 test.describe('Experiments Page', () => {
   test('load-and-verify: seeded experiment renders in experiments table', async ({ page, request }) => {
@@ -46,7 +50,7 @@ test.describe('Experiments Page', () => {
       const row = page.getByTestId(`experiment-row-${experiment.id}`);
       await expect(row).toBeVisible({ timeout: 10_000 });
       await expect(row.getByText(experiment.name)).toBeVisible();
-      await expect(row.getByText('e2e-products')).toBeVisible();
+      await expect(row.getByText(EXPERIMENT_INDEX)).toBeVisible();
       await expect(row.getByText('draft')).toBeVisible();
       await expect(row.getByText('CTR')).toBeVisible();
     } finally {
@@ -145,7 +149,7 @@ test.describe('Experiment Detail Page', () => {
         timeout: 10_000,
       });
       await expect(page.getByTestId('experiment-detail-status')).toContainText('running');
-      await expect(page.getByTestId('experiment-detail-index')).toHaveText('e2e-products');
+      await expect(page.getByTestId('experiment-detail-index')).toHaveText(EXPERIMENT_INDEX);
       await expect(page.getByTestId('experiment-detail-primary-metric')).toHaveText('CTR');
     } finally {
       await deleteExperiment(request, experiment.id);
@@ -213,7 +217,7 @@ test.describe('Experiment Detail Page', () => {
       await expect(page.getByTestId('experiment-detail-name')).toBeVisible({ timeout: 10_000 });
 
       // Click the back link
-      await page.getByRole('link', { name: /Experiments/i }).click();
+      await page.getByTestId('experiment-detail-back-link').click();
 
       // Should be back on the list page
       await expect(page.getByTestId('experiments-heading')).toBeVisible({ timeout: 10_000 });
@@ -225,17 +229,27 @@ test.describe('Experiment Detail Page', () => {
   test('seeded running experiment detail page renders from seed data', async ({ page, request }) => {
     // Find the seeded experiment created in seed.setup.ts
     const seeded = await getExperimentByName(request, 'e2e-seeded-experiment');
+    const startedForTest = seeded.status !== 'running';
+    if (startedForTest) {
+      await startExperiment(request, seeded.id);
+    }
 
-    await page.goto(`/experiments/${seeded.id}`);
+    try {
+      await page.goto(`/experiments/${seeded.id}`);
 
-    await expect(page.getByTestId('experiment-detail-name')).toHaveText('e2e-seeded-experiment', {
-      timeout: 10_000,
-    });
-    await expect(page.getByTestId('experiment-detail-status')).toContainText('running');
-    await expect(page.getByTestId('experiment-detail-index')).toHaveText('e2e-products');
-    await expect(page.getByTestId('experiment-detail-primary-metric')).toHaveText('CTR');
-    await expect(page.getByTestId('metric-card-control')).toBeVisible();
-    await expect(page.getByTestId('metric-card-variant')).toBeVisible();
+      await expect(page.getByTestId('experiment-detail-name')).toHaveText('e2e-seeded-experiment', {
+        timeout: 10_000,
+      });
+      await expect(page.getByTestId('experiment-detail-status')).toContainText('running');
+      await expect(page.getByTestId('experiment-detail-index')).toHaveText(EXPERIMENT_INDEX);
+      await expect(page.getByTestId('experiment-detail-primary-metric')).toHaveText('CTR');
+      await expect(page.getByTestId('metric-card-control')).toBeVisible();
+      await expect(page.getByTestId('metric-card-variant')).toBeVisible();
+    } finally {
+      if (startedForTest) {
+        await stopExperiment(request, seeded.id);
+      }
+    }
   });
 
   test('stopped experiment detail shows stopped status and no declare winner', async ({ page, request }) => {

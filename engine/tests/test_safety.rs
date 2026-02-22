@@ -578,6 +578,8 @@ mod memory_safety {
             paused_indexes: flapjack_http::pause_registry::PausedIndexes::new(),
             start_time: std::time::Instant::now(),
             experiment_store: None,
+            #[cfg(feature = "vector-search")]
+            embedder_store: std::sync::Arc::new(flapjack_http::embedder_store::EmbedderStore::new()),
         });
 
         let health_route = Router::new()

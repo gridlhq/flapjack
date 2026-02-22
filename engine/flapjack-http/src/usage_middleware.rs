@@ -111,9 +111,7 @@ pub async fn usage_counting_layer(
             .and_then(|s| s.parse().ok())
             .unwrap_or(0);
 
-        let entry = counters
-            .entry(index_name)
-            .or_insert_with(TenantUsageCounters::new);
+        let entry = counters.entry(index_name).or_default();
 
         if content_length > 0 {
             entry.bytes_in.fetch_add(content_length, Ordering::Relaxed);

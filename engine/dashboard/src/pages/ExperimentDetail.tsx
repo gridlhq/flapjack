@@ -361,8 +361,13 @@ export function ExperimentDetail() {
   }
 
   const totalSearches = results.control.searches + results.variant.searches;
+  const guardRailAlerts = results.guardRailAlerts ?? [];
+  const outlierUsersExcluded = results.outlierUsersExcluded ?? 0;
+  const noStableIdQueries = results.noStableIdQueries ?? 0;
+  const controlMeanClickRank = results.control.meanClickRank ?? 0;
+  const variantMeanClickRank = results.variant.meanClickRank ?? 0;
   const unstableIdFraction = totalSearches > 0
-    ? results.noStableIdQueries / totalSearches
+    ? noStableIdQueries / totalSearches
     : 0;
 
   const canDeclareWinner = results.gate.minimumNReached && results.status !== 'concluded';
@@ -382,7 +387,11 @@ export function ExperimentDetail() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
-            <Link to="/experiments" className="text-sm text-muted-foreground hover:underline">
+            <Link
+              to="/experiments"
+              className="text-sm text-muted-foreground hover:underline"
+              data-testid="experiment-detail-back-link"
+            >
               &larr; Experiments
             </Link>
           </div>
@@ -504,11 +513,11 @@ export function ExperimentDetail() {
       )}
 
       {/* Guard Rail Alerts */}
-      {results.guardRailAlerts.length > 0 && (
+      {guardRailAlerts.length > 0 && (
         <Card className="p-4 border-amber-300 bg-amber-50" data-testid="guard-rail-banner">
           <h3 className="text-sm font-semibold text-amber-900">Guard Rail Alert</h3>
           <div className="mt-2 space-y-1 text-sm text-amber-900">
-            {results.guardRailAlerts.map((alert, index) => (
+            {guardRailAlerts.map((alert, index) => (
               <p key={`${alert.metricName}-${index}`}>
                 <span className="font-semibold">{METRIC_LABELS[alert.metricName] || alert.metricName}</span>
                 {': '}
@@ -622,25 +631,25 @@ export function ExperimentDetail() {
         <div className="mt-3 grid grid-cols-2 gap-4">
           <div>
             <p className="text-xs text-muted-foreground">Control</p>
-            <p className="text-lg font-semibold">{results.control.meanClickRank.toFixed(2)}</p>
+            <p className="text-lg font-semibold">{controlMeanClickRank.toFixed(2)}</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Variant</p>
-            <p className="text-lg font-semibold">{results.variant.meanClickRank.toFixed(2)}</p>
+            <p className="text-lg font-semibold">{variantMeanClickRank.toFixed(2)}</p>
           </div>
         </div>
       </Card>
 
       {/* Notices */}
-      {results.outlierUsersExcluded > 0 && (
+      {outlierUsersExcluded > 0 && (
         <p className="text-xs text-muted-foreground">
-          {results.outlierUsersExcluded} users excluded as outliers (bot-like traffic patterns).
+          {outlierUsersExcluded} users excluded as outliers (bot-like traffic patterns).
         </p>
       )}
 
-      {unstableIdFraction > 0.05 && results.noStableIdQueries > 0 && (
+      {unstableIdFraction > 0.05 && noStableIdQueries > 0 && (
         <p className="text-xs text-muted-foreground">
-          {formatNumber(results.noStableIdQueries)} queries ({(unstableIdFraction * 100).toFixed(1)}%) used unstable IDs and are excluded from arm statistics. Verify your userToken implementation.
+          {formatNumber(noStableIdQueries)} queries ({(unstableIdFraction * 100).toFixed(1)}%) used unstable IDs and are excluded from arm statistics. Verify your userToken implementation.
         </p>
       )}
     </div>

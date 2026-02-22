@@ -84,6 +84,12 @@ impl EmbedderStore {
     }
 }
 
+impl Default for EmbedderStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// LRU cache for query embedding vectors.
 ///
 /// Prevents re-embedding identical queries (typeahead, pagination, repeated searches).

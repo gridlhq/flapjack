@@ -79,21 +79,244 @@ pub(crate) fn murmurhash3_128(data: &[u8], seed: u64) -> (u64, u64) {
 
     #[allow(clippy::identity_op)]
     match tail.len() {
-        15 => { k2 ^= (tail[14] as u64) << 48; k2 ^= (tail[13] as u64) << 40; k2 ^= (tail[12] as u64) << 32; k2 ^= (tail[11] as u64) << 24; k2 ^= (tail[10] as u64) << 16; k2 ^= (tail[9] as u64) << 8; k2 ^= tail[8] as u64; k2 = k2.wrapping_mul(C2); k2 = k2.rotate_left(33); k2 = k2.wrapping_mul(C1); h2 ^= k2; k1 ^= (tail[7] as u64) << 56; k1 ^= (tail[6] as u64) << 48; k1 ^= (tail[5] as u64) << 40; k1 ^= (tail[4] as u64) << 32; k1 ^= (tail[3] as u64) << 24; k1 ^= (tail[2] as u64) << 16; k1 ^= (tail[1] as u64) << 8; k1 ^= tail[0] as u64; k1 = k1.wrapping_mul(C1); k1 = k1.rotate_left(31); k1 = k1.wrapping_mul(C2); h1 ^= k1; }
-        14 => { k2 ^= (tail[13] as u64) << 40; k2 ^= (tail[12] as u64) << 32; k2 ^= (tail[11] as u64) << 24; k2 ^= (tail[10] as u64) << 16; k2 ^= (tail[9] as u64) << 8; k2 ^= tail[8] as u64; k2 = k2.wrapping_mul(C2); k2 = k2.rotate_left(33); k2 = k2.wrapping_mul(C1); h2 ^= k2; k1 ^= (tail[7] as u64) << 56; k1 ^= (tail[6] as u64) << 48; k1 ^= (tail[5] as u64) << 40; k1 ^= (tail[4] as u64) << 32; k1 ^= (tail[3] as u64) << 24; k1 ^= (tail[2] as u64) << 16; k1 ^= (tail[1] as u64) << 8; k1 ^= tail[0] as u64; k1 = k1.wrapping_mul(C1); k1 = k1.rotate_left(31); k1 = k1.wrapping_mul(C2); h1 ^= k1; }
-        13 => { k2 ^= (tail[12] as u64) << 32; k2 ^= (tail[11] as u64) << 24; k2 ^= (tail[10] as u64) << 16; k2 ^= (tail[9] as u64) << 8; k2 ^= tail[8] as u64; k2 = k2.wrapping_mul(C2); k2 = k2.rotate_left(33); k2 = k2.wrapping_mul(C1); h2 ^= k2; k1 ^= (tail[7] as u64) << 56; k1 ^= (tail[6] as u64) << 48; k1 ^= (tail[5] as u64) << 40; k1 ^= (tail[4] as u64) << 32; k1 ^= (tail[3] as u64) << 24; k1 ^= (tail[2] as u64) << 16; k1 ^= (tail[1] as u64) << 8; k1 ^= tail[0] as u64; k1 = k1.wrapping_mul(C1); k1 = k1.rotate_left(31); k1 = k1.wrapping_mul(C2); h1 ^= k1; }
-        12 => { k2 ^= (tail[11] as u64) << 24; k2 ^= (tail[10] as u64) << 16; k2 ^= (tail[9] as u64) << 8; k2 ^= tail[8] as u64; k2 = k2.wrapping_mul(C2); k2 = k2.rotate_left(33); k2 = k2.wrapping_mul(C1); h2 ^= k2; k1 ^= (tail[7] as u64) << 56; k1 ^= (tail[6] as u64) << 48; k1 ^= (tail[5] as u64) << 40; k1 ^= (tail[4] as u64) << 32; k1 ^= (tail[3] as u64) << 24; k1 ^= (tail[2] as u64) << 16; k1 ^= (tail[1] as u64) << 8; k1 ^= tail[0] as u64; k1 = k1.wrapping_mul(C1); k1 = k1.rotate_left(31); k1 = k1.wrapping_mul(C2); h1 ^= k1; }
-        11 => { k2 ^= (tail[10] as u64) << 16; k2 ^= (tail[9] as u64) << 8; k2 ^= tail[8] as u64; k2 = k2.wrapping_mul(C2); k2 = k2.rotate_left(33); k2 = k2.wrapping_mul(C1); h2 ^= k2; k1 ^= (tail[7] as u64) << 56; k1 ^= (tail[6] as u64) << 48; k1 ^= (tail[5] as u64) << 40; k1 ^= (tail[4] as u64) << 32; k1 ^= (tail[3] as u64) << 24; k1 ^= (tail[2] as u64) << 16; k1 ^= (tail[1] as u64) << 8; k1 ^= tail[0] as u64; k1 = k1.wrapping_mul(C1); k1 = k1.rotate_left(31); k1 = k1.wrapping_mul(C2); h1 ^= k1; }
-        10 => { k2 ^= (tail[9] as u64) << 8; k2 ^= tail[8] as u64; k2 = k2.wrapping_mul(C2); k2 = k2.rotate_left(33); k2 = k2.wrapping_mul(C1); h2 ^= k2; k1 ^= (tail[7] as u64) << 56; k1 ^= (tail[6] as u64) << 48; k1 ^= (tail[5] as u64) << 40; k1 ^= (tail[4] as u64) << 32; k1 ^= (tail[3] as u64) << 24; k1 ^= (tail[2] as u64) << 16; k1 ^= (tail[1] as u64) << 8; k1 ^= tail[0] as u64; k1 = k1.wrapping_mul(C1); k1 = k1.rotate_left(31); k1 = k1.wrapping_mul(C2); h1 ^= k1; }
-        9 =>  { k2 ^= tail[8] as u64; k2 = k2.wrapping_mul(C2); k2 = k2.rotate_left(33); k2 = k2.wrapping_mul(C1); h2 ^= k2; k1 ^= (tail[7] as u64) << 56; k1 ^= (tail[6] as u64) << 48; k1 ^= (tail[5] as u64) << 40; k1 ^= (tail[4] as u64) << 32; k1 ^= (tail[3] as u64) << 24; k1 ^= (tail[2] as u64) << 16; k1 ^= (tail[1] as u64) << 8; k1 ^= tail[0] as u64; k1 = k1.wrapping_mul(C1); k1 = k1.rotate_left(31); k1 = k1.wrapping_mul(C2); h1 ^= k1; }
-        8 =>  { k1 ^= (tail[7] as u64) << 56; k1 ^= (tail[6] as u64) << 48; k1 ^= (tail[5] as u64) << 40; k1 ^= (tail[4] as u64) << 32; k1 ^= (tail[3] as u64) << 24; k1 ^= (tail[2] as u64) << 16; k1 ^= (tail[1] as u64) << 8; k1 ^= tail[0] as u64; k1 = k1.wrapping_mul(C1); k1 = k1.rotate_left(31); k1 = k1.wrapping_mul(C2); h1 ^= k1; }
-        7 =>  { k1 ^= (tail[6] as u64) << 48; k1 ^= (tail[5] as u64) << 40; k1 ^= (tail[4] as u64) << 32; k1 ^= (tail[3] as u64) << 24; k1 ^= (tail[2] as u64) << 16; k1 ^= (tail[1] as u64) << 8; k1 ^= tail[0] as u64; k1 = k1.wrapping_mul(C1); k1 = k1.rotate_left(31); k1 = k1.wrapping_mul(C2); h1 ^= k1; }
-        6 =>  { k1 ^= (tail[5] as u64) << 40; k1 ^= (tail[4] as u64) << 32; k1 ^= (tail[3] as u64) << 24; k1 ^= (tail[2] as u64) << 16; k1 ^= (tail[1] as u64) << 8; k1 ^= tail[0] as u64; k1 = k1.wrapping_mul(C1); k1 = k1.rotate_left(31); k1 = k1.wrapping_mul(C2); h1 ^= k1; }
-        5 =>  { k1 ^= (tail[4] as u64) << 32; k1 ^= (tail[3] as u64) << 24; k1 ^= (tail[2] as u64) << 16; k1 ^= (tail[1] as u64) << 8; k1 ^= tail[0] as u64; k1 = k1.wrapping_mul(C1); k1 = k1.rotate_left(31); k1 = k1.wrapping_mul(C2); h1 ^= k1; }
-        4 =>  { k1 ^= (tail[3] as u64) << 24; k1 ^= (tail[2] as u64) << 16; k1 ^= (tail[1] as u64) << 8; k1 ^= tail[0] as u64; k1 = k1.wrapping_mul(C1); k1 = k1.rotate_left(31); k1 = k1.wrapping_mul(C2); h1 ^= k1; }
-        3 =>  { k1 ^= (tail[2] as u64) << 16; k1 ^= (tail[1] as u64) << 8; k1 ^= tail[0] as u64; k1 = k1.wrapping_mul(C1); k1 = k1.rotate_left(31); k1 = k1.wrapping_mul(C2); h1 ^= k1; }
-        2 =>  { k1 ^= (tail[1] as u64) << 8; k1 ^= tail[0] as u64; k1 = k1.wrapping_mul(C1); k1 = k1.rotate_left(31); k1 = k1.wrapping_mul(C2); h1 ^= k1; }
-        1 =>  { k1 ^= tail[0] as u64; k1 = k1.wrapping_mul(C1); k1 = k1.rotate_left(31); k1 = k1.wrapping_mul(C2); h1 ^= k1; }
+        15 => {
+            k2 ^= (tail[14] as u64) << 48;
+            k2 ^= (tail[13] as u64) << 40;
+            k2 ^= (tail[12] as u64) << 32;
+            k2 ^= (tail[11] as u64) << 24;
+            k2 ^= (tail[10] as u64) << 16;
+            k2 ^= (tail[9] as u64) << 8;
+            k2 ^= tail[8] as u64;
+            k2 = k2.wrapping_mul(C2);
+            k2 = k2.rotate_left(33);
+            k2 = k2.wrapping_mul(C1);
+            h2 ^= k2;
+            k1 ^= (tail[7] as u64) << 56;
+            k1 ^= (tail[6] as u64) << 48;
+            k1 ^= (tail[5] as u64) << 40;
+            k1 ^= (tail[4] as u64) << 32;
+            k1 ^= (tail[3] as u64) << 24;
+            k1 ^= (tail[2] as u64) << 16;
+            k1 ^= (tail[1] as u64) << 8;
+            k1 ^= tail[0] as u64;
+            k1 = k1.wrapping_mul(C1);
+            k1 = k1.rotate_left(31);
+            k1 = k1.wrapping_mul(C2);
+            h1 ^= k1;
+        }
+        14 => {
+            k2 ^= (tail[13] as u64) << 40;
+            k2 ^= (tail[12] as u64) << 32;
+            k2 ^= (tail[11] as u64) << 24;
+            k2 ^= (tail[10] as u64) << 16;
+            k2 ^= (tail[9] as u64) << 8;
+            k2 ^= tail[8] as u64;
+            k2 = k2.wrapping_mul(C2);
+            k2 = k2.rotate_left(33);
+            k2 = k2.wrapping_mul(C1);
+            h2 ^= k2;
+            k1 ^= (tail[7] as u64) << 56;
+            k1 ^= (tail[6] as u64) << 48;
+            k1 ^= (tail[5] as u64) << 40;
+            k1 ^= (tail[4] as u64) << 32;
+            k1 ^= (tail[3] as u64) << 24;
+            k1 ^= (tail[2] as u64) << 16;
+            k1 ^= (tail[1] as u64) << 8;
+            k1 ^= tail[0] as u64;
+            k1 = k1.wrapping_mul(C1);
+            k1 = k1.rotate_left(31);
+            k1 = k1.wrapping_mul(C2);
+            h1 ^= k1;
+        }
+        13 => {
+            k2 ^= (tail[12] as u64) << 32;
+            k2 ^= (tail[11] as u64) << 24;
+            k2 ^= (tail[10] as u64) << 16;
+            k2 ^= (tail[9] as u64) << 8;
+            k2 ^= tail[8] as u64;
+            k2 = k2.wrapping_mul(C2);
+            k2 = k2.rotate_left(33);
+            k2 = k2.wrapping_mul(C1);
+            h2 ^= k2;
+            k1 ^= (tail[7] as u64) << 56;
+            k1 ^= (tail[6] as u64) << 48;
+            k1 ^= (tail[5] as u64) << 40;
+            k1 ^= (tail[4] as u64) << 32;
+            k1 ^= (tail[3] as u64) << 24;
+            k1 ^= (tail[2] as u64) << 16;
+            k1 ^= (tail[1] as u64) << 8;
+            k1 ^= tail[0] as u64;
+            k1 = k1.wrapping_mul(C1);
+            k1 = k1.rotate_left(31);
+            k1 = k1.wrapping_mul(C2);
+            h1 ^= k1;
+        }
+        12 => {
+            k2 ^= (tail[11] as u64) << 24;
+            k2 ^= (tail[10] as u64) << 16;
+            k2 ^= (tail[9] as u64) << 8;
+            k2 ^= tail[8] as u64;
+            k2 = k2.wrapping_mul(C2);
+            k2 = k2.rotate_left(33);
+            k2 = k2.wrapping_mul(C1);
+            h2 ^= k2;
+            k1 ^= (tail[7] as u64) << 56;
+            k1 ^= (tail[6] as u64) << 48;
+            k1 ^= (tail[5] as u64) << 40;
+            k1 ^= (tail[4] as u64) << 32;
+            k1 ^= (tail[3] as u64) << 24;
+            k1 ^= (tail[2] as u64) << 16;
+            k1 ^= (tail[1] as u64) << 8;
+            k1 ^= tail[0] as u64;
+            k1 = k1.wrapping_mul(C1);
+            k1 = k1.rotate_left(31);
+            k1 = k1.wrapping_mul(C2);
+            h1 ^= k1;
+        }
+        11 => {
+            k2 ^= (tail[10] as u64) << 16;
+            k2 ^= (tail[9] as u64) << 8;
+            k2 ^= tail[8] as u64;
+            k2 = k2.wrapping_mul(C2);
+            k2 = k2.rotate_left(33);
+            k2 = k2.wrapping_mul(C1);
+            h2 ^= k2;
+            k1 ^= (tail[7] as u64) << 56;
+            k1 ^= (tail[6] as u64) << 48;
+            k1 ^= (tail[5] as u64) << 40;
+            k1 ^= (tail[4] as u64) << 32;
+            k1 ^= (tail[3] as u64) << 24;
+            k1 ^= (tail[2] as u64) << 16;
+            k1 ^= (tail[1] as u64) << 8;
+            k1 ^= tail[0] as u64;
+            k1 = k1.wrapping_mul(C1);
+            k1 = k1.rotate_left(31);
+            k1 = k1.wrapping_mul(C2);
+            h1 ^= k1;
+        }
+        10 => {
+            k2 ^= (tail[9] as u64) << 8;
+            k2 ^= tail[8] as u64;
+            k2 = k2.wrapping_mul(C2);
+            k2 = k2.rotate_left(33);
+            k2 = k2.wrapping_mul(C1);
+            h2 ^= k2;
+            k1 ^= (tail[7] as u64) << 56;
+            k1 ^= (tail[6] as u64) << 48;
+            k1 ^= (tail[5] as u64) << 40;
+            k1 ^= (tail[4] as u64) << 32;
+            k1 ^= (tail[3] as u64) << 24;
+            k1 ^= (tail[2] as u64) << 16;
+            k1 ^= (tail[1] as u64) << 8;
+            k1 ^= tail[0] as u64;
+            k1 = k1.wrapping_mul(C1);
+            k1 = k1.rotate_left(31);
+            k1 = k1.wrapping_mul(C2);
+            h1 ^= k1;
+        }
+        9 => {
+            k2 ^= tail[8] as u64;
+            k2 = k2.wrapping_mul(C2);
+            k2 = k2.rotate_left(33);
+            k2 = k2.wrapping_mul(C1);
+            h2 ^= k2;
+            k1 ^= (tail[7] as u64) << 56;
+            k1 ^= (tail[6] as u64) << 48;
+            k1 ^= (tail[5] as u64) << 40;
+            k1 ^= (tail[4] as u64) << 32;
+            k1 ^= (tail[3] as u64) << 24;
+            k1 ^= (tail[2] as u64) << 16;
+            k1 ^= (tail[1] as u64) << 8;
+            k1 ^= tail[0] as u64;
+            k1 = k1.wrapping_mul(C1);
+            k1 = k1.rotate_left(31);
+            k1 = k1.wrapping_mul(C2);
+            h1 ^= k1;
+        }
+        8 => {
+            k1 ^= (tail[7] as u64) << 56;
+            k1 ^= (tail[6] as u64) << 48;
+            k1 ^= (tail[5] as u64) << 40;
+            k1 ^= (tail[4] as u64) << 32;
+            k1 ^= (tail[3] as u64) << 24;
+            k1 ^= (tail[2] as u64) << 16;
+            k1 ^= (tail[1] as u64) << 8;
+            k1 ^= tail[0] as u64;
+            k1 = k1.wrapping_mul(C1);
+            k1 = k1.rotate_left(31);
+            k1 = k1.wrapping_mul(C2);
+            h1 ^= k1;
+        }
+        7 => {
+            k1 ^= (tail[6] as u64) << 48;
+            k1 ^= (tail[5] as u64) << 40;
+            k1 ^= (tail[4] as u64) << 32;
+            k1 ^= (tail[3] as u64) << 24;
+            k1 ^= (tail[2] as u64) << 16;
+            k1 ^= (tail[1] as u64) << 8;
+            k1 ^= tail[0] as u64;
+            k1 = k1.wrapping_mul(C1);
+            k1 = k1.rotate_left(31);
+            k1 = k1.wrapping_mul(C2);
+            h1 ^= k1;
+        }
+        6 => {
+            k1 ^= (tail[5] as u64) << 40;
+            k1 ^= (tail[4] as u64) << 32;
+            k1 ^= (tail[3] as u64) << 24;
+            k1 ^= (tail[2] as u64) << 16;
+            k1 ^= (tail[1] as u64) << 8;
+            k1 ^= tail[0] as u64;
+            k1 = k1.wrapping_mul(C1);
+            k1 = k1.rotate_left(31);
+            k1 = k1.wrapping_mul(C2);
+            h1 ^= k1;
+        }
+        5 => {
+            k1 ^= (tail[4] as u64) << 32;
+            k1 ^= (tail[3] as u64) << 24;
+            k1 ^= (tail[2] as u64) << 16;
+            k1 ^= (tail[1] as u64) << 8;
+            k1 ^= tail[0] as u64;
+            k1 = k1.wrapping_mul(C1);
+            k1 = k1.rotate_left(31);
+            k1 = k1.wrapping_mul(C2);
+            h1 ^= k1;
+        }
+        4 => {
+            k1 ^= (tail[3] as u64) << 24;
+            k1 ^= (tail[2] as u64) << 16;
+            k1 ^= (tail[1] as u64) << 8;
+            k1 ^= tail[0] as u64;
+            k1 = k1.wrapping_mul(C1);
+            k1 = k1.rotate_left(31);
+            k1 = k1.wrapping_mul(C2);
+            h1 ^= k1;
+        }
+        3 => {
+            k1 ^= (tail[2] as u64) << 16;
+            k1 ^= (tail[1] as u64) << 8;
+            k1 ^= tail[0] as u64;
+            k1 = k1.wrapping_mul(C1);
+            k1 = k1.rotate_left(31);
+            k1 = k1.wrapping_mul(C2);
+            h1 ^= k1;
+        }
+        2 => {
+            k1 ^= (tail[1] as u64) << 8;
+            k1 ^= tail[0] as u64;
+            k1 = k1.wrapping_mul(C1);
+            k1 = k1.rotate_left(31);
+            k1 = k1.wrapping_mul(C2);
+            h1 ^= k1;
+        }
+        1 => {
+            k1 ^= tail[0] as u64;
+            k1 = k1.wrapping_mul(C1);
+            k1 = k1.rotate_left(31);
+            k1 = k1.wrapping_mul(C2);
+            h1 ^= k1;
+        }
         _ => {}
     }
 

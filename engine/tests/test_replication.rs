@@ -57,6 +57,8 @@ async fn test_internal_replicate_no_auth_required() {
         paused_indexes: flapjack_http::pause_registry::PausedIndexes::new(),
         start_time: std::time::Instant::now(),
         experiment_store: None,
+        #[cfg(feature = "vector-search")]
+        embedder_store: std::sync::Arc::new(flapjack_http::embedder_store::EmbedderStore::new()),
     });
 
     let internal = Router::new()
@@ -114,6 +116,8 @@ async fn test_internal_get_ops_no_auth_required() {
         paused_indexes: flapjack_http::pause_registry::PausedIndexes::new(),
         start_time: std::time::Instant::now(),
         experiment_store: None,
+        #[cfg(feature = "vector-search")]
+        embedder_store: std::sync::Arc::new(flapjack_http::embedder_store::EmbedderStore::new()),
     });
 
     let internal = Router::new()
@@ -170,6 +174,8 @@ async fn test_internal_tenant_isolation() {
         paused_indexes: flapjack_http::pause_registry::PausedIndexes::new(),
         start_time: std::time::Instant::now(),
         experiment_store: None,
+        #[cfg(feature = "vector-search")]
+        embedder_store: std::sync::Arc::new(flapjack_http::embedder_store::EmbedderStore::new()),
     });
 
     let internal = Router::new()
@@ -442,6 +448,8 @@ async fn test_replicate_ops_handler_applies_correctly() {
         paused_indexes: flapjack_http::pause_registry::PausedIndexes::new(),
         start_time: std::time::Instant::now(),
         experiment_store: None,
+        #[cfg(feature = "vector-search")]
+        embedder_store: std::sync::Arc::new(flapjack_http::embedder_store::EmbedderStore::new()),
     });
 
     let internal = Router::new()
@@ -522,6 +530,8 @@ async fn test_apply_ops_to_manager_upsert() {
         paused_indexes: flapjack_http::pause_registry::PausedIndexes::new(),
         start_time: std::time::Instant::now(),
         experiment_store: None,
+        #[cfg(feature = "vector-search")]
+        embedder_store: std::sync::Arc::new(flapjack_http::embedder_store::EmbedderStore::new()),
     });
 
     let router = Router::new()
@@ -608,6 +618,8 @@ async fn test_cluster_status_no_replication() {
         paused_indexes: flapjack_http::pause_registry::PausedIndexes::new(),
         start_time: std::time::Instant::now(),
         experiment_store: None,
+        #[cfg(feature = "vector-search")]
+        embedder_store: std::sync::Arc::new(flapjack_http::embedder_store::EmbedderStore::new()),
     });
 
     let router = Router::new()
@@ -675,6 +687,8 @@ async fn test_cluster_status_with_peers() {
         paused_indexes: flapjack_http::pause_registry::PausedIndexes::new(),
         start_time: std::time::Instant::now(),
         experiment_store: None,
+        #[cfg(feature = "vector-search")]
+        embedder_store: std::sync::Arc::new(flapjack_http::embedder_store::EmbedderStore::new()),
     });
 
     let router = Router::new()
@@ -741,6 +755,8 @@ async fn test_startup_catchup_noop_without_replication() {
         paused_indexes: flapjack_http::pause_registry::PausedIndexes::new(),
         start_time: std::time::Instant::now(),
         experiment_store: None,
+        #[cfg(feature = "vector-search")]
+        embedder_store: std::sync::Arc::new(flapjack_http::embedder_store::EmbedderStore::new()),
     });
 
     // Should complete without error and not corrupt existing data
@@ -780,6 +796,8 @@ async fn test_apply_ops_upsert_then_delete_ordering() {
         paused_indexes: flapjack_http::pause_registry::PausedIndexes::new(),
         start_time: std::time::Instant::now(),
         experiment_store: None,
+        #[cfg(feature = "vector-search")]
+        embedder_store: std::sync::Arc::new(flapjack_http::embedder_store::EmbedderStore::new()),
     });
 
     let router = Router::new()
@@ -1449,6 +1467,8 @@ async fn test_periodic_sync_pulls_missed_ops_from_peer() {
         paused_indexes: flapjack_http::pause_registry::PausedIndexes::new(),
         start_time: std::time::Instant::now(),
         experiment_store: None,
+        #[cfg(feature = "vector-search")]
+        embedder_store: std::sync::Arc::new(flapjack_http::embedder_store::EmbedderStore::new()),
     });
 
     // 4. Run periodic catchup — should pull missed ops from node-a
@@ -1547,6 +1567,8 @@ async fn test_periodic_sync_catches_up_multiple_tenants() {
         paused_indexes: flapjack_http::pause_registry::PausedIndexes::new(),
         start_time: std::time::Instant::now(),
         experiment_store: None,
+        #[cfg(feature = "vector-search")]
+        embedder_store: std::sync::Arc::new(flapjack_http::embedder_store::EmbedderStore::new()),
     });
 
     flapjack_http::startup_catchup::run_periodic_catchup(Arc::clone(&state_b)).await;
@@ -1633,6 +1655,8 @@ async fn test_spawn_periodic_sync_fires_within_interval() {
         paused_indexes: flapjack_http::pause_registry::PausedIndexes::new(),
         start_time: std::time::Instant::now(),
         experiment_store: None,
+        #[cfg(feature = "vector-search")]
+        embedder_store: std::sync::Arc::new(flapjack_http::embedder_store::EmbedderStore::new()),
     });
 
     // Spawn periodic sync with 1s interval

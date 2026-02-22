@@ -1140,30 +1140,47 @@ mod tests {
         assert!(alert.is_some(), "expected guard rail to trigger");
         let alert = alert.unwrap();
         assert_eq!(alert.metric_name, "CTR");
-        assert!((alert.drop_pct - 33.33).abs() < 1.0, "drop_pct={}", alert.drop_pct);
+        assert!(
+            (alert.drop_pct - 33.33).abs() < 1.0,
+            "drop_pct={}",
+            alert.drop_pct
+        );
     }
 
     #[test]
     fn guard_rail_does_not_trigger_at_15_pct_drop() {
         // variant CTR = 0.102, control CTR = 0.12 → 15% drop → NOT triggered at 20% threshold
         let alert = check_guard_rail("CTR", 0.12, 0.102, false, 0.20);
-        assert!(alert.is_none(), "15% drop should not trigger 20% guard rail");
+        assert!(
+            alert.is_none(),
+            "15% drop should not trigger 20% guard rail"
+        );
     }
 
     #[test]
     fn guard_rail_does_not_trigger_for_lower_is_better_improvement() {
         // variant zero_result_rate = 0.05, control = 0.10 → variant improved → NOT triggered
         let alert = check_guard_rail("zero_result_rate", 0.10, 0.05, true, 0.20);
-        assert!(alert.is_none(), "improvement on lower-is-better should not trigger");
+        assert!(
+            alert.is_none(),
+            "improvement on lower-is-better should not trigger"
+        );
     }
 
     #[test]
     fn guard_rail_triggers_for_lower_is_better_regression() {
         // variant zero_result_rate = 0.15, control = 0.10 → variant 50% worse → triggered
         let alert = check_guard_rail("zero_result_rate", 0.10, 0.15, true, 0.20);
-        assert!(alert.is_some(), "regression on lower-is-better should trigger");
+        assert!(
+            alert.is_some(),
+            "regression on lower-is-better should trigger"
+        );
         let alert = alert.unwrap();
-        assert!((alert.drop_pct - 50.0).abs() < 1.0, "drop_pct={}", alert.drop_pct);
+        assert!(
+            (alert.drop_pct - 50.0).abs() < 1.0,
+            "drop_pct={}",
+            alert.drop_pct
+        );
     }
 
     #[test]
@@ -1175,7 +1192,11 @@ mod tests {
             "regression from a zero baseline should still trigger guard rail"
         );
         let alert = alert.unwrap();
-        assert!((alert.drop_pct - 100.0).abs() < 1.0, "drop_pct={}", alert.drop_pct);
+        assert!(
+            (alert.drop_pct - 100.0).abs() < 1.0,
+            "drop_pct={}",
+            alert.drop_pct
+        );
     }
 
     // ── CUPED Variance Reduction ────────────────────────────────────
@@ -1203,17 +1224,20 @@ mod tests {
         let adjusted = cuped_adjust(&experiment_values, &user_ids, &covariates);
 
         // Compute variance of original rates vs adjusted rates
-        let original_rates: Vec<f64> = experiment_values
-            .iter()
-            .map(|(c, s)| c / s)
-            .collect();
+        let original_rates: Vec<f64> = experiment_values.iter().map(|(c, s)| c / s).collect();
         let orig_mean = original_rates.iter().sum::<f64>() / original_rates.len() as f64;
-        let orig_var = original_rates.iter().map(|r| (r - orig_mean).powi(2)).sum::<f64>()
+        let orig_var = original_rates
+            .iter()
+            .map(|r| (r - orig_mean).powi(2))
+            .sum::<f64>()
             / (original_rates.len() - 1) as f64;
 
         let adj_rates: Vec<f64> = adjusted.iter().map(|(c, s)| c / s).collect();
         let adj_mean = adj_rates.iter().sum::<f64>() / adj_rates.len() as f64;
-        let adj_var = adj_rates.iter().map(|r| (r - adj_mean).powi(2)).sum::<f64>()
+        let adj_var = adj_rates
+            .iter()
+            .map(|r| (r - adj_mean).powi(2))
+            .sum::<f64>()
             / (adj_rates.len() - 1) as f64;
 
         assert!(
@@ -1226,13 +1250,11 @@ mod tests {
     fn cuped_adjustment_zero_covariance_returns_original() {
         // Uncorrelated data: pre-experiment metric is random noise, not correlated
         let user_ids: Vec<String> = (0..100).map(|i| format!("user_{i}")).collect();
-        let experiment_values: Vec<(f64, f64)> = (0..100)
-            .map(|i| ((i as f64 % 5.0), 10.0))
-            .collect();
+        let experiment_values: Vec<(f64, f64)> =
+            (0..100).map(|i| ((i as f64 % 5.0), 10.0)).collect();
         // Covariates all identical → Var(X) == 0 → theta undefined → return original
-        let covariates: HashMap<String, f64> = (0..100)
-            .map(|i| (format!("user_{i}"), 0.5))
-            .collect();
+        let covariates: HashMap<String, f64> =
+            (0..100).map(|i| (format!("user_{i}"), 0.5)).collect();
 
         let adjusted = cuped_adjust(&experiment_values, &user_ids, &covariates);
 
@@ -1248,9 +1270,8 @@ mod tests {
     #[test]
     fn cuped_adjustment_empty_covariate_returns_original() {
         let user_ids: Vec<String> = (0..50).map(|i| format!("user_{i}")).collect();
-        let experiment_values: Vec<(f64, f64)> = (0..50)
-            .map(|i| ((i as f64 % 3.0), 10.0))
-            .collect();
+        let experiment_values: Vec<(f64, f64)> =
+            (0..50).map(|i| ((i as f64 % 3.0), 10.0)).collect();
         let covariates: HashMap<String, f64> = HashMap::new();
 
         let adjusted = cuped_adjust(&experiment_values, &user_ids, &covariates);
@@ -1339,7 +1360,11 @@ mod tests {
             (1, 0), // query 3: A=1, B=0 → A wins
         ];
         let result = compute_preference_score(&per_query);
-        assert!(result.delta_ab < 0.0, "variant preferred → negative ΔAB, got {}", result.delta_ab);
+        assert!(
+            result.delta_ab < 0.0,
+            "variant preferred → negative ΔAB, got {}",
+            result.delta_ab
+        );
         assert_eq!(result.wins_a, 1);
         assert_eq!(result.wins_b, 3);
         assert_eq!(result.ties, 0);
@@ -1354,7 +1379,11 @@ mod tests {
             (1, 2), // B wins
         ];
         let result = compute_preference_score(&per_query);
-        assert!(result.delta_ab > 0.0, "control preferred → positive ΔAB, got {}", result.delta_ab);
+        assert!(
+            result.delta_ab > 0.0,
+            "control preferred → positive ΔAB, got {}",
+            result.delta_ab
+        );
         assert_eq!(result.wins_a, 2);
         assert_eq!(result.wins_b, 1);
         assert_eq!(result.ties, 0);
@@ -1372,7 +1401,11 @@ mod tests {
         assert_eq!(result.wins_b, 1);
         assert_eq!(result.ties, 1);
         // ΔAB = (1-1)/(1+1+1) = 0
-        assert!((result.delta_ab).abs() < 1e-10, "equal wins → ΔAB ≈ 0, got {}", result.delta_ab);
+        assert!(
+            (result.delta_ab).abs() < 1e-10,
+            "equal wins → ΔAB ≈ 0, got {}",
+            result.delta_ab
+        );
     }
 
     #[test]
@@ -1386,7 +1419,11 @@ mod tests {
             per_query.push((3, 0)); // A wins
         }
         let result = compute_preference_score(&per_query);
-        assert!(result.p_value < 0.05, "25 vs 5 wins should be significant, p={}", result.p_value);
+        assert!(
+            result.p_value < 0.05,
+            "25 vs 5 wins should be significant, p={}",
+            result.p_value
+        );
     }
 
     #[test]
@@ -1400,7 +1437,11 @@ mod tests {
             per_query.push((3, 0)); // A wins
         }
         let result = compute_preference_score(&per_query);
-        assert!(result.p_value >= 0.05, "6 vs 4 wins should not be significant, p={}", result.p_value);
+        assert!(
+            result.p_value >= 0.05,
+            "6 vs 4 wins should not be significant, p={}",
+            result.p_value
+        );
     }
 
     #[test]
@@ -1419,7 +1460,11 @@ mod tests {
         let result = compute_preference_score(&per_query);
         assert_eq!(result.ties, 3);
         // Sign test uses only 22 non-tied queries (20 + 2), not 25
-        assert!(result.p_value < 0.05, "20 vs 2 wins should be significant, p={}", result.p_value);
+        assert!(
+            result.p_value < 0.05,
+            "20 vs 2 wins should be significant, p={}",
+            result.p_value
+        );
         assert_eq!(result.wins_a + result.wins_b, 22);
     }
 

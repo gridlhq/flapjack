@@ -179,10 +179,16 @@ fn aggregate_experiment_metrics(
                             // Collect min position for MeanClickRank diagnostic
                             if let Some(ref pos_str) = ev.positions {
                                 if let Ok(positions) = serde_json::from_str::<Vec<i64>>(pos_str) {
-                                    if let Some(min_pos) =
-                                        positions.into_iter().filter_map(|p| {
-                                            if p > 0 { u32::try_from(p).ok() } else { None }
-                                        }).min()
+                                    if let Some(min_pos) = positions
+                                        .into_iter()
+                                        .filter_map(|p| {
+                                            if p > 0 {
+                                                u32::try_from(p).ok()
+                                            } else {
+                                                None
+                                            }
+                                        })
+                                        .min()
                                     {
                                         agg.click_min_positions.push(min_pos);
                                     }
@@ -1394,12 +1400,8 @@ mod tests {
     #[test]
     fn mean_click_rank_uses_min_position() {
         // Multi-object click with positions [5, 2] → min is 2 (highest ranked)
-        let searches = vec![
-            search("u1", "control", Some("q1"), 5, "user_token"),
-        ];
-        let events = vec![
-            click_at("q1", &[5, 2]),
-        ];
+        let searches = vec![search("u1", "control", Some("q1"), 5, "user_token")];
+        let events = vec![click_at("q1", &[5, 2])];
 
         let m = aggregate_experiment_metrics(&searches, &events, None);
 
@@ -1448,9 +1450,7 @@ mod tests {
     #[test]
     fn mean_click_rank_zero_clicks_returns_zero() {
         // No clicks → 0.0
-        let searches = vec![
-            search("u1", "control", Some("q1"), 5, "user_token"),
-        ];
+        let searches = vec![search("u1", "control", Some("q1"), 5, "user_token")];
         let events: Vec<EventRow> = vec![];
 
         let m = aggregate_experiment_metrics(&searches, &events, None);
@@ -1520,16 +1520,23 @@ mod tests {
         let covariates = compute_pre_experiment_covariates(&searches, &events, &PrimaryMetric::Ctr);
 
         assert_eq!(covariates.len(), 2);
-        assert!((covariates["u1"] - 0.5).abs() < 0.001, "u1 CTR should be 0.5, got {}", covariates["u1"]);
-        assert!((covariates["u2"] - 0.0).abs() < 0.001, "u2 CTR should be 0.0, got {}", covariates["u2"]);
+        assert!(
+            (covariates["u1"] - 0.5).abs() < 0.001,
+            "u1 CTR should be 0.5, got {}",
+            covariates["u1"]
+        );
+        assert!(
+            (covariates["u2"] - 0.0).abs() < 0.001,
+            "u2 CTR should be 0.0, got {}",
+            covariates["u2"]
+        );
     }
 
     #[test]
     fn pre_experiment_covariate_empty_searches_returns_empty() {
         use crate::experiments::config::PrimaryMetric;
 
-        let covariates =
-            compute_pre_experiment_covariates(&[], &[], &PrimaryMetric::Ctr);
+        let covariates = compute_pre_experiment_covariates(&[], &[], &PrimaryMetric::Ctr);
         assert!(covariates.is_empty());
     }
 
@@ -1636,7 +1643,11 @@ mod tests {
                     .map(|(_, event_type, _)| Some((*event_type).to_string()))
                     .collect::<Vec<Option<String>>>(),
             );
-            let values = Float64Array::from(rows.iter().map(|(_, _, value)| *value).collect::<Vec<Option<f64>>>());
+            let values = Float64Array::from(
+                rows.iter()
+                    .map(|(_, _, value)| *value)
+                    .collect::<Vec<Option<f64>>>(),
+            );
 
             let batch = RecordBatch::try_new(
                 schema.clone(),
@@ -1764,8 +1775,14 @@ mod tests {
             assert_eq!(m.control.clicks, 1);
             assert_eq!(m.variant.clicks, 1);
             // Legacy events have no positions column → mean_click_rank should be 0.0
-            assert_eq!(m.control.mean_click_rank, 0.0, "legacy events should have zero mean_click_rank");
-            assert_eq!(m.variant.mean_click_rank, 0.0, "legacy events should have zero mean_click_rank");
+            assert_eq!(
+                m.control.mean_click_rank, 0.0,
+                "legacy events should have zero mean_click_rank"
+            );
+            assert_eq!(
+                m.variant.mean_click_rank, 0.0,
+                "legacy events should have zero mean_click_rank"
+            );
         }
     }
 }

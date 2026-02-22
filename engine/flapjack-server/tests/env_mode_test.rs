@@ -166,9 +166,9 @@ fn spawn_pipe_reader<R: Read + Send + 'static>(reader: R, tx: mpsc::Sender<Strin
                 Ok(0) => break,
                 Ok(_) => {
                     let trimmed = line.trim_end_matches(['\r', '\n']).to_string();
-                    if tx.send(trimmed).is_err() {
-                        break;
-                    }
+                    // Keep draining child output even if the startup receiver is dropped,
+                    // otherwise the child can block on a full stdout/stderr pipe.
+                    let _ = tx.send(trimmed);
                 }
                 Err(_) => break,
             }

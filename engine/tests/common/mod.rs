@@ -39,6 +39,8 @@ pub async fn spawn_server_with_key(admin_key: Option<&str>) -> (String, TempDir)
         usage_counters: std::sync::Arc::new(dashmap::DashMap::new()),
         paused_indexes: flapjack_http::pause_registry::PausedIndexes::new(),
         start_time: std::time::Instant::now(),
+        #[cfg(feature = "vector-search")]
+        embedder_store: std::sync::Arc::new(flapjack_http::embedder_store::EmbedderStore::new()),
     });
 
     let key_routes = if let Some(ref ks) = key_store {
@@ -296,6 +298,8 @@ pub async fn spawn_server_with_qs_analytics(source_index_name: &str) -> (String,
         usage_counters: std::sync::Arc::new(dashmap::DashMap::new()),
         paused_indexes: flapjack_http::pause_registry::PausedIndexes::new(),
         start_time: std::time::Instant::now(),
+        #[cfg(feature = "vector-search")]
+        embedder_store: std::sync::Arc::new(flapjack_http::embedder_store::EmbedderStore::new()),
     });
 
     let health_route = Router::new()
@@ -518,6 +522,8 @@ pub async fn spawn_server_with_internal(_node_id: &str) -> (String, TempDir) {
         usage_counters: std::sync::Arc::new(dashmap::DashMap::new()),
         paused_indexes: flapjack_http::pause_registry::PausedIndexes::new(),
         start_time: std::time::Instant::now(),
+        #[cfg(feature = "vector-search")]
+        embedder_store: std::sync::Arc::new(flapjack_http::embedder_store::EmbedderStore::new()),
     });
 
     let app = build_node_router(state);
@@ -604,6 +610,8 @@ pub async fn spawn_replication_pair(
         usage_counters: std::sync::Arc::new(dashmap::DashMap::new()),
         paused_indexes: flapjack_http::pause_registry::PausedIndexes::new(),
         start_time: std::time::Instant::now(),
+        #[cfg(feature = "vector-search")]
+        embedder_store: std::sync::Arc::new(flapjack_http::embedder_store::EmbedderStore::new()),
     });
     let state_b = Arc::new(flapjack_http::handlers::AppState {
         manager: flapjack::IndexManager::new(tmp_b.path()),
@@ -616,6 +624,8 @@ pub async fn spawn_replication_pair(
         usage_counters: std::sync::Arc::new(dashmap::DashMap::new()),
         paused_indexes: flapjack_http::pause_registry::PausedIndexes::new(),
         start_time: std::time::Instant::now(),
+        #[cfg(feature = "vector-search")]
+        embedder_store: std::sync::Arc::new(flapjack_http::embedder_store::EmbedderStore::new()),
     });
 
     let app_a = build_node_router(state_a);

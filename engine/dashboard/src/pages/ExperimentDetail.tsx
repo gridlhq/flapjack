@@ -83,9 +83,13 @@ function getPrimaryMetricValue(arm: ArmResultsResponse, metric: string): number 
   switch (metric) {
     case 'ctr': return arm.ctr;
     case 'conversionRate': return arm.conversionRate;
+    case 'conversion_rate': return arm.conversionRate;
     case 'revenuePerSearch': return arm.revenuePerSearch;
+    case 'revenue_per_search': return arm.revenuePerSearch;
     case 'zeroResultRate': return arm.zeroResultRate;
+    case 'zero_result_rate': return arm.zeroResultRate;
     case 'abandonmentRate': return arm.abandonmentRate;
+    case 'abandonment_rate': return arm.abandonmentRate;
     default: return arm.ctr;
   }
 }

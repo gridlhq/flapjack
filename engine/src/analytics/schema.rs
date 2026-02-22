@@ -51,6 +51,8 @@ pub struct InsightEvent {
     pub value: Option<f64>,
     #[serde(default)]
     pub currency: Option<String>,
+    #[serde(default)]
+    pub interleaving_team: Option<String>,
 }
 
 impl InsightEvent {
@@ -101,6 +103,15 @@ impl InsightEvent {
                 return Err("timestamp must be within the last 4 days".to_string());
             }
         }
+        // Validate interleaving team label matches search response values
+        if let Some(ref team) = self.interleaving_team {
+            if team != "control" && team != "variant" {
+                return Err(format!(
+                    "interleavingTeam must be \"control\" or \"variant\", got \"{}\"",
+                    team
+                ));
+            }
+        }
         Ok(())
     }
 }
@@ -145,6 +156,7 @@ pub fn insight_event_schema() -> Arc<Schema> {
         Field::new("positions", DataType::Utf8, true),   // JSON array string
         Field::new("value", DataType::Float64, true),
         Field::new("currency", DataType::Utf8, true),
+        Field::new("interleaving_team", DataType::Utf8, true),
     ]))
 }
 
@@ -167,6 +179,7 @@ mod tests {
             timestamp: None,
             value: None,
             currency: None,
+            interleaving_team: None,
         }
     }
 
@@ -385,9 +398,60 @@ mod tests {
     }
 
     #[test]
-    fn insight_event_schema_has_12_fields() {
+    fn insight_event_schema_has_13_fields() {
         let schema = insight_event_schema();
-        assert_eq!(schema.fields().len(), 12);
+        assert_eq!(schema.fields().len(), 13);
+    }
+
+    #[test]
+    fn insight_event_schema_has_interleaving_team_field() {
+        let schema = insight_event_schema();
+        let field = schema.field_with_name("interleaving_team").unwrap();
+        assert!(field.is_nullable());
+        assert_eq!(*field.data_type(), DataType::Utf8);
+    }
+
+    #[test]
+    fn insight_event_deserializes_interleaving_team() {
+        let json = r#"{"eventType":"click","eventName":"Clicked","index":"products","userToken":"user1","objectIDs":["obj1"],"interleavingTeam":"control"}"#;
+        let event: InsightEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(event.interleaving_team.as_deref(), Some("control"));
+    }
+
+    #[test]
+    fn insight_event_without_interleaving_team_defaults_to_none() {
+        let json = r#"{"eventType":"click","eventName":"Clicked","index":"products","userToken":"user1","objectIDs":["obj1"]}"#;
+        let event: InsightEvent = serde_json::from_str(json).unwrap();
+        assert!(event.interleaving_team.is_none());
+    }
+
+    #[test]
+    fn validate_interleaving_team_control_accepted() {
+        let mut ev = valid_event();
+        ev.interleaving_team = Some("control".to_string());
+        assert!(ev.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_interleaving_team_variant_accepted() {
+        let mut ev = valid_event();
+        ev.interleaving_team = Some("variant".to_string());
+        assert!(ev.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_interleaving_team_none_accepted() {
+        let ev = valid_event();
+        assert!(ev.interleaving_team.is_none());
+        assert!(ev.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_interleaving_team_rejects_arbitrary_value() {
+        let mut ev = valid_event();
+        ev.interleaving_team = Some("A".to_string());
+        let err = ev.validate().unwrap_err();
+        assert!(err.contains("interleavingTeam"), "error should mention field name: {err}");
     }
 
     #[test]

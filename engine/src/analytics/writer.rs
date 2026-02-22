@@ -196,6 +196,7 @@ pub(crate) fn insight_events_to_batch(
     let mut positions = StringBuilder::with_capacity(len, len * 20);
     let mut value = Float64Builder::with_capacity(len);
     let mut currency = StringBuilder::with_capacity(len, len * 3);
+    let mut interleaving_team = StringBuilder::with_capacity(len, len * 2);
 
     for e in events {
         let ts = e
@@ -235,6 +236,10 @@ pub(crate) fn insight_events_to_batch(
             Some(c) => currency.append_value(c),
             None => currency.append_null(),
         }
+        match &e.interleaving_team {
+            Some(t) => interleaving_team.append_value(t),
+            None => interleaving_team.append_null(),
+        }
     }
 
     let columns: Vec<ArrayRef> = vec![
@@ -250,6 +255,7 @@ pub(crate) fn insight_events_to_batch(
         Arc::new(positions.finish()),
         Arc::new(value.finish()),
         Arc::new(currency.finish()),
+        Arc::new(interleaving_team.finish()),
     ];
 
     RecordBatch::try_new(schema.clone(), columns).map_err(|e| format!("RecordBatch error: {}", e))

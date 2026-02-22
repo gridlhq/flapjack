@@ -5,19 +5,14 @@ use serde::{Deserialize, Serialize};
 use super::VectorError;
 
 /// Source type for an embedder configuration.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum EmbedderSource {
     OpenAi,
     Rest,
+    #[default]
     UserProvided,
     FastEmbed,
-}
-
-impl Default for EmbedderSource {
-    fn default() -> Self {
-        Self::UserProvided
-    }
 }
 
 /// Configuration for creating an embedder.
@@ -179,8 +174,7 @@ impl EmbedderFingerprint {
     pub fn save(&self, dir: &std::path::Path) -> Result<(), std::io::Error> {
         std::fs::create_dir_all(dir)?;
         let path = dir.join("fingerprint.json");
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let json = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
         std::fs::write(&path, json)
     }
 

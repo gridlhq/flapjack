@@ -36,6 +36,8 @@ pub struct CreateExperimentRequest {
     pub minimum_days: Option<u32>,
     #[serde(default)]
     pub winsorization_cap: Option<f64>,
+    #[serde(default)]
+    pub interleaving: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -223,6 +225,7 @@ pub async fn create_experiment(
         minimum_days: body.minimum_days.unwrap_or(DEFAULT_MINIMUM_DAYS),
         winsorization_cap: body.winsorization_cap,
         conclusion: None,
+        interleaving: body.interleaving,
     };
 
     match store.create(experiment) {
@@ -319,6 +322,7 @@ pub async fn update_experiment(
         minimum_days: body.minimum_days.unwrap_or(existing.minimum_days),
         winsorization_cap: body.winsorization_cap.or(existing.winsorization_cap),
         conclusion: existing.conclusion,
+        interleaving: body.interleaving.or(existing.interleaving),
     };
 
     match store.update(updated) {
@@ -1779,6 +1783,7 @@ mod tests {
                     timestamp: Some(chrono::Utc::now().timestamp_millis()),
                     value: None,
                     currency: None,
+                    interleaving_team: None,
                 });
             }
         }
@@ -2033,6 +2038,7 @@ mod tests {
             minimum_days: 14,
             winsorization_cap: None,
             conclusion: None,
+            interleaving: None,
         };
 
         let metrics = metrics::ExperimentMetrics {
@@ -2123,6 +2129,7 @@ mod tests {
             minimum_days: 14,
             winsorization_cap: None,
             conclusion: None,
+            interleaving: None,
         };
 
         // Heavily skewed split: 4500 vs 5500 at 50/50 → SRM should fire
@@ -2224,6 +2231,7 @@ mod tests {
             minimum_days: 1,
             winsorization_cap: None,
             conclusion: None,
+            interleaving: None,
         };
 
         // High baseline CTR (0.5) keeps required_sample_size low (~13k per arm).
@@ -2337,6 +2345,7 @@ mod tests {
             minimum_days: 1,
             winsorization_cap: None,
             conclusion: None,
+            interleaving: None,
         };
 
         let users = 3000;
@@ -2444,6 +2453,7 @@ mod tests {
             minimum_days: 1,
             winsorization_cap: None,
             conclusion: None,
+            interleaving: None,
         };
 
         let n = 10_000_u64;
@@ -2537,6 +2547,7 @@ mod tests {
             minimum_days: 1,
             winsorization_cap: None,
             conclusion: None,
+            interleaving: None,
         };
 
         let n = 10_000_u64;
@@ -2627,6 +2638,7 @@ mod tests {
             minimum_days: 1,
             winsorization_cap: None,
             conclusion: None,
+            interleaving: None,
         };
 
         let users = 3000;
@@ -2735,6 +2747,7 @@ mod tests {
             minimum_days: 1,
             winsorization_cap: None,
             conclusion: None,
+            interleaving: None,
         };
 
         let users = 3000;
@@ -2844,6 +2857,7 @@ mod tests {
             minimum_days: 14,
             winsorization_cap: None,
             conclusion: None,
+            interleaving: None,
         };
 
         let metrics = metrics::ExperimentMetrics {
@@ -2940,6 +2954,7 @@ mod tests {
             minimum_days: 14,
             winsorization_cap: None,
             conclusion: None,
+            interleaving: None,
         };
 
         // High baseline CTR (0.5) keeps required_sample_size low (~13k per arm).
@@ -3100,6 +3115,7 @@ mod tests {
             minimum_days: 1,
             winsorization_cap: None,
             conclusion: None,
+            interleaving: None,
         };
 
         let users = 200;
@@ -3186,6 +3202,7 @@ mod tests {
             minimum_days: 1,
             winsorization_cap: None,
             conclusion: None,
+            interleaving: None,
         };
 
         let users = 200;
@@ -3275,6 +3292,7 @@ mod tests {
             minimum_days: 1,
             winsorization_cap: None,
             conclusion: None,
+            interleaving: None,
         };
 
         let users = 200;
@@ -3661,6 +3679,7 @@ mod tests {
             minimum_days: 14,
             winsorization_cap: None,
             conclusion: None,
+            interleaving: None,
         };
 
         let metrics = metrics::ExperimentMetrics {
@@ -3750,6 +3769,7 @@ mod tests {
             minimum_days: 14,
             winsorization_cap: None,
             conclusion: None,
+            interleaving: None,
         };
 
         let metrics = metrics::ExperimentMetrics {
@@ -3838,6 +3858,7 @@ mod tests {
             minimum_days: 14,
             winsorization_cap: None,
             conclusion: None,
+            interleaving: None,
         };
 
         let metrics = metrics::ExperimentMetrics {
@@ -3907,10 +3928,9 @@ mod tests {
     }
 
     #[test]
-    fn build_results_response_cuped_safety_fallback_when_variance_increases() {
-        // Construct data where the covariate is uncorrelated noise, so CUPED
-        // adjustment adds variance rather than reducing it. The safety check
-        // should detect adj_var >= raw_var and fall back to raw values.
+    fn build_results_response_cuped_safety_fallback_when_adjusted_variance_not_lower() {
+        // Construct data where CUPED cannot lower variance (adj_var >= raw_var).
+        // The safety check should fall back to raw values.
         let now = chrono::Utc::now().timestamp_millis();
         let started_at = now - (3 * 24 * 60 * 60 * 1000);
         let experiment = Experiment {
@@ -3936,6 +3956,7 @@ mod tests {
             minimum_days: 1,
             winsorization_cap: None,
             conclusion: None,
+            interleaving: None,
         };
 
         let users = 200;
@@ -3947,10 +3968,8 @@ mod tests {
         let mut variant_samples = Vec::with_capacity(users);
         let mut covariates = std::collections::HashMap::new();
 
-        // Very tight, low-variance outcome data with random uncorrelated covariates.
-        // The covariate values are large-magnitude noise that has zero correlation
-        // with the outcome, so CUPED theta ≈ 0 but the adjustment introduces
-        // variance from the (X - mean(X)) term, making adj_var >= raw_var.
+        // Very tight, low-variance outcome data with uncorrelated covariates.
+        // Theta is approximately zero, so adjusted variance is not lower than raw.
         for i in 0..users {
             // Uniform outcome with near-zero variance
             let clicks = 50.0;

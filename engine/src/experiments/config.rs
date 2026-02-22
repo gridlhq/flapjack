@@ -18,6 +18,8 @@ pub struct Experiment {
     pub minimum_days: u32,
     pub winsorization_cap: Option<f64>,
     pub conclusion: Option<ExperimentConclusion>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub interleaving: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -112,6 +114,12 @@ impl Experiment {
                     .to_string(),
             ));
         }
+        if self.interleaving == Some(true) && !has_index_name {
+            return Err(ExperimentError::InvalidConfig(
+                "interleaving requires Mode B (variant indexName) — two separate ranked lists needed"
+                    .to_string(),
+            ));
+        }
         Ok(())
     }
 }
@@ -147,6 +155,7 @@ mod tests {
             minimum_days: 14,
             winsorization_cap: None,
             conclusion: None,
+            interleaving: None,
         }
     }
 
@@ -251,5 +260,51 @@ mod tests {
             serde_json::to_string(&ExperimentStatus::Running).unwrap(),
             "\"running\""
         );
+    }
+
+    #[test]
+    fn validate_interleaving_variant_requires_index_name() {
+        // Interleaving with Mode B (index_name) should pass validation
+        let mut e = valid_experiment();
+        e.interleaving = Some(true);
+        e.variant.query_overrides = None;
+        e.variant.index_name = Some("products_v2".to_string());
+        assert!(e.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_interleaving_rejects_query_overrides_only() {
+        // Interleaving with Mode A (query overrides) must be rejected —
+        // can't produce two separate ranked lists from a single index
+        let mut e = valid_experiment();
+        e.interleaving = Some(true);
+        // variant has query_overrides (Mode A), no index_name
+        assert!(e.validate().is_err());
+    }
+
+    #[test]
+    fn validate_interleaving_false_allows_mode_a() {
+        // Non-interleaving experiments still work with Mode A
+        let mut e = valid_experiment();
+        e.interleaving = Some(false);
+        assert!(e.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_interleaving_none_defaults_to_non_interleaving() {
+        // interleaving: None behaves like false
+        let mut e = valid_experiment();
+        e.interleaving = None;
+        assert!(e.validate().is_ok());
+    }
+
+    #[test]
+    fn interleaving_field_serializes_to_camel_case() {
+        let mut e = valid_experiment();
+        e.interleaving = Some(true);
+        e.variant.query_overrides = None;
+        e.variant.index_name = Some("products_v2".to_string());
+        let json = serde_json::to_string(&e).unwrap();
+        assert!(json.contains("\"interleaving\":true"));
     }
 }

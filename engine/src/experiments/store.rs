@@ -38,7 +38,7 @@ impl ExperimentStore {
                 && !path
                     .file_name()
                     .and_then(|n| n.to_str())
-                    .map_or(false, |n| n.ends_with(".tmp"))
+                    .is_some_and(|n| n.ends_with(".tmp"))
             {
                 let data = std::fs::read_to_string(&path)?;
                 let experiment: Experiment = serde_json::from_str(&data)?;
@@ -234,6 +234,7 @@ mod tests {
             minimum_days: 14,
             winsorization_cap: None,
             conclusion: None,
+            interleaving: None,
         }
     }
 

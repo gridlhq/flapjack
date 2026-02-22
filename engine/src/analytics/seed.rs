@@ -400,6 +400,7 @@ pub fn seed_analytics(
                     timestamp: Some(ts + rng.range(500, 5000) as i64), // Click 0.5-5s after search
                     value: None,
                     currency: None,
+                    interleaving_team: None,
                 });
                 total_clicks += 1;
 
@@ -419,6 +420,7 @@ pub fn seed_analytics(
                         timestamp: Some(ts + rng.range(10_000, 120_000) as i64),
                         value: Some((rng.range(500, 15000) as f64) / 100.0),
                         currency: Some("USD".to_string()),
+                        interleaving_team: None,
                     });
                     total_conversions += 1;
                 }

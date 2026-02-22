@@ -148,6 +148,7 @@ mod tests {
             minimum_days: 14,
             winsorization_cap: None,
             conclusion: None,
+            interleaving: None,
         }
     }
 

@@ -110,6 +110,7 @@ fn make_insight(event_type: &str, index: &str) -> InsightEvent {
         timestamp: Some(chrono::Utc::now().timestamp_millis()),
         value: None,
         currency: None,
+        interleaving_team: None,
     }
 }
 
@@ -132,6 +133,7 @@ fn make_insight_ev(event_type: &str, index: &str, query_id: Option<&str>) -> Ins
         timestamp: Some(chrono::Utc::now().timestamp_millis()),
         value: None,
         currency: None,
+        interleaving_team: None,
     }
 }
 
@@ -743,6 +745,94 @@ async fn cleanup_no_analytics_data() {
     std::fs::create_dir_all(index_dir.path().join("products")).unwrap();
     let removed = run_cleanup(&engine, index_dir.path());
     assert!(removed.is_empty());
+}
+
+#[test]
+fn insight_event_interleaving_team_roundtrip() {
+    use crate::analytics::schema::insight_event_schema;
+    use arrow::array::Array;
+    use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+    use std::fs::File;
+
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path().join("events");
+    let mut event = make_insight_ev("click", "products", Some(&"a".repeat(32)));
+    event.interleaving_team = Some("control".to_string());
+    writer::flush_insight_events(&[event], &dir).unwrap();
+
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let partition_dir = dir.join(format!("date={}", today));
+    let parquet_file = std::fs::read_dir(&partition_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .find(|e| {
+            e.path()
+                .extension()
+                .map(|x| x == "parquet")
+                .unwrap_or(false)
+        })
+        .unwrap();
+    let file = File::open(parquet_file.path()).unwrap();
+    let reader = ParquetRecordBatchReaderBuilder::try_new(file)
+        .unwrap()
+        .build()
+        .unwrap();
+    let batches: Vec<_> = reader.collect::<Result<_, _>>().unwrap();
+    assert_eq!(batches.len(), 1);
+    let batch = &batches[0];
+
+    let schema = insight_event_schema();
+    let team_idx = schema.index_of("interleaving_team").unwrap();
+    let team_col = batch
+        .column(team_idx)
+        .as_any()
+        .downcast_ref::<arrow::array::StringArray>()
+        .unwrap();
+    assert_eq!(team_col.value(0), "control");
+}
+
+#[test]
+fn insight_event_null_interleaving_team_roundtrip() {
+    use crate::analytics::schema::insight_event_schema;
+    use arrow::array::Array;
+    use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+    use std::fs::File;
+
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path().join("events");
+    let event = make_insight_ev("click", "products", Some(&"a".repeat(32)));
+    // interleaving_team is None by default
+    writer::flush_insight_events(&[event], &dir).unwrap();
+
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let partition_dir = dir.join(format!("date={}", today));
+    let parquet_file = std::fs::read_dir(&partition_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .find(|e| {
+            e.path()
+                .extension()
+                .map(|x| x == "parquet")
+                .unwrap_or(false)
+        })
+        .unwrap();
+    let file = File::open(parquet_file.path()).unwrap();
+    let reader = ParquetRecordBatchReaderBuilder::try_new(file)
+        .unwrap()
+        .build()
+        .unwrap();
+    let batches: Vec<_> = reader.collect::<Result<_, _>>().unwrap();
+    assert_eq!(batches.len(), 1);
+    let batch = &batches[0];
+
+    let schema = insight_event_schema();
+    let team_idx = schema.index_of("interleaving_team").unwrap();
+    let team_col = batch
+        .column(team_idx)
+        .as_any()
+        .downcast_ref::<arrow::array::StringArray>()
+        .unwrap();
+    assert!(team_col.is_null(0), "interleaving_team should be null when not set");
 }
 
 #[tokio::test]

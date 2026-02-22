@@ -356,6 +356,8 @@ async fn smoke_internal_endpoint() {
         paused_indexes: flapjack_http::pause_registry::PausedIndexes::new(),
         start_time: std::time::Instant::now(),
         experiment_store: None,
+        #[cfg(feature = "vector-search")]
+        embedder_store: std::sync::Arc::new(flapjack_http::embedder_store::EmbedderStore::new()),
     });
 
     let internal = Router::new()
@@ -448,6 +450,8 @@ mod cors {
             paused_indexes: flapjack_http::pause_registry::PausedIndexes::new(),
             start_time: std::time::Instant::now(),
             experiment_store: None,
+            #[cfg(feature = "vector-search")]
+            embedder_store: std::sync::Arc::new(flapjack_http::embedder_store::EmbedderStore::new()),
         });
 
         let app = Router::new()

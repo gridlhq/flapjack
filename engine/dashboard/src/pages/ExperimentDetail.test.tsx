@@ -653,6 +653,56 @@ describe('ExperimentDetail', () => {
     });
   });
 
+  it('confirm maps snake_case primary metric values in conclude payload', async () => {
+    const user = userEvent.setup();
+    mockMutateAsync.mockResolvedValue({});
+    mockResults({
+      ...gateReadyOverrides({ winner: 'variant' }),
+      primaryMetric: 'zero_result_rate',
+      control: {
+        name: 'control',
+        searches: 41200,
+        users: 8500,
+        clicks: 5068,
+        conversions: 1854,
+        revenue: 45200.0,
+        ctr: 0.123,
+        conversionRate: 0.045,
+        revenuePerSearch: 1.10,
+        zeroResultRate: 0.032,
+        abandonmentRate: 0.15,
+        meanClickRank: 3.5,
+      },
+      variant: {
+        name: 'variant',
+        searches: 41200,
+        users: 8400,
+        clicks: 5397,
+        conversions: 2142,
+        revenue: 49800.0,
+        ctr: 0.131,
+        conversionRate: 0.052,
+        revenuePerSearch: 1.21,
+        zeroResultRate: 0.028,
+        abandonmentRate: 0.12,
+        meanClickRank: 2.1,
+      },
+    });
+    renderWithRoute('exp-1');
+
+    await user.click(screen.getByRole('button', { name: /declare winner/i }));
+    const dialog = screen.getByTestId('declare-winner-dialog');
+    await user.click(within(dialog).getByRole('button', { name: /confirm/i }));
+
+    expect(mockMutateAsync).toHaveBeenCalledWith({
+      id: 'exp-1',
+      payload: expect.objectContaining({
+        controlMetric: 0.032,
+        variantMetric: 0.028,
+      }),
+    });
+  });
+
   it('confirm calls conclude with null winner for inconclusive', async () => {
     const user = userEvent.setup();
     mockMutateAsync.mockResolvedValue({});

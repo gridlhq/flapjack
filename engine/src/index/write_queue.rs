@@ -841,7 +841,7 @@ async fn commit_batch(
                 std::env::var("FLAPJACK_NODE_ID").unwrap_or_else(|_| "unknown".to_string());
             let tenant_map = lww_map
                 .entry(tenant_id.to_string())
-                .or_insert_with(dashmap::DashMap::new);
+                .or_default();
             for doc_id in &primary_upsert_ids {
                 tenant_map.insert(doc_id.clone(), (now_ts, node_id.clone()));
             }

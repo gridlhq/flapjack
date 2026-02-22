@@ -19,12 +19,18 @@ pub struct HllSketch {
     registers: Vec<u8>,
 }
 
-impl HllSketch {
-    /// Create an empty sketch.
-    pub fn new() -> Self {
+impl Default for HllSketch {
+    fn default() -> Self {
         Self {
             registers: vec![0u8; NUM_REGISTERS],
         }
+    }
+}
+
+impl HllSketch {
+    /// Create an empty sketch.
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Add an item to the sketch.

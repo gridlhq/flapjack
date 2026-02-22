@@ -8,7 +8,7 @@ use usearch::Index;
 use super::{VectorError, VectorSearchResult};
 
 /// Bidirectional mapping between string document IDs and usearch u64 keys.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct IdMap {
     doc_to_key: HashMap<String, u64>,
     key_to_doc: HashMap<u64, String>,
@@ -17,11 +17,7 @@ pub struct IdMap {
 
 impl IdMap {
     pub fn new() -> Self {
-        Self {
-            doc_to_key: HashMap::new(),
-            key_to_doc: HashMap::new(),
-            next_key: 0,
-        }
+        Self::default()
     }
 
     /// Insert a doc_id, returning its u64 key. Reuses existing key if already present.

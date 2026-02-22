@@ -128,7 +128,7 @@ impl IndexManager {
     pub fn record_lww(&self, tenant_id: &str, object_id: &str, ts: u64, node_id: String) {
         self.lww_map
             .entry(tenant_id.to_string())
-            .or_insert_with(DashMap::new)
+            .or_default()
             .insert(object_id.to_string(), (ts, node_id));
     }
 
@@ -360,7 +360,7 @@ impl IndexManager {
                     let incoming = (entry.timestamp_ms, entry.node_id.clone());
                     if self
                         .get_lww(tenant_id, obj_id)
-                        .map_or(true, |existing| incoming > existing)
+                        .is_none_or(|existing| incoming > existing)
                     {
                         self.record_lww(
                             tenant_id,

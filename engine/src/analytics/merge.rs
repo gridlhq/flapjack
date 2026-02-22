@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 
 /// Sort a Vec of JSON objects by their "date" string field (chronological).
-fn sort_by_date(dates: &mut Vec<Value>) {
+fn sort_by_date(dates: &mut [Value]) {
     dates.sort_by(|a, b| {
         let da = a.get("date").and_then(|v| v.as_str()).unwrap_or("");
         let db = b.get("date").and_then(|v| v.as_str()).unwrap_or("");

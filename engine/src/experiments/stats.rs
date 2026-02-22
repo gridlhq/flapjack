@@ -381,6 +381,7 @@ fn ln_beta(a: f64, b: f64) -> f64 {
 }
 
 /// Lanczos approximation of ln(Gamma(x)) for x > 0.
+#[allow(clippy::excessive_precision)]
 fn ln_gamma(x: f64) -> f64 {
     // Lanczos coefficients (g=7)
     let coefficients = [
@@ -436,6 +437,16 @@ pub fn check_guard_rail(
     threshold: f64,
 ) -> Option<GuardRailAlert> {
     if control_metric == 0.0 {
+        // For lower-is-better metrics, a perfect zero baseline should still alert
+        // if variant regresses above zero.
+        if lower_is_better && variant_metric > 0.0 {
+            return Some(GuardRailAlert {
+                metric_name: metric_name.to_string(),
+                control_value: control_metric,
+                variant_value: variant_metric,
+                drop_pct: 100.0,
+            });
+        }
         return None;
     }
 
@@ -709,6 +720,90 @@ pub fn cuped_adjust(
     }
 
     result
+}
+
+// ── Interleaving Preference Scoring ─────────────────────────────────
+
+/// Result of interleaving preference analysis across queries.
+pub struct PreferenceResult {
+    /// ΔAB = (wins_a − wins_b) / (wins_a + wins_b + ties).
+    /// Positive → control preferred; negative → variant preferred.
+    pub delta_ab: f64,
+    pub wins_a: u32,
+    pub wins_b: u32,
+    pub ties: u32,
+    /// Two-sided sign test p-value (binomial at p=0.5, ties excluded).
+    pub p_value: f64,
+}
+
+/// Compute interleaving preference score from per-query click counts.
+///
+/// Each entry is `(team_a_clicks, team_b_clicks)` for one query.
+/// A query is a "win" for the team with more clicks; equal clicks = tie.
+///
+/// ΔAB = (wins_A − wins_B) / (wins_A + wins_B + ties)
+/// Sign test: two-sided binomial test at p=0.5, ties excluded.
+pub fn compute_preference_score(per_query: &[(u32, u32)]) -> PreferenceResult {
+    let mut wins_a: u32 = 0;
+    let mut wins_b: u32 = 0;
+    let mut ties: u32 = 0;
+
+    for &(a, b) in per_query {
+        match a.cmp(&b) {
+            std::cmp::Ordering::Greater => wins_a += 1,
+            std::cmp::Ordering::Less => wins_b += 1,
+            std::cmp::Ordering::Equal => ties += 1,
+        }
+    }
+
+    let total = wins_a + wins_b + ties;
+    let delta_ab = if total == 0 {
+        0.0
+    } else {
+        (wins_a as f64 - wins_b as f64) / total as f64
+    };
+
+    let p_value = sign_test_p_value(wins_a, wins_b);
+
+    PreferenceResult {
+        delta_ab,
+        wins_a,
+        wins_b,
+        ties,
+        p_value,
+    }
+}
+
+/// Two-sided sign test p-value (binomial at p=0.5).
+///
+/// n = wins_a + wins_b (ties excluded). Uses normal approximation
+/// when n > 20; returns 1.0 when n == 0.
+fn sign_test_p_value(wins_a: u32, wins_b: u32) -> f64 {
+    let n = wins_a + wins_b;
+    if n == 0 {
+        return 1.0;
+    }
+    let n_f = n as f64;
+    let k = wins_a.min(wins_b) as f64; // smaller of the two
+
+    if n > 20 {
+        // Normal approximation: z = (wins_a - n/2) / sqrt(n/4)
+        let z = ((wins_a as f64) - n_f / 2.0).abs() / (n_f / 4.0).sqrt();
+        2.0 * normal_sf(z)
+    } else {
+        // Exact two-sided binomial CDF: P(X ≤ k) where X ~ Binomial(n, 0.5)
+        // p = 2 * sum_{i=0}^{k} C(n, i) * 0.5^n, capped at 1.0
+        let mut cdf = 0.0;
+        let mut binom_coeff: f64 = 1.0;
+        let p_n = (0.5_f64).powi(n as i32);
+        for i in 0..=(k as u32) {
+            cdf += binom_coeff * p_n;
+            if i < n {
+                binom_coeff *= (n - i) as f64 / (i + 1) as f64;
+            }
+        }
+        (2.0 * cdf).min(1.0)
+    }
 }
 
 #[cfg(test)]
@@ -1071,6 +1166,18 @@ mod tests {
         assert!((alert.drop_pct - 50.0).abs() < 1.0, "drop_pct={}", alert.drop_pct);
     }
 
+    #[test]
+    fn guard_rail_triggers_for_lower_is_better_regression_from_zero_control() {
+        // control at 0.0 is ideal for lower-is-better metrics; any positive variant value regresses.
+        let alert = check_guard_rail("zero_result_rate", 0.0, 0.02, true, 0.20);
+        assert!(
+            alert.is_some(),
+            "regression from a zero baseline should still trigger guard rail"
+        );
+        let alert = alert.unwrap();
+        assert!((alert.drop_pct - 100.0).abs() < 1.0, "drop_pct={}", alert.drop_pct);
+    }
+
     // ── CUPED Variance Reduction ────────────────────────────────────
 
     #[test]
@@ -1160,9 +1267,8 @@ mod tests {
     fn cuped_theta_sign_is_correct() {
         // Positive covariance: higher pre-metric → higher post-metric → theta > 0
         let user_ids: Vec<String> = (0..100).map(|i| format!("user_{i}")).collect();
-        let experiment_values: Vec<(f64, f64)> = (0..100)
-            .map(|i| ((i as f64) * 0.1, 10.0))
-            .collect();
+        let experiment_values: Vec<(f64, f64)> =
+            (0..100).map(|i| ((i as f64) * 0.1, 10.0)).collect();
         let covariates: HashMap<String, f64> = (0..100)
             .map(|i| (format!("user_{i}"), (i as f64) * 0.1))
             .collect();
@@ -1191,9 +1297,8 @@ mod tests {
     fn cuped_adjustment_partial_coverage() {
         // 200 users, but only first 120 have pre-experiment data (above MIN_MATCHED_USERS=100)
         let user_ids: Vec<String> = (0..200).map(|i| format!("user_{i}")).collect();
-        let experiment_values: Vec<(f64, f64)> = (0..200)
-            .map(|i| ((i as f64) * 0.1, 10.0))
-            .collect();
+        let experiment_values: Vec<(f64, f64)> =
+            (0..200).map(|i| ((i as f64) * 0.1, 10.0)).collect();
         // Only first 120 users have covariates (meets the 100-user minimum)
         let covariates: HashMap<String, f64> = (0..120)
             .map(|i| (format!("user_{i}"), (i as f64) * 0.1))
@@ -1220,5 +1325,122 @@ mod tests {
             }
         }
         assert!(any_changed, "matched users should have adjusted values");
+    }
+
+    // ── Interleaving preference scoring tests ───────────────────────────
+
+    #[test]
+    fn interleaving_preference_score_variant_wins() {
+        // Variant (Team B) wins more queries → negative ΔAB
+        let per_query = vec![
+            (1, 3), // query 0: A=1, B=3 → B wins
+            (0, 2), // query 1: A=0, B=2 → B wins
+            (2, 3), // query 2: A=2, B=3 → B wins
+            (1, 0), // query 3: A=1, B=0 → A wins
+        ];
+        let result = compute_preference_score(&per_query);
+        assert!(result.delta_ab < 0.0, "variant preferred → negative ΔAB, got {}", result.delta_ab);
+        assert_eq!(result.wins_a, 1);
+        assert_eq!(result.wins_b, 3);
+        assert_eq!(result.ties, 0);
+    }
+
+    #[test]
+    fn interleaving_preference_score_control_wins() {
+        // Control (Team A) wins more queries → positive ΔAB
+        let per_query = vec![
+            (3, 1), // A wins
+            (2, 0), // A wins
+            (1, 2), // B wins
+        ];
+        let result = compute_preference_score(&per_query);
+        assert!(result.delta_ab > 0.0, "control preferred → positive ΔAB, got {}", result.delta_ab);
+        assert_eq!(result.wins_a, 2);
+        assert_eq!(result.wins_b, 1);
+        assert_eq!(result.ties, 0);
+    }
+
+    #[test]
+    fn interleaving_preference_score_tie() {
+        let per_query = vec![
+            (2, 1), // A wins
+            (1, 2), // B wins
+            (1, 1), // tie
+        ];
+        let result = compute_preference_score(&per_query);
+        assert_eq!(result.wins_a, 1);
+        assert_eq!(result.wins_b, 1);
+        assert_eq!(result.ties, 1);
+        // ΔAB = (1-1)/(1+1+1) = 0
+        assert!((result.delta_ab).abs() < 1e-10, "equal wins → ΔAB ≈ 0, got {}", result.delta_ab);
+    }
+
+    #[test]
+    fn interleaving_sign_test_significant() {
+        // 30 queries, 25 won by B, 5 by A → should be significant
+        let mut per_query = Vec::new();
+        for _ in 0..25 {
+            per_query.push((0, 3)); // B wins
+        }
+        for _ in 0..5 {
+            per_query.push((3, 0)); // A wins
+        }
+        let result = compute_preference_score(&per_query);
+        assert!(result.p_value < 0.05, "25 vs 5 wins should be significant, p={}", result.p_value);
+    }
+
+    #[test]
+    fn interleaving_sign_test_not_significant() {
+        // 10 queries, 6 won by B, 4 by A → should NOT be significant (too few, too balanced)
+        let mut per_query = Vec::new();
+        for _ in 0..6 {
+            per_query.push((0, 3)); // B wins
+        }
+        for _ in 0..4 {
+            per_query.push((3, 0)); // A wins
+        }
+        let result = compute_preference_score(&per_query);
+        assert!(result.p_value >= 0.05, "6 vs 4 wins should not be significant, p={}", result.p_value);
+    }
+
+    #[test]
+    fn interleaving_sign_test_ignores_ties() {
+        // 3 ties + 20 wins by B + 2 wins by A → ties excluded from sign test
+        let mut per_query = Vec::new();
+        for _ in 0..3 {
+            per_query.push((2, 2)); // tie
+        }
+        for _ in 0..20 {
+            per_query.push((0, 3)); // B wins
+        }
+        for _ in 0..2 {
+            per_query.push((3, 0)); // A wins
+        }
+        let result = compute_preference_score(&per_query);
+        assert_eq!(result.ties, 3);
+        // Sign test uses only 22 non-tied queries (20 + 2), not 25
+        assert!(result.p_value < 0.05, "20 vs 2 wins should be significant, p={}", result.p_value);
+        assert_eq!(result.wins_a + result.wins_b, 22);
+    }
+
+    #[test]
+    fn interleaving_preference_score_empty_input() {
+        let per_query: Vec<(u32, u32)> = vec![];
+        let result = compute_preference_score(&per_query);
+        assert_eq!(result.wins_a, 0);
+        assert_eq!(result.wins_b, 0);
+        assert_eq!(result.ties, 0);
+        assert!((result.delta_ab).abs() < 1e-10);
+        assert!((result.p_value - 1.0).abs() < 1e-10, "empty → p=1.0");
+    }
+
+    #[test]
+    fn interleaving_preference_score_all_ties() {
+        let per_query = vec![(1, 1), (2, 2), (0, 0)];
+        let result = compute_preference_score(&per_query);
+        assert_eq!(result.ties, 3);
+        assert_eq!(result.wins_a, 0);
+        assert_eq!(result.wins_b, 0);
+        assert!((result.p_value - 1.0).abs() < 1e-10, "all ties → p=1.0");
     }
 }

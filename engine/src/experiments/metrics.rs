@@ -178,9 +178,11 @@ fn aggregate_experiment_metrics(
                             search_got_click = true;
                             // Collect min position for MeanClickRank diagnostic
                             if let Some(ref pos_str) = ev.positions {
-                                if let Ok(positions) = serde_json::from_str::<Vec<u32>>(pos_str) {
+                                if let Ok(positions) = serde_json::from_str::<Vec<i64>>(pos_str) {
                                     if let Some(min_pos) =
-                                        positions.iter().copied().filter(|p| *p > 0).min()
+                                        positions.into_iter().filter_map(|p| {
+                                            if p > 0 { u32::try_from(p).ok() } else { None }
+                                        }).min()
                                     {
                                         agg.click_min_positions.push(min_pos);
                                     }
@@ -1424,6 +1426,26 @@ mod tests {
     }
 
     #[test]
+    fn mean_click_rank_ignores_negative_positions() {
+        // Malformed payload may contain negatives; ignore them and keep valid 1-indexed values.
+        let searches = vec![search("u1", "control", Some("q1"), 5, "user_token")];
+        let events = vec![EventRow {
+            query_id: "q1".to_string(),
+            event_type: "click".to_string(),
+            value: None,
+            positions: Some("[-3, 4, 2]".to_string()),
+        }];
+
+        let m = aggregate_experiment_metrics(&searches, &events, None);
+
+        assert!(
+            (m.control.mean_click_rank - 2.0).abs() < 0.001,
+            "expected 2.0 (min valid positive position), got {}",
+            m.control.mean_click_rank
+        );
+    }
+
+    #[test]
     fn mean_click_rank_zero_clicks_returns_zero() {
         // No clicks → 0.0
         let searches = vec![
@@ -1572,6 +1594,7 @@ mod tests {
                 timestamp: Some(chrono::Utc::now().timestamp_millis()),
                 value: None,
                 currency: None,
+                interleaving_team: None,
             }
         }
 
@@ -1670,6 +1693,17 @@ mod tests {
             assert_eq!(m.control.clicks, 6);
             assert_eq!(m.variant.searches, 10);
             assert_eq!(m.variant.clicks, 8);
+            // All clicks have positions=[1], so mean_click_rank should be 1.0 for both arms
+            assert!(
+                (m.control.mean_click_rank - 1.0).abs() < 0.001,
+                "parquet control mean_click_rank expected 1.0, got {}",
+                m.control.mean_click_rank
+            );
+            assert!(
+                (m.variant.mean_click_rank - 1.0).abs() < 0.001,
+                "parquet variant mean_click_rank expected 1.0, got {}",
+                m.variant.mean_click_rank
+            );
         }
 
         #[tokio::test]
@@ -1729,6 +1763,9 @@ mod tests {
 
             assert_eq!(m.control.clicks, 1);
             assert_eq!(m.variant.clicks, 1);
+            // Legacy events have no positions column → mean_click_rank should be 0.0
+            assert_eq!(m.control.mean_click_rank, 0.0, "legacy events should have zero mean_click_rank");
+            assert_eq!(m.variant.mean_click_rank, 0.0, "legacy events should have zero mean_click_rank");
         }
     }
 }

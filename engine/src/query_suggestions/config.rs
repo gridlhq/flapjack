@@ -108,8 +108,7 @@ impl QsConfigStore {
     pub fn save_config(&self, config: &QsConfig) -> std::io::Result<()> {
         self.ensure_dir()?;
         let path = self.config_path(&config.index_name);
-        let json = serde_json::to_string_pretty(config)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let json = serde_json::to_string_pretty(config).map_err(std::io::Error::other)?;
         std::fs::write(path, json)
     }
 
@@ -177,8 +176,7 @@ impl QsConfigStore {
     pub fn save_status(&self, status: &BuildStatus) -> std::io::Result<()> {
         self.ensure_dir()?;
         let path = self.status_path(&status.index_name);
-        let json = serde_json::to_string(status)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let json = serde_json::to_string(status).map_err(std::io::Error::other)?;
         std::fs::write(path, json)
     }
 
@@ -193,8 +191,7 @@ impl QsConfigStore {
             .append(true)
             .open(&path)?;
         for entry in entries {
-            let line = serde_json::to_string(entry)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            let line = serde_json::to_string(entry).map_err(std::io::Error::other)?;
             writeln!(file, "{}", line)?;
         }
         Ok(())

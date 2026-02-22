@@ -79,6 +79,7 @@ flapjack.local.conf
 *.ntvs*
 *.njsproj
 *.sln
+!sdks/csharp/*.sln
 *.sw?
 
 # Node

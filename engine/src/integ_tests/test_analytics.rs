@@ -108,6 +108,7 @@ fn valid_click() -> InsightEvent {
         timestamp: Some(chrono::Utc::now().timestamp_millis()),
         value: None,
         currency: None,
+        interleaving_team: None,
     }
 }
 
@@ -126,6 +127,7 @@ fn valid_conversion() -> InsightEvent {
         timestamp: Some(chrono::Utc::now().timestamp_millis()),
         value: Some(99.99),
         currency: Some("USD".to_string()),
+        interleaving_team: None,
     }
 }
 
@@ -144,6 +146,7 @@ fn valid_view() -> InsightEvent {
         timestamp: None,
         value: None,
         currency: None,
+        interleaving_team: None,
     }
 }
 
@@ -375,6 +378,7 @@ fn click_event(query_id: &str, index: &str, user: &str, positions: Vec<u32>) -> 
         timestamp: Some(chrono::Utc::now().timestamp_millis()),
         value: None,
         currency: None,
+        interleaving_team: None,
     }
 }
 
@@ -393,6 +397,7 @@ fn conversion_event(query_id: &str, index: &str, user: &str) -> InsightEvent {
         timestamp: Some(chrono::Utc::now().timestamp_millis()),
         value: Some(49.99),
         currency: Some("USD".to_string()),
+        interleaving_team: None,
     }
 }
 
@@ -691,6 +696,7 @@ async fn non_correlated_events_recorded_but_dont_inflate_ctr() {
         timestamp: Some(chrono::Utc::now().timestamp_millis()),
         value: None,
         currency: None,
+        interleaving_team: None,
     };
     collector.record_insight(uncorrelated_click);
 

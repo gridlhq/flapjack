@@ -7,7 +7,12 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use flapjack::error::FlapjackError;
-use flapjack::experiments::{assignment, assignment::AssignmentMethod, config::QueryOverrides};
+use flapjack::experiments::{
+    assignment,
+    assignment::AssignmentMethod,
+    config::QueryOverrides,
+    interleaving::{team_draft_interleave, Team},
+};
 
 use super::AppState;
 use crate::dto::SearchRequest;
@@ -23,6 +28,8 @@ struct ExperimentContext {
     experiment_id: String,
     variant_id: String,
     assignment_method: String,
+    interleaving_variant_index: Option<String>,
+    interleaved_teams: Option<HashMap<String, String>>,
 }
 
 /// Extract userToken and client IP from request headers for analytics.
@@ -276,6 +283,22 @@ fn resolve_experiment_context(
     };
     // get_active_for_index already filters for Running status
 
+    if experiment.interleaving == Some(true) {
+        if let Some(variant_index_name) = experiment.variant.index_name {
+            return (
+                effective_index,
+                Some(ExperimentContext {
+                    experiment_id: experiment.id,
+                    variant_id: "interleaved".to_string(),
+                    assignment_method: "interleaved".to_string(),
+                    interleaving_variant_index: Some(variant_index_name),
+                    interleaved_teams: None,
+                }),
+            );
+        }
+        return (effective_index, None);
+    }
+
     let assignment = assignment::assign_variant(
         &experiment,
         req.user_token.as_deref(),
@@ -301,6 +324,8 @@ fn resolve_experiment_context(
             experiment_id: experiment.id,
             variant_id: variant_id.to_string(),
             assignment_method: assignment_method_str(&assignment.method).to_string(),
+            interleaving_variant_index: None,
+            interleaved_teams: None,
         }),
     )
 }
@@ -584,6 +609,7 @@ pub async fn search_single(
             req,
             enqueue_time,
             query_id,
+            assignment_query_id,
             experiment_ctx,
             query_vector,
             hybrid_params,
@@ -600,7 +626,8 @@ fn search_single_sync(
     req: SearchRequest,
     enqueue_time: Instant,
     query_id: Option<String>,
-    experiment_ctx: Option<ExperimentContext>,
+    assignment_query_id: String,
+    mut experiment_ctx: Option<ExperimentContext>,
     #[cfg(feature = "vector-search")] query_vector: Option<Vec<f32>>,
     #[cfg(feature = "vector-search")] hybrid_params: Option<crate::dto::HybridSearchParams>,
     #[cfg(not(feature = "vector-search"))] _query_vector: Option<Vec<f32>>,
@@ -721,29 +748,137 @@ fn search_single_sync(
         .map(crate::dto::parse_optional_filters)
         .filter(|v| !v.is_empty());
 
-    let result = state.manager.search_full_with_stop_words(
-        &effective_index,
-        &req.query,
-        filter.as_ref(),
-        sort.as_ref(),
-        fetch_limit,
-        fetch_offset,
-        facet_requests.as_deref(),
-        distinct_count,
-        req.max_values_per_facet,
-        req.remove_stop_words.as_ref(),
-        req.ignore_plurals.as_ref(),
-        req.query_languages.as_ref(),
-        req.query_type_prefix.as_deref(),
-        typo_tolerance,
-        req.advanced_syntax,
-        req.remove_words_if_no_results.as_deref(),
-        optional_filter_specs.as_deref(),
-        req.enable_synonyms,
-        req.enable_rules,
-        req.rule_contexts.as_deref(),
-        req.restrict_searchable_attributes.as_deref(),
-    )?;
+    let run_search = |tenant_id: &str, limit: usize, offset: usize| {
+        state.manager.search_full_with_stop_words(
+            tenant_id,
+            &req.query,
+            filter.as_ref(),
+            sort.as_ref(),
+            limit,
+            offset,
+            facet_requests.as_deref(),
+            distinct_count,
+            req.max_values_per_facet,
+            req.remove_stop_words.as_ref(),
+            req.ignore_plurals.as_ref(),
+            req.query_languages.as_ref(),
+            req.query_type_prefix.as_deref(),
+            typo_tolerance,
+            req.advanced_syntax,
+            req.remove_words_if_no_results.as_deref(),
+            optional_filter_specs.as_deref(),
+            req.enable_synonyms,
+            req.enable_rules,
+            req.rule_contexts.as_deref(),
+            req.restrict_searchable_attributes.as_deref(),
+        )
+    };
+
+    let interleaving_variant_index = experiment_ctx
+        .as_ref()
+        .and_then(|ctx| ctx.interleaving_variant_index.clone());
+    let mut _is_interleaving = interleaving_variant_index.is_some();
+
+    let result = if let Some(variant_index) = interleaving_variant_index {
+        // To serve page N, team-draft needs the top (offset + limit) docs from each arm.
+        let interleave_k = fetch_limit.saturating_add(fetch_offset).max(hits_per_page);
+        let control_result = run_search(&effective_index, interleave_k, 0)?;
+
+        match run_search(&variant_index, interleave_k, 0) {
+            Ok(variant_result) => {
+                let control_ids: Vec<&str> = control_result
+                    .documents
+                    .iter()
+                    .map(|doc| doc.document.id.as_str())
+                    .collect();
+                let variant_ids: Vec<&str> = variant_result
+                    .documents
+                    .iter()
+                    .map(|doc| doc.document.id.as_str())
+                    .collect();
+                let interleaved = team_draft_interleave(
+                    &control_ids,
+                    &variant_ids,
+                    interleave_k,
+                    experiment_ctx
+                        .as_ref()
+                        .map(|ctx| ctx.experiment_id.as_str())
+                        .unwrap_or(""),
+                    &assignment_query_id,
+                );
+
+                let control_map: HashMap<String, flapjack::types::ScoredDocument> = control_result
+                    .documents
+                    .iter()
+                    .cloned()
+                    .map(|doc| (doc.document.id.clone(), doc))
+                    .collect();
+                let variant_map: HashMap<String, flapjack::types::ScoredDocument> = variant_result
+                    .documents
+                    .iter()
+                    .cloned()
+                    .map(|doc| (doc.document.id.clone(), doc))
+                    .collect();
+
+                let interleaved_docs_with_team: Vec<(flapjack::types::ScoredDocument, String)> =
+                    interleaved
+                        .into_iter()
+                        .filter_map(|item| {
+                            let team_label = match item.team {
+                                Team::A => "control",
+                                Team::B => "variant",
+                            };
+                            let doc = match item.team {
+                                Team::A => control_map
+                                    .get(&item.doc_id)
+                                    .cloned()
+                                    .or_else(|| variant_map.get(&item.doc_id).cloned()),
+                                Team::B => variant_map
+                                    .get(&item.doc_id)
+                                    .cloned()
+                                    .or_else(|| control_map.get(&item.doc_id).cloned()),
+                            };
+                            doc.map(|scored_doc| (scored_doc, team_label.to_string()))
+                        })
+                        .collect();
+
+                let total_interleaved = interleaved_docs_with_team.len();
+                let page_start = (req.page * hits_per_page).min(total_interleaved);
+                let page_end = (page_start + hits_per_page).min(total_interleaved);
+                let page_slice = &interleaved_docs_with_team[page_start..page_end];
+
+                if let Some(ctx) = experiment_ctx.as_mut() {
+                    ctx.interleaved_teams = Some(
+                        page_slice
+                            .iter()
+                            .map(|(doc, team)| (doc.document.id.clone(), team.clone()))
+                            .collect(),
+                    );
+                }
+
+                flapjack::types::SearchResult {
+                    documents: page_slice.iter().map(|(doc, _)| doc.clone()).collect(),
+                    total: total_interleaved,
+                    // Keep control arm metadata for compatibility.
+                    facets: control_result.facets,
+                    user_data: control_result.user_data,
+                    applied_rules: control_result.applied_rules,
+                }
+            }
+            Err(FlapjackError::TenantNotFound(_)) => {
+                // Variant index doesn't exist — fall back to control-only results.
+                // Clear experiment context so the response isn't annotated as interleaved
+                // (no interleaving actually happened) and analytics don't record a
+                // misleading "interleaved" assignment method.
+                experiment_ctx = None;
+                _is_interleaving = false;
+                run_search(&effective_index, fetch_limit, fetch_offset)?
+            }
+            Err(err) => return Err(err),
+        }
+    } else {
+        run_search(&effective_index, fetch_limit, fetch_offset)?
+    };
 
     // --- Hybrid search: RRF fusion with vector results ---
     #[allow(unused_mut)]
@@ -753,120 +888,124 @@ fn search_single_sync(
     let mut result = result;
 
     #[cfg(feature = "vector-search")]
-    if let (Some(qv), Some(ref hp)) = (&query_vector, &hybrid_params) {
-        let vi_opt = state.manager.get_vector_index(&effective_index);
-        match vi_opt {
-            Some(vi_arc) => match vi_arc.read() {
-                Ok(vi_guard) => {
-                    if vi_guard.is_empty() {
-                        fallback_message = Some(
-                            "Hybrid search unavailable: vector index is empty. Falling back to keyword search.".to_string()
-                        );
-                    } else {
-                        let vec_fetch_limit = (hits_per_page * (req.page + 1) + 50).max(200);
-                        match vi_guard.search(qv, vec_fetch_limit) {
-                            Ok(vector_results) => {
-                                // Extract BM25 doc IDs in ranked order
-                                let bm25_ids: Vec<String> = result
-                                    .documents
-                                    .iter()
-                                    .map(|d| d.document.id.clone())
-                                    .collect();
+    if !_is_interleaving {
+        if let (Some(qv), Some(ref hp)) = (&query_vector, &hybrid_params) {
+            let vi_opt = state.manager.get_vector_index(&effective_index);
+            match vi_opt {
+                Some(vi_arc) => match vi_arc.read() {
+                    Ok(vi_guard) => {
+                        if vi_guard.is_empty() {
+                            fallback_message = Some(
+                                "Hybrid search unavailable: vector index is empty. Falling back to keyword search.".to_string()
+                            );
+                        } else {
+                            let vec_fetch_limit = (hits_per_page * (req.page + 1) + 50).max(200);
+                            match vi_guard.search(qv, vec_fetch_limit) {
+                                Ok(vector_results) => {
+                                    // Extract BM25 doc IDs in ranked order
+                                    let bm25_ids: Vec<String> = result
+                                        .documents
+                                        .iter()
+                                        .map(|d| d.document.id.clone())
+                                        .collect();
 
-                                let fused = crate::fusion::rrf_fuse(
-                                    &bm25_ids,
-                                    &vector_results,
-                                    hp.semantic_ratio,
-                                    60,
-                                );
+                                    let fused = crate::fusion::rrf_fuse(
+                                        &bm25_ids,
+                                        &vector_results,
+                                        hp.semantic_ratio,
+                                        60,
+                                    );
 
-                                // Build a lookup map from BM25 results
-                                let mut bm25_map: HashMap<String, flapjack::types::ScoredDocument> =
-                                    result
+                                    // Build a lookup map from BM25 results
+                                    let mut bm25_map: HashMap<
+                                        String,
+                                        flapjack::types::ScoredDocument,
+                                    > = result
                                         .documents
                                         .drain(..)
                                         .map(|sd| (sd.document.id.clone(), sd))
                                         .collect();
 
-                                // Build fused document list, fetching vector-only docs as needed
-                                let mut fused_docs = Vec::new();
-                                for fr in &fused {
-                                    if let Some(sd) = bm25_map.remove(&fr.doc_id) {
-                                        fused_docs.push(flapjack::types::ScoredDocument {
-                                            document: sd.document,
-                                            score: fr.fused_score as f32,
-                                        });
-                                    } else {
-                                        // Vector-only doc: fetch from Tantivy by ID
-                                        match state
-                                            .manager
-                                            .get_document(&effective_index, &fr.doc_id)
-                                        {
-                                            Ok(Some(doc)) => {
-                                                fused_docs.push(flapjack::types::ScoredDocument {
-                                                    document: doc,
-                                                    score: fr.fused_score as f32,
-                                                });
-                                            }
-                                            Ok(None) => {
-                                                // Document was in vector index but not in Tantivy
-                                                // (deleted but not yet removed from vector index).
-                                                // Skip it silently.
-                                            }
-                                            Err(e) => {
-                                                tracing::warn!(
-                                                    "hybrid search: failed to fetch vector-only doc '{}': {}",
-                                                    fr.doc_id,
-                                                    e
-                                                );
+                                    // Build fused document list, fetching vector-only docs as needed
+                                    let mut fused_docs = Vec::new();
+                                    for fr in &fused {
+                                        if let Some(sd) = bm25_map.remove(&fr.doc_id) {
+                                            fused_docs.push(flapjack::types::ScoredDocument {
+                                                document: sd.document,
+                                                score: fr.fused_score as f32,
+                                            });
+                                        } else {
+                                            // Vector-only doc: fetch from Tantivy by ID
+                                            match state
+                                                .manager
+                                                .get_document(&effective_index, &fr.doc_id)
+                                            {
+                                                Ok(Some(doc)) => {
+                                                    fused_docs.push(flapjack::types::ScoredDocument {
+                                                        document: doc,
+                                                        score: fr.fused_score as f32,
+                                                    });
+                                                }
+                                                Ok(None) => {
+                                                    // Document was in vector index but not in Tantivy
+                                                    // (deleted but not yet removed from vector index).
+                                                    // Skip it silently.
+                                                }
+                                                Err(e) => {
+                                                    tracing::warn!(
+                                                        "hybrid search: failed to fetch vector-only doc '{}': {}",
+                                                        fr.doc_id,
+                                                        e
+                                                    );
+                                                }
                                             }
                                         }
                                     }
+
+                                    let total_fused = fused_docs.len();
+
+                                    // Paginate the fused results to the requested window
+                                    let page_start = (req.page * hits_per_page).min(total_fused);
+                                    let page_end = (page_start + hits_per_page).min(total_fused);
+                                    result.documents = fused_docs[page_start..page_end].to_vec();
+                                    result.total = total_fused;
                                 }
-
-                                let total_fused = fused_docs.len();
-
-                                // Paginate the fused results to the requested window
-                                let page_start = (req.page * hits_per_page).min(total_fused);
-                                let page_end = (page_start + hits_per_page).min(total_fused);
-                                result.documents = fused_docs[page_start..page_end].to_vec();
-                                result.total = total_fused;
-                            }
-                            Err(e) => {
-                                tracing::warn!(
-                                    "hybrid search: vector search failed for '{}': {}",
-                                    effective_index,
-                                    e
-                                );
-                                fallback_message = Some(format!(
-                                    "Hybrid search unavailable: vector search failed: {}. Falling back to keyword search.",
-                                    e
-                                ));
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "hybrid search: vector search failed for '{}': {}",
+                                        effective_index,
+                                        e
+                                    );
+                                    fallback_message = Some(format!(
+                                        "Hybrid search unavailable: vector search failed: {}. Falling back to keyword search.",
+                                        e
+                                    ));
+                                }
                             }
                         }
                     }
-                }
-                Err(e) => {
-                    tracing::error!(
-                        "vector index read lock poisoned for '{}': {}",
-                        effective_index,
-                        e
-                    );
+                    Err(e) => {
+                        tracing::error!(
+                            "vector index read lock poisoned for '{}': {}",
+                            effective_index,
+                            e
+                        );
+                        fallback_message = Some(
+                            "Hybrid search unavailable: internal error. Falling back to keyword search.".to_string()
+                        );
+                    }
+                },
+                None => {
                     fallback_message = Some(
-                        "Hybrid search unavailable: internal error. Falling back to keyword search.".to_string()
+                        "Hybrid search unavailable: no vector index for this tenant. Falling back to keyword search.".to_string()
                     );
                 }
-            },
-            None => {
-                fallback_message = Some(
-                    "Hybrid search unavailable: no vector index for this tenant. Falling back to keyword search.".to_string()
-                );
             }
         }
     }
 
     #[cfg(feature = "vector-search")]
-    if query_vector.is_none() && hybrid_params.is_some() {
+    if !_is_interleaving && query_vector.is_none() && hybrid_params.is_some() {
         // Hybrid was requested but embedding failed (no query vector)
         if fallback_message.is_none() {
             fallback_message = Some(
@@ -1278,6 +1417,9 @@ fn search_single_sync(
     if let Some(ref ctx) = experiment_ctx {
         response["abTestID"] = serde_json::json!(ctx.experiment_id);
         response["abTestVariantID"] = serde_json::json!(ctx.variant_id);
+        if let Some(ref interleaved_teams) = ctx.interleaved_teams {
+            response["interleavedTeams"] = serde_json::to_value(interleaved_teams).unwrap();
+        }
     }
     if effective_index != index_name {
         response["indexUsed"] = serde_json::json!(effective_index.clone());
@@ -1885,6 +2027,7 @@ mod tests {
             minimum_days: 14,
             winsorization_cap: None,
             conclusion: None,
+            interleaving: None,
         }
     }
 
@@ -1912,7 +2055,18 @@ mod tests {
             minimum_days: 14,
             winsorization_cap: None,
             conclusion: None,
+            interleaving: None,
         }
+    }
+
+    fn interleaving_experiment(
+        id: &str,
+        index_name: &str,
+        variant_index_name: &str,
+    ) -> Experiment {
+        let mut experiment = mode_b_experiment(id, index_name, variant_index_name);
+        experiment.interleaving = Some(true);
+        experiment
     }
 
     async fn make_search_experiment_state(tmp: &TempDir) -> Arc<AppState> {
@@ -1981,6 +2135,29 @@ mod tests {
             .await
             .unwrap();
 
+        state.manager.create_tenant("products_interleave").unwrap();
+        state
+            .manager
+            .add_documents_sync(
+                "products_interleave",
+                vec![make_doc("ic1", "interleave control document")],
+            )
+            .await
+            .unwrap();
+
+        state
+            .manager
+            .create_tenant("products_interleave_variant")
+            .unwrap();
+        state
+            .manager
+            .add_documents_sync(
+                "products_interleave_variant",
+                vec![make_doc("iv1", "interleave variant document")],
+            )
+            .await
+            .unwrap();
+
         experiment_store
             .create(mode_a_experiment("exp-mode-a", "products"))
             .unwrap();
@@ -1994,6 +2171,15 @@ mod tests {
             ))
             .unwrap();
         experiment_store.start("exp-mode-b").unwrap();
+
+        experiment_store
+            .create(interleaving_experiment(
+                "exp-interleave",
+                "products_interleave",
+                "products_interleave_variant",
+            ))
+            .unwrap();
+        experiment_store.start("exp-interleave").unwrap();
 
         state
     }
@@ -2176,6 +2362,188 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_interleaving_experiment_returns_interleaved_results() {
+        let tmp = TempDir::new().unwrap();
+        let state = make_search_experiment_state(&tmp).await;
+        let app = search_router(state);
+
+        let resp = post_search(
+            &app,
+            "products_interleave",
+            json!({ "query": "interleave" }),
+            Some("user-a"),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_json(resp).await;
+        assert_eq!(body["abTestID"], "exp-interleave");
+        assert_eq!(
+            body["abTestVariantID"], "interleaved",
+            "interleaving requests should be marked as interleaved"
+        );
+
+        let hits = body["hits"]
+            .as_array()
+            .expect("interleaving response must include hits array");
+        let hit_ids: std::collections::HashSet<String> = hits
+            .iter()
+            .map(|hit| {
+                hit["objectID"]
+                    .as_str()
+                    .expect("every hit must include objectID")
+                    .to_string()
+            })
+            .collect();
+
+        assert!(
+            hit_ids.contains("ic1"),
+            "interleaving should include control index result"
+        );
+        assert!(
+            hit_ids.contains("iv1"),
+            "interleaving should include variant index result"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_interleaving_experiment_annotates_response_with_team_attribution() {
+        let tmp = TempDir::new().unwrap();
+        let state = make_search_experiment_state(&tmp).await;
+        let app = search_router(state);
+
+        let resp = post_search(
+            &app,
+            "products_interleave",
+            json!({ "query": "interleave" }),
+            Some("user-a"),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_json(resp).await;
+        let teams = body["interleavedTeams"]
+            .as_object()
+            .expect("interleaving response must include interleavedTeams mapping");
+
+        let hits = body["hits"]
+            .as_array()
+            .expect("interleaving response must include hits array");
+        for hit in hits {
+            let object_id = hit["objectID"]
+                .as_str()
+                .expect("every hit must include objectID");
+            let team = teams
+                .get(object_id)
+                .and_then(|v| v.as_str())
+                .expect("each hit must have a team attribution");
+            assert!(
+                team == "control" || team == "variant",
+                "team attribution must be control or variant, got: {team}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_interleaving_experiment_preserves_non_interleaving_behavior() {
+        let tmp = TempDir::new().unwrap();
+        let state = make_search_experiment_state(&tmp).await;
+        let experiment = state
+            .experiment_store
+            .as_ref()
+            .unwrap()
+            .get("exp-mode-b")
+            .unwrap();
+        let variant_token = find_user_token_for_arm(&experiment, "variant");
+        let app = search_router(state);
+
+        let resp = post_search(
+            &app,
+            "products_mode_b",
+            json!({ "query": "document" }),
+            Some(&variant_token),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_json(resp).await;
+        assert_eq!(body["abTestID"], "exp-mode-b");
+        assert_eq!(body["abTestVariantID"], "variant");
+        assert!(
+            body.get("interleavedTeams").is_none(),
+            "standard Mode B responses must not include interleaving metadata"
+        );
+        assert_eq!(body["indexUsed"], "products_mode_b_variant");
+    }
+
+    #[tokio::test]
+    async fn test_interleaving_falls_back_when_variant_index_missing() {
+        let tmp = TempDir::new().unwrap();
+        let experiment_store = Arc::new(ExperimentStore::new(tmp.path()).unwrap());
+        let state = Arc::new(AppState {
+            manager: IndexManager::new(tmp.path()),
+            key_store: None,
+            replication_manager: None,
+            ssl_manager: None,
+            analytics_engine: None,
+            experiment_store: Some(experiment_store.clone()),
+            metrics_state: Some(MetricsState::new()),
+            usage_counters: Arc::new(dashmap::DashMap::new()),
+            paused_indexes: crate::pause_registry::PausedIndexes::new(),
+            start_time: std::time::Instant::now(),
+            #[cfg(feature = "vector-search")]
+            embedder_store: Arc::new(crate::embedder_store::EmbedderStore::new()),
+        });
+
+        state
+            .manager
+            .create_tenant("products_interleave_missing_variant")
+            .unwrap();
+        state
+            .manager
+            .add_documents_sync(
+                "products_interleave_missing_variant",
+                vec![make_doc("cm1", "control fallback document")],
+            )
+            .await
+            .unwrap();
+
+        experiment_store
+            .create(interleaving_experiment(
+                "exp-interleave-missing",
+                "products_interleave_missing_variant",
+                "products_interleave_missing_variant_v2",
+            ))
+            .unwrap();
+        experiment_store.start("exp-interleave-missing").unwrap();
+
+        let app = search_router(state);
+        let resp = post_search(
+            &app,
+            "products_interleave_missing_variant",
+            json!({ "query": "fallback" }),
+            Some("user-a"),
+        )
+        .await;
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_json(resp).await;
+        assert_eq!(
+            body["hits"][0]["objectID"], "cm1",
+            "missing variant index should fall back to control search results"
+        );
+        assert!(
+            body.get("interleavedTeams").is_none(),
+            "control fallback should not expose interleaving attribution"
+        );
+        assert!(
+            body.get("abTestID").is_none(),
+            "control fallback should not annotate response with experiment ID"
+        );
+        assert!(
+            body.get("abTestVariantID").is_none(),
+            "control fallback should not annotate response with variant ID"
+        );
+    }
+
+    #[tokio::test]
     async fn query_id_fallback_still_annotates_response() {
         let tmp = TempDir::new().unwrap();
         let state = make_search_experiment_state(&tmp).await;
@@ -2319,6 +2687,8 @@ mod tests {
                 experiment_id: "exp-123".to_string(),
                 variant_id: "variant".to_string(),
                 assignment_method: "user_token".to_string(),
+                interleaving_variant_index: None,
+                interleaved_teams: None,
             }),
         );
 

@@ -106,6 +106,12 @@ function defaultReason(results: ExperimentResultsResponse): string {
   return '';
 }
 
+function interleavingDirection(deltaAB: number): string {
+  if (deltaAB > 0) return 'Control preferred';
+  if (deltaAB < 0) return 'Variant preferred';
+  return 'No preference detected';
+}
+
 // --- DeclareWinnerDialog ---
 
 type WinnerChoice = 'control' | 'variant' | 'none';
@@ -606,6 +612,68 @@ export function ExperimentDetail() {
               {' '}({(results.significance.relativeImprovement * 100).toFixed(1)}% improvement)
             </p>
           )}
+        </Card>
+      )}
+
+      {/* Interleaving Preference */}
+      {results.interleaving && (
+        <Card className="p-4" data-testid="interleaving-card">
+          <div className="flex items-center justify-between gap-4">
+            <h3 className="text-sm font-semibold">Interleaving Preference</h3>
+            <Badge
+              variant="outline"
+              className={
+                results.interleaving.significant
+                  ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                  : 'border-slate-300 bg-slate-50 text-slate-700'
+              }
+            >
+              {results.interleaving.significant ? 'Significant' : 'Not significant'}
+            </Badge>
+          </div>
+          <div className="mt-3 flex items-baseline gap-2">
+            <p className="text-2xl font-bold">
+              {results.interleaving.deltaAB.toFixed(3)}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              ΔAB
+            </p>
+          </div>
+          <p className="text-sm mt-1">
+            {interleavingDirection(results.interleaving.deltaAB)}
+            {' '}
+            (p={results.interleaving.pValue.toFixed(3)})
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+            <div className="rounded-md border p-2">
+              <p className="text-muted-foreground">Control wins</p>
+              <p className="font-semibold">{formatNumber(results.interleaving.winsControl)}</p>
+            </div>
+            <div className="rounded-md border p-2">
+              <p className="text-muted-foreground">Variant wins</p>
+              <p className="font-semibold">{formatNumber(results.interleaving.winsVariant)}</p>
+            </div>
+            <div className="rounded-md border p-2">
+              <p className="text-muted-foreground">Ties</p>
+              <p className="font-semibold">{formatNumber(results.interleaving.ties)}</p>
+            </div>
+            <div className="rounded-md border p-2">
+              <p className="text-muted-foreground">Total queries</p>
+              <p className="font-semibold">{formatNumber(results.interleaving.totalQueries)}</p>
+            </div>
+          </div>
+          {!results.interleaving.dataQualityOk && (
+            <p
+              className="mt-3 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-2"
+              data-testid="interleaving-data-quality-warning"
+            >
+              First-team distribution is skewed outside the 45-55% quality band.
+              Interleaving results may be invalid.
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground mt-3">
+            Interleaving can be roughly 50x more sensitive than traditional A/B tests for ranking.
+          </p>
         </Card>
       )}
 

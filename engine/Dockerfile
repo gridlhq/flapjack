@@ -1,6 +1,18 @@
-# Multi-stage build for Flapjack server
-FROM rust:1.93 as builder
+# syntax=docker/dockerfile:1
+# Multi-stage build for Flapjack server.
+# Build context must be the repository root (not engine/):
+#   docker build -f engine/Dockerfile .
 
+# ── Stage 1: Build dashboard ─────────────────────────────────────────────────
+FROM node:20-alpine AS dashboard-builder
+WORKDIR /app
+COPY engine/dashboard/package.json engine/dashboard/package-lock.json ./
+RUN npm ci
+COPY engine/dashboard/ .
+RUN npm run build
+
+# ── Stage 2: Build Rust binary ───────────────────────────────────────────────
+FROM rust:1 AS builder
 WORKDIR /app
 
 # Copy manifests
@@ -15,38 +27,31 @@ COPY engine/flapjack-ssl ./flapjack-ssl
 COPY engine/benches ./benches
 COPY engine/tests ./tests
 COPY engine/package ./package
-COPY engine/dashboard/dist ./dashboard/dist
 
-# Build release binary
+# Copy built dashboard (required by RustEmbed)
+COPY --from=dashboard-builder /app/dist ./dashboard/dist
+
+# Build release binary (glibc — vector-search compatible, unlike musl targets)
 RUN cargo build --release -p flapjack-server --features vector-search
 
-# Runtime stage — must match builder's glibc version
-FROM debian:trixie-slim
+# ── Stage 3: Runtime ─────────────────────────────────────────────────────────
+FROM debian:bookworm-slim
 
-# Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
-
-# Copy binary from builder
 COPY --from=builder /app/target/release/flapjack /usr/local/bin/flapjack
-
-# Create data directory
-RUN mkdir -p /data
-
-# Expose default port
-EXPOSE 7700
-
-# Copy entrypoint script (writes node.json from env vars)
-COPY engine/_dev/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY engine/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Set working directory for data
+RUN mkdir -p /data
+
+EXPOSE 7700
+
 WORKDIR /data
 
 ENTRYPOINT ["entrypoint.sh"]
-CMD ["flapjack"]
+CMD ["flapjack", "--data-dir", "/data"]

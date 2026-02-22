@@ -306,6 +306,91 @@ describe('ExperimentDetail', () => {
     expect(screen.queryByTestId('cuped-badge')).not.toBeInTheDocument();
   });
 
+  it('shows interleaving preference card when interleaving data present', () => {
+    mockResults({
+      interleaving: {
+        deltaAB: -0.214,
+        winsControl: 12,
+        winsVariant: 20,
+        ties: 3,
+        pValue: 0.021,
+        significant: true,
+        totalQueries: 35,
+        dataQualityOk: true,
+      },
+    });
+    renderWithRoute('exp-1');
+
+    const card = screen.getByTestId('interleaving-card');
+    expect(card).toBeInTheDocument();
+    expect(card).toHaveTextContent(/interleaving preference/i);
+    expect(card).toHaveTextContent(/-0\.214/);
+    expect(card).toHaveTextContent(/control wins/i);
+    expect(card).toHaveTextContent(/variant wins/i);
+    expect(card).toHaveTextContent(/ties/i);
+    expect(card).toHaveTextContent(/significant/i);
+  });
+
+  it('does not show interleaving card for standard experiments', () => {
+    mockResults({ interleaving: null });
+    renderWithRoute('exp-1');
+
+    expect(screen.queryByTestId('interleaving-card')).not.toBeInTheDocument();
+  });
+
+  it('shows data quality warning when first-team distribution is skewed', () => {
+    mockResults({
+      interleaving: {
+        deltaAB: 0.140,
+        winsControl: 18,
+        winsVariant: 14,
+        ties: 2,
+        pValue: 0.13,
+        significant: false,
+        totalQueries: 34,
+        dataQualityOk: false,
+      },
+    });
+    renderWithRoute('exp-1');
+
+    const card = screen.getByTestId('interleaving-card');
+    expect(card).toBeInTheDocument();
+    expect(screen.getByTestId('interleaving-data-quality-warning')).toBeInTheDocument();
+  });
+
+  it('interleaving card shows correct preference direction', () => {
+    mockResults({
+      interleaving: {
+        deltaAB: 0.250,
+        winsControl: 25,
+        winsVariant: 10,
+        ties: 5,
+        pValue: 0.004,
+        significant: true,
+        totalQueries: 40,
+        dataQualityOk: true,
+      },
+    });
+    const firstRender = renderWithRoute('exp-1');
+    expect(screen.getByTestId('interleaving-card')).toHaveTextContent(/control preferred/i);
+    firstRender.unmount();
+
+    mockResults({
+      interleaving: {
+        deltaAB: -0.250,
+        winsControl: 10,
+        winsVariant: 25,
+        ties: 5,
+        pValue: 0.004,
+        significant: true,
+        totalQueries: 40,
+        dataQualityOk: true,
+      },
+    });
+    renderWithRoute('exp-1');
+    expect(screen.getByTestId('interleaving-card')).toHaveTextContent(/variant preferred/i);
+  });
+
   it('shows outlier exclusion notice when outlierUsersExcluded > 0', () => {
     mockResults({ outlierUsersExcluded: 12 });
     renderWithRoute('exp-1');

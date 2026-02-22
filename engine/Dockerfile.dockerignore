@@ -1,0 +1,47 @@
+# Dockerfile.dockerignore — used by Docker BuildKit when building with:
+#   docker build -f engine/Dockerfile .   (context = repo root)
+# Paths here are relative to the build context (repo root).
+
+# Rust build artifacts
+engine/target/
+**/*.so
+**/*.dylib
+
+# Git and IDE
+.git/
+.gitignore
+.github/
+.vscode/
+.idea/
+
+# Dev-only directories (not present in staging/prod but keep explicit)
+engine/_dev/
+engine/.secret/
+
+# Documentation
+engine/docs/
+engine/docs2/
+engine/deep_dives/
+engine/examples/
+
+# Node modules (re-installed inside Docker)
+**/node_modules/
+
+# Dashboard dist (re-built inside Docker by dashboard-builder stage)
+engine/dashboard/dist/
+engine/dashboard/playwright-report/
+engine/dashboard/test-results/
+engine/dashboard/BUILD_SESSION_*
+engine/dashboard/SESSION_*
+
+# Test data
+engine/data/
+engine/data-*/
+engine/tests/data/
+engine/.cache/
+engine/sdk_test/.cache/
+engine/sdk_test/data/
+
+# Logs and ephemeral files
+*.log
+.DS_Store

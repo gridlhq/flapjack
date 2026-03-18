@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+
+set -o nounset
+set -o pipefail
+
+format_command_for_display() {
+  local formatted_command=""
+  local quoted_argument=""
+  local argument=""
+
+  for argument in "$@"; do
+    printf -v quoted_argument '%q' "${argument}"
+    if [ -n "${formatted_command}" ]; then
+      formatted_command+=" "
+    fi
+    formatted_command+="${quoted_argument}"
+  done
+
+  printf '%s\n' "${formatted_command}"
+}
+
+run_from_repo_root() {
+  (
+    cd "${repo_root}" || exit 1
+    "$@"
+  )
+}
+
+if ! repo_root="$(git rev-parse --show-toplevel)"; then
+  echo "error: this script must be run inside a git repository" >&2
+  exit 1
+fi
+
+if command -v matt >/dev/null 2>&1 && matt scrai --help 2>&1 | grep -q " assemble"; then
+  scrai_check_cmd=(matt scrai assemble --check "${repo_root}")
+  scrai_rebuild_cmd=(matt scrai assemble "${repo_root}")
+elif command -v python3 >/dev/null 2>&1; then
+  scrai_check_cmd=(python3 -m matt scrai assemble --check "${repo_root}")
+  scrai_rebuild_cmd=(python3 -m matt scrai assemble "${repo_root}")
+else
+  echo "error: unable to find 'matt' on PATH or fallback 'python3 -m matt'" >&2
+  echo "install matt or ensure python3 is on PATH, then retry" >&2
+  exit 1
+fi
+
+status=0
+run_from_repo_root "${scrai_check_cmd[@]}"
+status=$?
+if [ "$status" -eq 0 ]; then
+  exit 0
+fi
+
+echo "error: scrai assemble check failed." >&2
+echo "if the output above shows drift, run '$(format_command_for_display "${scrai_rebuild_cmd[@]}")' and commit generated output files." >&2
+exit "$status"

@@ -1,0 +1,4 @@
+target_dir = "engine"
+languages = ["rust"]
+
+exclude = ["tests", "fixtures", "benches", "sdk_test", "dashboard", "package"]

@@ -6,8 +6,6 @@ Use bash for filesystem operations. ALWAYS read multiple files in a single
 bash call — `cat file1.py file2.py` or `head -n 50 file.py && tail -n +80 file.py | head -n 30`.
 NEVER issue separate Read/cat calls for files you could read together.
 
-Never mention any LLM provider name in commit messages.
-
 ## Tool Efficiency — MANDATORY
 
 - **Grouped reads**: ALWAYS `cat file1.py file2.py` in one call. NEVER read files one at a time when you need multiple. This is the single biggest efficiency win.
@@ -111,7 +109,6 @@ cd engine && cargo fmt --check
 
 ## Global Testing Rules
 
-- TDD mandatory: write failing tests before implementation (red → green → refactor)
 - Fast feedback: run the smallest relevant test after every code change
 - Tests use isolated temp directories — never touch real project state
 - Prefer focused single-file test runs for routine checks; ask before running the full suite
